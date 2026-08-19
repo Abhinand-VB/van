@@ -21,3 +21,7 @@ linter:
     one_member_abstracts: false
     # Fights readable arrange-act-assert in tests and buys nothing here.
     cascade_invocations: false
+    # Tests state their inputs explicitly even when a value matches the
+    # default, because a scheduling test that hides its offset or its estimate
+    # is unreadable. Explicitness wins over terseness here.
+    avoid_redundant_argument_values: false
