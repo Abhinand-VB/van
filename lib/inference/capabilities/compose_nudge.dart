@@ -1,0 +1,176 @@
+import 'dart:convert';
+import 'dart:math';
+
+import 'package:meta/meta.dart';
+import 'package:van/inference/backend.dart';
+import 'package:van/inference/capability.dart';
+import 'package:van/inference/parsing.dart';
+import 'package:van_core/van_core.dart';
+
+/// Everything needed to write one line of nudge copy.
+@immutable
+class NudgeCopyRequest {
+  /// Creates a request.
+  const NudgeCopyRequest({
+    required this.type,
+    required this.level,
+    required this.taskTitle,
+    this.minutes = 25,
+    this.minutesLate = 0,
+    this.moves = 0,
+  });
+
+  /// The kind of interruption.
+  final NudgeType type;
+
+  /// How hard it should push. Chosen by the policy, never by a model.
+  final InterventionLevel level;
+
+  /// What the work is called.
+  final String taskTitle;
+
+  /// Length of the block.
+  final int minutes;
+
+  /// Minutes past the planned start.
+  final int minutesLate;
+
+  /// How many times this work has been moved.
+  final int moves;
+
+  /// Key into the template bank.
+  String get templateKey => '${type.name}_${level.name}';
+}
+
+/// A line of copy, and where it came from.
+@immutable
+class NudgeCopy {
+  /// Creates a line.
+  const NudgeCopy(this.text, {this.templateId});
+
+  /// What to show the user.
+  final String text;
+
+  /// Which template produced it, or null when a model wrote it.
+  final String? templateId;
+}
+
+/// A bank of hand-written nudge lines with a no-repeat rotation.
+///
+/// The rotation is the point. A 2B model has a narrow stylistic range and will
+/// converge on the same handful of phrasings within a week; hand-written
+/// variants that never repeat within a window beat it comfortably, and cost
+/// nothing to run. This is why Van is usable with no model at all.
+class NudgeTemplates {
+  /// Creates a bank from decoded JSON.
+  NudgeTemplates(this._byKey, {Random? random}) : _random = random ?? Random();
+
+  /// Parses the asset at `assets/nudge_templates/templates.json`.
+  factory NudgeTemplates.fromJson(String source, {Random? random}) {
+    final decoded = jsonDecode(source) as Map<String, dynamic>;
+    final byKey = <String, List<String>>{};
+    for (final entry in decoded.entries) {
+      if (entry.key.startsWith('_')) continue;
+      final values = entry.value;
+      if (values is! List) continue;
+      byKey[entry.key] = values.whereType<String>().toList();
+    }
+    return NudgeTemplates(byKey, random: random);
+  }
+
+  final Map<String, List<String>> _byKey;
+  final Random _random;
+
+  /// The last two indices used per key, so neither is picked again.
+  final _recent = <String, List<int>>{};
+
+  /// How many variants exist for [key].
+  int variantCount(String key) => _byKey[key]?.length ?? 0;
+
+  /// Picks a line for [request], avoiding the two most recent for that key.
+  NudgeCopy pick(NudgeCopyRequest request) {
+    final key = request.templateKey;
+    final options = _byKey[key] ?? _byKey['sessionMissed_l0Gentle'] ?? const [];
+    if (options.isEmpty) {
+      return NudgeCopy('${request.taskTitle}.', templateId: 'builtin_bare');
+    }
+
+    final recent = _recent[key] ?? <int>[];
+    final eligible = <int>[
+      for (var i = 0; i < options.length; i++)
+        if (!recent.contains(i)) i,
+    ];
+    final pool = eligible.isEmpty
+        ? [for (var i = 0; i < options.length; i++) i]
+        : eligible;
+
+    final index = pool[_random.nextInt(pool.length)];
+    _recent[key] = [
+      ...recent,
+      index,
+    ].reversed.take(2).toList().reversed.toList();
+
+    return NudgeCopy(
+      _fill(options[index], request),
+      templateId: '$key#$index',
+    );
+  }
+
+  String _fill(String template, NudgeCopyRequest request) => template
+      .replaceAll('{task}', request.taskTitle)
+      .replaceAll('{minutes}', '${request.minutes}')
+      .replaceAll('{late}', '${request.minutesLate}')
+      .replaceAll('{moves}', '${request.moves}');
+}
+
+/// Writes the words for a nudge whose level has already been decided.
+class ComposeNudge extends Capability<NudgeCopyRequest, NudgeCopy> {
+  /// Creates the capability over a template bank.
+  const ComposeNudge(this._templates);
+
+  final NudgeTemplates _templates;
+
+  @override
+  String get id => 'compose_nudge';
+
+  @override
+  Map<String, Object?> get outputSchema => const {
+    'type': 'object',
+    'properties': {
+      'text': {'type': 'string', 'maxLength': 140},
+    },
+    'required': ['text'],
+  };
+
+  @override
+  LlmRequest buildRequest(NudgeCopyRequest input, BackendCapabilities caps) {
+    return LlmRequest(
+      system:
+          'You write one short line of copy for a productivity companion. '
+          'One sentence, under 140 characters, no emoji, no preamble. '
+          'The tone level has already been chosen for you; match it exactly.',
+      prompt:
+          'Tone level: ${input.level.name}\n'
+          'Task: ${input.taskTitle}\n'
+          'Block length: ${input.minutes} minutes\n'
+          'Minutes late: ${input.minutesLate}\n'
+          'Times already moved: ${input.moves}\n\n'
+          'Reply with JSON: {"text": "..."}',
+      jsonSchema: caps.supportsNativeStructuredOutput ? outputSchema : null,
+      maxOutputTokens: 80,
+      temperature: 0.9,
+    );
+  }
+
+  @override
+  NudgeCopy? parse(String raw) {
+    final json = JsonSalvage.extractObject(raw);
+    if (json == null) return null;
+    final text = JsonSalvage.readString(json, 'text');
+    if (text == null || text.length > 200) return null;
+    return NudgeCopy(text);
+  }
+
+  @override
+  NudgeCopy fallback(NudgeCopyRequest input) => _templates.pick(input);
+}

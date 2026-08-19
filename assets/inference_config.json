@@ -1,1 +1,17 @@
-{}
+{
+  "_comment": [
+    "Capability -> backend routing. Adding a cloud model in phase 3 means",
+    "adding a backends entry and changing one route string here. No Dart",
+    "changes in core/, app/ or ui/ - tool/check_layers.dart enforces that.",
+    "'none' means: always use the capability's deterministic fallback."
+  ],
+  "default_backend": "none",
+  "backends": {
+    "none": { "type": "null" }
+  },
+  "routes": {
+    "extract_task": "none",
+    "compose_nudge": "none",
+    "negotiate": "none"
+  }
+}

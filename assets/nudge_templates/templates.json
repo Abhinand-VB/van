@@ -1,0 +1,87 @@
+{
+  "_comment": [
+    "Deterministic nudge copy, keyed by nudgeType_interventionLevel.",
+    "Placeholders: {task} the task title, {minutes} the block length,",
+    "{late} minutes past the planned start, {moves} times already moved.",
+    "At least eight variants per key, and the rotation in compose_nudge never",
+    "repeats the last two used for a key. Repetition is the fastest route to",
+    "being ignored, so this file matters more than it looks."
+  ],
+
+  "sessionStart_l0Gentle": [
+    "{task}. Ready?",
+    "{minutes} minutes on {task}. Now?",
+    "This is the {task} block. Start?",
+    "{task} time.",
+    "You put {minutes} minutes aside for {task}. Go?",
+    "{task} — starting now?",
+    "Block starts now: {task}.",
+    "Here we go. {task}, {minutes} minutes."
+  ],
+
+  "sessionMissed_l0Gentle": [
+    "{task} is up.",
+    "{task}, whenever you're ready.",
+    "Still planning to do {task}?",
+    "{task} — want to start?",
+    "That {minutes} minute block for {task} is open.",
+    "{task}. Now works?",
+    "Ready for {task}?",
+    "{task} is waiting."
+  ],
+
+  "sessionMissed_l1Check": [
+    "You were going to start {task} {late} minutes ago. Starting, or moving it?",
+    "{late} minutes past. Start {task}, or push it?",
+    "{task} hasn't started. Begin now or reschedule?",
+    "That was {late} minutes ago. Still on for {task}?",
+    "{task} is {late} minutes late. Go now, or later?",
+    "No start on {task} yet. Now or move it?",
+    "{late} minutes in. Do you want {task} now or another time?",
+    "Checking in — {task} was due {late} minutes ago."
+  ],
+
+  "sessionMissed_l2Diagnose": [
+    "What's stopping you?",
+    "{task} still hasn't started. What's in the way?",
+    "What's the blocker?",
+    "Something else going on?",
+    "What's making {task} hard right now?",
+    "Talk to me — what's holding it up?",
+    "Is it the task, or the timing?",
+    "What would make {task} easier to start?"
+  ],
+
+  "sessionMissed_l3Shrink": [
+    "Forget the whole thing. Give me 10 minutes.",
+    "Skip the full block. Just 10 minutes on {task}.",
+    "Smaller ask: 10 minutes, then stop.",
+    "Don't do {minutes} minutes. Do 10.",
+    "Ten minutes of {task}. That's it.",
+    "Let's shrink it — 10 minutes and you're done.",
+    "Just open it. Ten minutes.",
+    "Ten minutes on {task}, no more."
+  ],
+
+  "sessionMissed_l4Renegotiate": [
+    "You've moved {task} {moves} times and it's due soon. Twenty minutes now?",
+    "That's {moves} moves on {task}. Let's do 20 minutes and cut tonight down.",
+    "{task} has slipped {moves} times with the deadline close. 20 minutes?",
+    "This is move number {moves}. Give me 20 minutes on {task} now.",
+    "{task} keeps sliding and time is short. Twenty minutes?",
+    "Moved {moves} times already. Twenty minutes on {task} now saves you later.",
+    "Deadline's near and {task} has moved {moves} times. 20 minutes?",
+    "Let's stop the slide — 20 minutes on {task}."
+  ],
+
+  "sessionMissed_l5Concede": [
+    "Okay — moving {task} to tomorrow morning.",
+    "Fine. {task} goes to tomorrow.",
+    "Understood. I'll move {task}.",
+    "No problem — rescheduling {task}.",
+    "Alright, {task} moves. I'll find a new slot.",
+    "Dropping it for now. {task} is moved.",
+    "Okay. {task} tomorrow instead.",
+    "Moving on — {task} is rescheduled."
+  ]
+}
