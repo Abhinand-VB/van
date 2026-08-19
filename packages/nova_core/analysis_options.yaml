@@ -10,3 +10,10 @@ analyzer:
 linter:
   rules:
     public_member_api_docs: true
+
+    # A single-method abstract class is exactly the injection seam Nova relies
+    # on (Clock, LlmBackend, AlarmScheduler). Turning them into functions would
+    # lose the named contract and the ability to swap implementations.
+    one_member_abstracts: false
+    # Fights readable arrange-act-assert in tests and buys nothing here.
+    cascade_invocations: false

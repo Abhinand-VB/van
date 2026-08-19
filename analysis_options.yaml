@@ -14,3 +14,10 @@ linter:
     # Nova is an app, not a published package; doc comments are required in
     # nova_core (see its own analysis_options.yaml) but not on every widget.
     public_member_api_docs: false
+
+    # A single-method abstract class is exactly the injection seam Nova relies
+    # on (Clock, LlmBackend, AlarmScheduler). Turning them into functions would
+    # lose the named contract and the ability to swap implementations.
+    one_member_abstracts: false
+    # Fights readable arrange-act-assert in tests and buys nothing here.
+    cascade_invocations: false

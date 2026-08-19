@@ -38,7 +38,8 @@ void main() {
     });
 
     test('is distinguishable from Err in a switch', () {
-      final label = switch (ok) {
+      const Result<int, String> subject = ok;
+      final label = switch (subject) {
         Ok<int, String>(:final value) => 'ok:$value',
         Err<int, String>(:final error) => 'err:$error',
       };

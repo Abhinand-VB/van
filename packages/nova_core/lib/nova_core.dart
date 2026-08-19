@@ -6,4 +6,9 @@
 library;
 
 export 'src/clock.dart';
+export 'src/model/event.dart';
+export 'src/model/nudge.dart';
+export 'src/model/nudge_response.dart';
+export 'src/model/task.dart';
+export 'src/model/work_session.dart';
 export 'src/result.dart';
