@@ -7,10 +7,17 @@ plugins {
 
 android {
     namespace = "dev.nova.nova"
-    compileSdk = flutter.compileSdkVersion
+    // Pinned rather than following flutter.compileSdkVersion, which resolves
+    // to 37 on this Flutter version. The SDK manager installs that platform as
+    // "android-37.0" while Gradle looks up "android-37", so every module that
+    // inherits it fails to resolve. 36 is installed and is the current stable.
+    compileSdk = 36
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // flutter_local_notifications uses java.time on all API levels, which
+        // needs the desugared JDK libs on anything below API 26.
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -25,7 +32,7 @@ android {
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
+        targetSdk = 36
         versionCode = flutter.versionCode
         versionName = flutter.versionName
     }
@@ -41,4 +48,8 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
 }
