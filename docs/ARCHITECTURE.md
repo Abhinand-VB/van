@@ -1,4 +1,4 @@
-# Nova — Architecture
+# Van — Architecture
 
 Version 1.0. Read `AGENTS.md` first.
 
@@ -131,7 +131,7 @@ test/
   inference/  golden/            # golden files per capability
   simulation/                    # multi-day scenarios
 
-android/app/src/main/kotlin/.../nova/
+android/app/src/main/kotlin/.../van/
   LocalLlmPlugin.kt  AlarmSchedulerPlugin.kt  NudgeReceiver.kt  UsageStatsPlugin.kt
 ```
 
@@ -499,6 +499,34 @@ sim.expectEventSequence([...]);
 
 This is how you tune the escalation ladder and suppression policy without living through
 it. It is the single highest-value test asset in the project — build it in WP-3, not later.
+
+---
+
+## 9a. Identity
+
+| Aspect | Decision | Where it lives |
+|---|---|---|
+| Name | **Van** | `android:label`, `MaterialApp.title`, package `van` / `van_core` |
+| Application id | `dev.van.app` | `android/app/build.gradle.kts` |
+| Mark | A **tree**, drawn as adaptive-icon vector drawables | `res/drawable/ic_launcher_foreground.xml`, `ic_launcher_monochrome.xml` |
+| Palette | Deep forest green `#14342A` behind a light canopy `#A7E8BD` | `res/values/colors.xml`, `MaterialApp` seed `#2E7D5B` |
+| Notification sound | **Drum**, changeable | pending asset - see below |
+
+The icon is a vector rather than exported PNGs so it stays sharp at every
+density and can be reviewed in a diff. A `monochrome` layer is supplied so
+Android 13+ themed icons tint correctly.
+
+**Notification sound.** Van's nudges use a drum sound rather than the system
+default, so an interruption from Van is identifiable without looking. This
+needs an audio asset that cannot be generated from source: drop a short file at
+`android/app/src/main/res/raw/nudge_drum.ogg` and point the notification
+channel at it in WP-4. Until that file exists the channel falls back to the
+system default. The sound is deliberately per-channel, so a user who dislikes
+it can change it in Android settings without touching the app.
+
+Legacy launcher icons (`mipmap-*/ic_launcher.png`) are still Flutter's default
+and only surface below API 26, which is under this project's minSdk floor in
+practice. Replace them if that ever matters.
 
 ---
 

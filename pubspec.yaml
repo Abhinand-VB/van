@@ -1,6 +1,6 @@
-name: nova
+name: van
 description: >-
-  A proactive accountability companion. Nova does not just store what you meant
+  A proactive accountability companion. Van does not just store what you meant
   to do - it notices when a planned work session did not start, and responds.
 publish_to: "none"
 version: 0.1.0+1
@@ -17,14 +17,14 @@ dependencies:
   flutter_local_notifications: ^22.3.0
   flutter_riverpod: ^2.6.1
   flutter_secure_storage: ^11.0.0
-  # The pure domain core. No Flutter, no I/O, no ambient time - see
-  # docs/ARCHITECTURE.md P1. Kept a separate package so the boundary is
-  # enforced by the dependency graph rather than by convention.
-  nova_core:
-    path: packages/nova_core
   path: ^1.9.1
   path_provider: ^2.1.6
   sqlite3_flutter_libs: ^0.6.0+eol
+  # The pure domain core. No Flutter, no I/O, no ambient time - see
+  # docs/ARCHITECTURE.md P1. Kept a separate package so the boundary is
+  # enforced by the dependency graph rather than by convention.
+  van_core:
+    path: packages/van_core
 
 dev_dependencies:
   build_runner: ^2.15.1

@@ -528,13 +528,6 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.19.2"
-  nova_core:
-    dependency: "direct main"
-    description:
-      path: "packages/nova_core"
-      relative: true
-    source: path
-    version: "0.1.0"
   objective_c:
     dependency: transitive
     description:
@@ -812,6 +805,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "1.4.0"
+  van_core:
+    dependency: "direct main"
+    description:
+      path: "packages/van_core"
+      relative: true
+    source: path
+    version: "0.1.0"
   vector_math:
     dependency: transitive
     description:

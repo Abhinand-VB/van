@@ -1,16 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:nova/data/db/database.dart';
-import 'package:nova/data/repositories/event_repo.dart';
-import 'package:nova/data/repositories/nudge_repo.dart';
-import 'package:nova/data/repositories/session_repo.dart';
-import 'package:nova/data/repositories/task_repo.dart';
-import 'package:nova_core/nova_core.dart';
+import 'package:van/data/db/database.dart';
+import 'package:van/data/repositories/event_repo.dart';
+import 'package:van/data/repositories/nudge_repo.dart';
+import 'package:van/data/repositories/session_repo.dart';
+import 'package:van/data/repositories/task_repo.dart';
+import 'package:van_core/van_core.dart';
 
 DateTime at(int day, int hour, [int minute = 0]) =>
     DateTime.utc(2026, 8, day, hour, minute);
 
 void main() {
-  late NovaDatabase db;
+  late VanDatabase db;
   late TaskRepo tasks;
   late SessionRepo sessions;
   late NudgeRepo nudges;
@@ -18,7 +18,7 @@ void main() {
   late FakeClock clock;
 
   setUp(() {
-    db = NovaDatabase.memory();
+    db = VanDatabase.memory();
     clock = FakeClock(at(19, 9));
     tasks = TaskRepo(db);
     sessions = SessionRepo(db);
@@ -459,9 +459,9 @@ void main() {
 
     test('appendAll writes a burst atomically', () async {
       await events.appendAll([
-        NovaEvent(type: EventType.sessionMissed, timestamp: at(19, 19)),
-        NovaEvent(type: EventType.interventionSelected, timestamp: at(19, 19)),
-        NovaEvent(type: EventType.nudgeScheduled, timestamp: at(19, 19)),
+        VanEvent(type: EventType.sessionMissed, timestamp: at(19, 19)),
+        VanEvent(type: EventType.interventionSelected, timestamp: at(19, 19)),
+        VanEvent(type: EventType.nudgeScheduled, timestamp: at(19, 19)),
       ]);
       expect(await events.count(), 3);
     });
@@ -470,8 +470,8 @@ void main() {
       'all returns the log oldest first, stable within a timestamp',
       () async {
         await events.appendAll([
-          NovaEvent(type: EventType.sessionMissed, timestamp: at(19, 19)),
-          NovaEvent(
+          VanEvent(type: EventType.sessionMissed, timestamp: at(19, 19)),
+          VanEvent(
             type: EventType.interventionSelected,
             timestamp: at(19, 19),
           ),

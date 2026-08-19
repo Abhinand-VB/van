@@ -1,7 +1,7 @@
 import 'package:drift/drift.dart';
-import 'package:nova/data/db/database.dart';
-import 'package:nova/data/repositories/mappers.dart';
-import 'package:nova_core/nova_core.dart';
+import 'package:van/data/db/database.dart';
+import 'package:van/data/repositories/mappers.dart';
+import 'package:van_core/van_core.dart';
 
 /// Storage for nudges and the replies to them.
 ///
@@ -12,7 +12,7 @@ class NudgeRepo {
   /// Creates a repository over [_db].
   NudgeRepo(this._db);
 
-  final NovaDatabase _db;
+  final VanDatabase _db;
 
   /// Inserts or replaces [nudge].
   Future<void> save(Nudge nudge) =>
@@ -81,7 +81,7 @@ class NudgeRepo {
   /// recently, at or after [since].
   ///
   /// Drives the fatigue penalty: a person who has swiped away three of these
-  /// today has told Nova something, and it should listen.
+  /// today has told Van something, and it should listen.
   Future<int> consecutiveDismissals(NudgeType type, DateTime since) async {
     final cutoff = since.toUtc().millisecondsSinceEpoch;
     final nudges =

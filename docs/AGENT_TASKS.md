@@ -1,4 +1,4 @@
-# Nova — Work Packages for Coding Agents
+# Van — Work Packages for Coding Agents
 
 Read `AGENTS.md` and `docs/ARCHITECTURE.md` before starting any package.
 
@@ -26,7 +26,7 @@ later package depends on.
 
 **Deliverables**
 
-- `flutter create` project, package name `nova`, org `dev.nova`, Kotlin, Android only
+- `flutter create` project, package name `van`, org `dev.van`, Kotlin, Android only
   (`--platforms android`). minSdk 26, targetSdk 36, compileSdk 36. JDK 17.
 - Dependency set (v1 — **no HTTP client**):
   `flutter_riverpod`, `drift`, `sqlite3_flutter_libs`, `path_provider`,
@@ -88,7 +88,7 @@ later package depends on.
   `EventRepo`. Each returns domain model types from `lib/core/model/`, never Drift row
   types. Mapping happens in the repo.
 - `lib/core/model/event.dart` — `EventType` enum (full list in architecture section 7) and
-  an immutable `NovaEvent`.
+  an immutable `VanEvent`.
 - `EventRepo.append(EventType, Map<String,dynamic> payload)` — the **only** write method.
   There is deliberately no `update` or `delete`. Add a comment saying so.
 - `EventRepo` queries: `since(DateTime)`, `ofType(EventType, {limit})`,
@@ -199,7 +199,7 @@ the fallback templates; WP-6 adds the model).
   `AndroidAlarmScheduler` impl over `android_alarm_manager_plus`,
   `UnsupportedAlarmScheduler` stub that throws a clear `UnsupportedError`.
 - `lib/platform/notifications.dart` — `Notifications` interface with
-  `show(NovaNotification)`, `cancel(id)`, `requestPermission()`; Android impl over
+  `show(VanNotification)`, `cancel(id)`, `requestPermission()`; Android impl over
   `flutter_local_notifications` with two channels: `nudges_normal`, `nudges_urgent`.
   Notification actions: **Start**, **Snooze 10**, **Not today**.
 - Kotlin: `NudgeReceiver.kt` registered for the alarm broadcast, starting the headless

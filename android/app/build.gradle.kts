@@ -6,7 +6,7 @@ plugins {
 }
 
 android {
-    namespace = "dev.nova.nova"
+    namespace = "dev.van.app"
     // Pinned rather than following flutter.compileSdkVersion, which resolves
     // to 37 on this Flutter version. The SDK manager installs that platform as
     // "android-37.0" while Gradle looks up "android-37", so every module that
@@ -28,7 +28,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "dev.nova.nova"
+        applicationId = "dev.van.app"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

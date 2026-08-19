@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Single-colour version for Android 13+ themed icons. The launcher tints this
+  to match the user's wallpaper, so it must be one flat shape with no colour
+  information of its own.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108"
+    android:tint="#FFFFFF">
+
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M50.4,84 L50.4,63 C50.4,60 52,58.2 54,58.2 C56,58.2 57.6,60 57.6,63 L57.6,84 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M40,56 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M68,56 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,42 m-18,0 a18,18 0 1,0 36,0 a18,18 0 1,0 -36,0 Z" />
+</vector>

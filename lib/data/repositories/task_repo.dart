@@ -1,14 +1,14 @@
 import 'package:drift/drift.dart';
-import 'package:nova/data/db/database.dart';
-import 'package:nova/data/repositories/mappers.dart';
-import 'package:nova_core/nova_core.dart';
+import 'package:van/data/db/database.dart';
+import 'package:van/data/repositories/mappers.dart';
+import 'package:van_core/van_core.dart';
 
 /// Storage for tasks. Returns domain models only; no Drift type escapes here.
 class TaskRepo {
   /// Creates a repository over [_db].
   TaskRepo(this._db);
 
-  final NovaDatabase _db;
+  final VanDatabase _db;
 
   /// Inserts or replaces [task].
   Future<void> save(Task task) =>

@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           flutter pub get
-          dart pub get --directory packages/nova_core
+          dart pub get --directory packages/van_core
 
       - name: Check formatting
         run: dart format --set-exit-if-changed .
@@ -34,7 +34,7 @@ jobs:
 
       - name: Core tests (pure Dart, no Flutter)
         run: dart test
-        working-directory: packages/nova_core
+        working-directory: packages/van_core
 
       - name: App tests
         run: flutter test

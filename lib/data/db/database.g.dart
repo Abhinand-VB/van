@@ -2881,9 +2881,9 @@ class SettingsCompanion extends UpdateCompanion<SettingRow> {
   }
 }
 
-abstract class _$NovaDatabase extends GeneratedDatabase {
-  _$NovaDatabase(QueryExecutor e) : super(e);
-  $NovaDatabaseManager get managers => $NovaDatabaseManager(this);
+abstract class _$VanDatabase extends GeneratedDatabase {
+  _$VanDatabase(QueryExecutor e) : super(e);
+  $VanDatabaseManager get managers => $VanDatabaseManager(this);
   late final $TasksTable tasks = $TasksTable(this);
   late final $WorkSessionsTable workSessions = $WorkSessionsTable(this);
   late final $NudgesTable nudges = $NudgesTable(this);
@@ -2972,11 +2972,11 @@ typedef $$TasksTableUpdateCompanionBuilder =
     });
 
 final class $$TasksTableReferences
-    extends BaseReferences<_$NovaDatabase, $TasksTable, TaskRow> {
+    extends BaseReferences<_$VanDatabase, $TasksTable, TaskRow> {
   $$TasksTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$WorkSessionsTable, List<WorkSessionRow>>
-  _workSessionsRefsTable(_$NovaDatabase db) => MultiTypedResultKey.fromTable(
+  _workSessionsRefsTable(_$VanDatabase db) => MultiTypedResultKey.fromTable(
     db.workSessions,
     aliasName: 'tasks__id__work_sessions__task_id',
   );
@@ -2994,7 +2994,7 @@ final class $$TasksTableReferences
   }
 }
 
-class $$TasksTableFilterComposer extends Composer<_$NovaDatabase, $TasksTable> {
+class $$TasksTableFilterComposer extends Composer<_$VanDatabase, $TasksTable> {
   $$TasksTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -3077,7 +3077,7 @@ class $$TasksTableFilterComposer extends Composer<_$NovaDatabase, $TasksTable> {
 }
 
 class $$TasksTableOrderingComposer
-    extends Composer<_$NovaDatabase, $TasksTable> {
+    extends Composer<_$VanDatabase, $TasksTable> {
   $$TasksTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -3132,7 +3132,7 @@ class $$TasksTableOrderingComposer
 }
 
 class $$TasksTableAnnotationComposer
-    extends Composer<_$NovaDatabase, $TasksTable> {
+    extends Composer<_$VanDatabase, $TasksTable> {
   $$TasksTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -3202,7 +3202,7 @@ class $$TasksTableAnnotationComposer
 class $$TasksTableTableManager
     extends
         RootTableManager<
-          _$NovaDatabase,
+          _$VanDatabase,
           $TasksTable,
           TaskRow,
           $$TasksTableFilterComposer,
@@ -3214,7 +3214,7 @@ class $$TasksTableTableManager
           TaskRow,
           PrefetchHooks Function({bool workSessionsRefs})
         > {
-  $$TasksTableTableManager(_$NovaDatabase db, $TasksTable table)
+  $$TasksTableTableManager(_$VanDatabase db, $TasksTable table)
     : super(
         TableManagerState(
           db: db,
@@ -3314,7 +3314,7 @@ class $$TasksTableTableManager
 
 typedef $$TasksTableProcessedTableManager =
     ProcessedTableManager<
-      _$NovaDatabase,
+      _$VanDatabase,
       $TasksTable,
       TaskRow,
       $$TasksTableFilterComposer,
@@ -3354,10 +3354,10 @@ typedef $$WorkSessionsTableUpdateCompanionBuilder =
     });
 
 final class $$WorkSessionsTableReferences
-    extends BaseReferences<_$NovaDatabase, $WorkSessionsTable, WorkSessionRow> {
+    extends BaseReferences<_$VanDatabase, $WorkSessionsTable, WorkSessionRow> {
   $$WorkSessionsTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
-  static $TasksTable _taskIdTable(_$NovaDatabase db) =>
+  static $TasksTable _taskIdTable(_$VanDatabase db) =>
       db.tasks.createAlias('work_sessions__task_id__tasks__id');
 
   $$TasksTableProcessedTableManager get taskId {
@@ -3376,7 +3376,7 @@ final class $$WorkSessionsTableReferences
 }
 
 class $$WorkSessionsTableFilterComposer
-    extends Composer<_$NovaDatabase, $WorkSessionsTable> {
+    extends Composer<_$VanDatabase, $WorkSessionsTable> {
   $$WorkSessionsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -3450,7 +3450,7 @@ class $$WorkSessionsTableFilterComposer
 }
 
 class $$WorkSessionsTableOrderingComposer
-    extends Composer<_$NovaDatabase, $WorkSessionsTable> {
+    extends Composer<_$VanDatabase, $WorkSessionsTable> {
   $$WorkSessionsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -3523,7 +3523,7 @@ class $$WorkSessionsTableOrderingComposer
 }
 
 class $$WorkSessionsTableAnnotationComposer
-    extends Composer<_$NovaDatabase, $WorkSessionsTable> {
+    extends Composer<_$VanDatabase, $WorkSessionsTable> {
   $$WorkSessionsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -3594,7 +3594,7 @@ class $$WorkSessionsTableAnnotationComposer
 class $$WorkSessionsTableTableManager
     extends
         RootTableManager<
-          _$NovaDatabase,
+          _$VanDatabase,
           $WorkSessionsTable,
           WorkSessionRow,
           $$WorkSessionsTableFilterComposer,
@@ -3606,7 +3606,7 @@ class $$WorkSessionsTableTableManager
           WorkSessionRow,
           PrefetchHooks Function({bool taskId})
         > {
-  $$WorkSessionsTableTableManager(_$NovaDatabase db, $WorkSessionsTable table)
+  $$WorkSessionsTableTableManager(_$VanDatabase db, $WorkSessionsTable table)
     : super(
         TableManagerState(
           db: db,
@@ -3720,7 +3720,7 @@ class $$WorkSessionsTableTableManager
 
 typedef $$WorkSessionsTableProcessedTableManager =
     ProcessedTableManager<
-      _$NovaDatabase,
+      _$VanDatabase,
       $WorkSessionsTable,
       WorkSessionRow,
       $$WorkSessionsTableFilterComposer,
@@ -3766,11 +3766,11 @@ typedef $$NudgesTableUpdateCompanionBuilder =
     });
 
 final class $$NudgesTableReferences
-    extends BaseReferences<_$NovaDatabase, $NudgesTable, NudgeRow> {
+    extends BaseReferences<_$VanDatabase, $NudgesTable, NudgeRow> {
   $$NudgesTableReferences(super.$_db, super.$_table, super.$_typedResult);
 
   static MultiTypedResultKey<$NudgeResponsesTable, List<NudgeResponseRow>>
-  _nudgeResponsesRefsTable(_$NovaDatabase db) => MultiTypedResultKey.fromTable(
+  _nudgeResponsesRefsTable(_$VanDatabase db) => MultiTypedResultKey.fromTable(
     db.nudgeResponses,
     aliasName: 'nudges__id__nudge_responses__nudge_id',
   );
@@ -3789,7 +3789,7 @@ final class $$NudgesTableReferences
 }
 
 class $$NudgesTableFilterComposer
-    extends Composer<_$NovaDatabase, $NudgesTable> {
+    extends Composer<_$VanDatabase, $NudgesTable> {
   $$NudgesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -3886,7 +3886,7 @@ class $$NudgesTableFilterComposer
 }
 
 class $$NudgesTableOrderingComposer
-    extends Composer<_$NovaDatabase, $NudgesTable> {
+    extends Composer<_$VanDatabase, $NudgesTable> {
   $$NudgesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -3956,7 +3956,7 @@ class $$NudgesTableOrderingComposer
 }
 
 class $$NudgesTableAnnotationComposer
-    extends Composer<_$NovaDatabase, $NudgesTable> {
+    extends Composer<_$VanDatabase, $NudgesTable> {
   $$NudgesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -4041,7 +4041,7 @@ class $$NudgesTableAnnotationComposer
 class $$NudgesTableTableManager
     extends
         RootTableManager<
-          _$NovaDatabase,
+          _$VanDatabase,
           $NudgesTable,
           NudgeRow,
           $$NudgesTableFilterComposer,
@@ -4053,7 +4053,7 @@ class $$NudgesTableTableManager
           NudgeRow,
           PrefetchHooks Function({bool nudgeResponsesRefs})
         > {
-  $$NudgesTableTableManager(_$NovaDatabase db, $NudgesTable table)
+  $$NudgesTableTableManager(_$VanDatabase db, $NudgesTable table)
     : super(
         TableManagerState(
           db: db,
@@ -4167,7 +4167,7 @@ class $$NudgesTableTableManager
 
 typedef $$NudgesTableProcessedTableManager =
     ProcessedTableManager<
-      _$NovaDatabase,
+      _$VanDatabase,
       $NudgesTable,
       NudgeRow,
       $$NudgesTableFilterComposer,
@@ -4202,14 +4202,14 @@ typedef $$NudgeResponsesTableUpdateCompanionBuilder =
 
 final class $$NudgeResponsesTableReferences
     extends
-        BaseReferences<_$NovaDatabase, $NudgeResponsesTable, NudgeResponseRow> {
+        BaseReferences<_$VanDatabase, $NudgeResponsesTable, NudgeResponseRow> {
   $$NudgeResponsesTableReferences(
     super.$_db,
     super.$_table,
     super.$_typedResult,
   );
 
-  static $NudgesTable _nudgeIdTable(_$NovaDatabase db) =>
+  static $NudgesTable _nudgeIdTable(_$VanDatabase db) =>
       db.nudges.createAlias('nudge_responses__nudge_id__nudges__id');
 
   $$NudgesTableProcessedTableManager get nudgeId {
@@ -4228,7 +4228,7 @@ final class $$NudgeResponsesTableReferences
 }
 
 class $$NudgeResponsesTableFilterComposer
-    extends Composer<_$NovaDatabase, $NudgeResponsesTable> {
+    extends Composer<_$VanDatabase, $NudgeResponsesTable> {
   $$NudgeResponsesTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -4287,7 +4287,7 @@ class $$NudgeResponsesTableFilterComposer
 }
 
 class $$NudgeResponsesTableOrderingComposer
-    extends Composer<_$NovaDatabase, $NudgeResponsesTable> {
+    extends Composer<_$VanDatabase, $NudgeResponsesTable> {
   $$NudgeResponsesTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -4345,7 +4345,7 @@ class $$NudgeResponsesTableOrderingComposer
 }
 
 class $$NudgeResponsesTableAnnotationComposer
-    extends Composer<_$NovaDatabase, $NudgeResponsesTable> {
+    extends Composer<_$VanDatabase, $NudgeResponsesTable> {
   $$NudgeResponsesTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -4401,7 +4401,7 @@ class $$NudgeResponsesTableAnnotationComposer
 class $$NudgeResponsesTableTableManager
     extends
         RootTableManager<
-          _$NovaDatabase,
+          _$VanDatabase,
           $NudgeResponsesTable,
           NudgeResponseRow,
           $$NudgeResponsesTableFilterComposer,
@@ -4414,7 +4414,7 @@ class $$NudgeResponsesTableTableManager
           PrefetchHooks Function({bool nudgeId})
         > {
   $$NudgeResponsesTableTableManager(
-    _$NovaDatabase db,
+    _$VanDatabase db,
     $NudgeResponsesTable table,
   ) : super(
         TableManagerState(
@@ -4518,7 +4518,7 @@ class $$NudgeResponsesTableTableManager
 
 typedef $$NudgeResponsesTableProcessedTableManager =
     ProcessedTableManager<
-      _$NovaDatabase,
+      _$VanDatabase,
       $NudgeResponsesTable,
       NudgeResponseRow,
       $$NudgeResponsesTableFilterComposer,
@@ -4546,7 +4546,7 @@ typedef $$EventsTableUpdateCompanionBuilder =
     });
 
 class $$EventsTableFilterComposer
-    extends Composer<_$NovaDatabase, $EventsTable> {
+    extends Composer<_$VanDatabase, $EventsTable> {
   $$EventsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -4577,7 +4577,7 @@ class $$EventsTableFilterComposer
 }
 
 class $$EventsTableOrderingComposer
-    extends Composer<_$NovaDatabase, $EventsTable> {
+    extends Composer<_$VanDatabase, $EventsTable> {
   $$EventsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -4607,7 +4607,7 @@ class $$EventsTableOrderingComposer
 }
 
 class $$EventsTableAnnotationComposer
-    extends Composer<_$NovaDatabase, $EventsTable> {
+    extends Composer<_$VanDatabase, $EventsTable> {
   $$EventsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -4633,7 +4633,7 @@ class $$EventsTableAnnotationComposer
 class $$EventsTableTableManager
     extends
         RootTableManager<
-          _$NovaDatabase,
+          _$VanDatabase,
           $EventsTable,
           EventRow,
           $$EventsTableFilterComposer,
@@ -4641,11 +4641,11 @@ class $$EventsTableTableManager
           $$EventsTableAnnotationComposer,
           $$EventsTableCreateCompanionBuilder,
           $$EventsTableUpdateCompanionBuilder,
-          (EventRow, BaseReferences<_$NovaDatabase, $EventsTable, EventRow>),
+          (EventRow, BaseReferences<_$VanDatabase, $EventsTable, EventRow>),
           EventRow,
           PrefetchHooks Function()
         > {
-  $$EventsTableTableManager(_$NovaDatabase db, $EventsTable table)
+  $$EventsTableTableManager(_$VanDatabase db, $EventsTable table)
     : super(
         TableManagerState(
           db: db,
@@ -4690,7 +4690,7 @@ class $$EventsTableTableManager
 
 typedef $$EventsTableProcessedTableManager =
     ProcessedTableManager<
-      _$NovaDatabase,
+      _$VanDatabase,
       $EventsTable,
       EventRow,
       $$EventsTableFilterComposer,
@@ -4698,7 +4698,7 @@ typedef $$EventsTableProcessedTableManager =
       $$EventsTableAnnotationComposer,
       $$EventsTableCreateCompanionBuilder,
       $$EventsTableUpdateCompanionBuilder,
-      (EventRow, BaseReferences<_$NovaDatabase, $EventsTable, EventRow>),
+      (EventRow, BaseReferences<_$VanDatabase, $EventsTable, EventRow>),
       EventRow,
       PrefetchHooks Function()
     >;
@@ -4716,7 +4716,7 @@ typedef $$SettingsTableUpdateCompanionBuilder =
     });
 
 class $$SettingsTableFilterComposer
-    extends Composer<_$NovaDatabase, $SettingsTable> {
+    extends Composer<_$VanDatabase, $SettingsTable> {
   $$SettingsTableFilterComposer({
     required super.$db,
     required super.$table,
@@ -4736,7 +4736,7 @@ class $$SettingsTableFilterComposer
 }
 
 class $$SettingsTableOrderingComposer
-    extends Composer<_$NovaDatabase, $SettingsTable> {
+    extends Composer<_$VanDatabase, $SettingsTable> {
   $$SettingsTableOrderingComposer({
     required super.$db,
     required super.$table,
@@ -4756,7 +4756,7 @@ class $$SettingsTableOrderingComposer
 }
 
 class $$SettingsTableAnnotationComposer
-    extends Composer<_$NovaDatabase, $SettingsTable> {
+    extends Composer<_$VanDatabase, $SettingsTable> {
   $$SettingsTableAnnotationComposer({
     required super.$db,
     required super.$table,
@@ -4774,7 +4774,7 @@ class $$SettingsTableAnnotationComposer
 class $$SettingsTableTableManager
     extends
         RootTableManager<
-          _$NovaDatabase,
+          _$VanDatabase,
           $SettingsTable,
           SettingRow,
           $$SettingsTableFilterComposer,
@@ -4784,12 +4784,12 @@ class $$SettingsTableTableManager
           $$SettingsTableUpdateCompanionBuilder,
           (
             SettingRow,
-            BaseReferences<_$NovaDatabase, $SettingsTable, SettingRow>,
+            BaseReferences<_$VanDatabase, $SettingsTable, SettingRow>,
           ),
           SettingRow,
           PrefetchHooks Function()
         > {
-  $$SettingsTableTableManager(_$NovaDatabase db, $SettingsTable table)
+  $$SettingsTableTableManager(_$VanDatabase db, $SettingsTable table)
     : super(
         TableManagerState(
           db: db,
@@ -4826,7 +4826,7 @@ class $$SettingsTableTableManager
 
 typedef $$SettingsTableProcessedTableManager =
     ProcessedTableManager<
-      _$NovaDatabase,
+      _$VanDatabase,
       $SettingsTable,
       SettingRow,
       $$SettingsTableFilterComposer,
@@ -4834,14 +4834,14 @@ typedef $$SettingsTableProcessedTableManager =
       $$SettingsTableAnnotationComposer,
       $$SettingsTableCreateCompanionBuilder,
       $$SettingsTableUpdateCompanionBuilder,
-      (SettingRow, BaseReferences<_$NovaDatabase, $SettingsTable, SettingRow>),
+      (SettingRow, BaseReferences<_$VanDatabase, $SettingsTable, SettingRow>),
       SettingRow,
       PrefetchHooks Function()
     >;
 
-class $NovaDatabaseManager {
-  final _$NovaDatabase _db;
-  $NovaDatabaseManager(this._db);
+class $VanDatabaseManager {
+  final _$VanDatabase _db;
+  $VanDatabaseManager(this._db);
   $$TasksTableTableManager get tasks =>
       $$TasksTableTableManager(_db, _db.tasks);
   $$WorkSessionsTableTableManager get workSessions =>

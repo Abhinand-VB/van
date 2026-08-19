@@ -1,11 +1,11 @@
-# AGENTS.md — Rules for coding agents working on Nova
+# AGENTS.md — Rules for coding agents working on Van
 
 Read this file completely before writing any code. Then read `docs/ARCHITECTURE.md`.
 Pick up work from `docs/AGENT_TASKS.md`.
 
 ## What this project is
 
-Nova is an Android app (Flutter) that helps one person stop wasting time. It does not
+Van is an Android app (Flutter) that helps one person stop wasting time. It does not
 just store tasks — it notices when a planned work session did not start, and responds.
 
 v1 runs **entirely offline** with an on-device model (Gemma 3n via LiteRT). It must be

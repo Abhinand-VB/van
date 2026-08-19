@@ -1,14 +1,14 @@
 import 'package:drift/drift.dart';
-import 'package:nova/data/db/database.dart';
-import 'package:nova/data/repositories/mappers.dart';
-import 'package:nova_core/nova_core.dart';
+import 'package:van/data/db/database.dart';
+import 'package:van/data/repositories/mappers.dart';
+import 'package:van_core/van_core.dart';
 
-/// Storage for work sessions - the blocks Nova nudges about.
+/// Storage for work sessions - the blocks Van nudges about.
 class SessionRepo {
   /// Creates a repository over [_db].
   SessionRepo(this._db);
 
-  final NovaDatabase _db;
+  final VanDatabase _db;
 
   /// Inserts or replaces [session].
   Future<void> save(WorkSession session) =>
@@ -72,7 +72,7 @@ class SessionRepo {
 
   /// The session currently running, if any.
   ///
-  /// Used by the suppression policy: Nova must not interrupt work it asked
+  /// Used by the suppression policy: Van must not interrupt work it asked
   /// for.
   Future<WorkSession?> inProgress() async {
     final row =

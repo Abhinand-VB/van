@@ -1,5 +1,5 @@
 import 'package:drift/drift.dart';
-import 'package:nova_core/nova_core.dart';
+import 'package:van_core/van_core.dart';
 
 /// Enums are stored by *name*, not index.
 ///
@@ -23,7 +23,7 @@ class Tasks extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
-/// The blocks Nova actually nudges about.
+/// The blocks Van actually nudges about.
 ///
 /// Indexed on planned start because the nudge engine's hot query is always
 /// "what is due between now and the next tick".
@@ -45,7 +45,7 @@ class WorkSessions extends Table {
   Set<Column<Object>> get primaryKey => {id};
 }
 
-/// Every interruption Nova considered, including the ones it decided against.
+/// Every interruption Van considered, including the ones it decided against.
 @TableIndex(name: 'idx_nudges_scheduled', columns: {#scheduledUtc})
 @TableIndex(name: 'idx_nudges_session', columns: {#sessionId})
 @DataClassName('NudgeRow')

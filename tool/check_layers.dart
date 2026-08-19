@@ -1,4 +1,4 @@
-// Architectural fitness function for Nova.
+// Architectural fitness function for Van.
 //
 // The rules in docs/ARCHITECTURE.md are only real if something enforces them.
 // This script is that something. It runs in CI ahead of the tests, because a
@@ -33,7 +33,7 @@ void main(List<String> args) {
 
 /// Rule A: the domain core imports nothing that ties it to a platform.
 ///
-/// nova_core is a separate package precisely so most of this is impossible,
+/// van_core is a separate package precisely so most of this is impossible,
 /// but a dependency could be added to its pubspec by accident. This catches it.
 Iterable<Violation> checkCorePurity() sync* {
   const allowedPrefixes = <String>[
@@ -45,10 +45,10 @@ Iterable<Violation> checkCorePurity() sync* {
     'dart:typed_data',
     'package:meta/',
     'package:collection/',
-    'package:nova_core/',
+    'package:van_core/',
   ];
 
-  for (final file in dartFilesUnder('packages/nova_core/lib')) {
+  for (final file in dartFilesUnder('packages/van_core/lib')) {
     final lines = stripComments(file.readAsStringSync()).split('\n');
     for (var i = 0; i < lines.length; i++) {
       final match = _importPattern.firstMatch(lines[i]);
@@ -62,7 +62,7 @@ Iterable<Violation> checkCorePurity() sync* {
         line: i + 1,
         rule: 'A - core purity (ARCHITECTURE.md P1)',
         detail:
-            'nova_core must not depend on "$uri". The core has to stay '
+            'van_core must not depend on "$uri". The core has to stay '
             'runnable under plain `dart test` and liftable to a server.',
         source: lines[i],
       );
@@ -82,7 +82,7 @@ Iterable<Violation> checkAmbientTime() sync* {
 
   for (final file in [
     ...dartFilesUnder('lib'),
-    ...dartFilesUnder('packages/nova_core/lib'),
+    ...dartFilesUnder('packages/van_core/lib'),
   ]) {
     final path = relative(file.path);
     if (allowed.contains(path)) continue;
@@ -121,7 +121,7 @@ Iterable<Violation> checkProviderLeakage() sync* {
   ];
 
   for (final file in [
-    ...dartFilesUnder('packages/nova_core/lib'),
+    ...dartFilesUnder('packages/van_core/lib'),
     ...dartFilesUnder('lib/ui'),
   ]) {
     final path = relative(file.path);

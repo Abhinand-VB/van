@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Van's mark: a tree.
+
+  Drawn as a vector rather than exported PNGs so it stays sharp at every
+  density and can be edited in a diff. The adaptive-icon canvas is 108x108dp
+  and launchers may mask it down to roughly the central 72x72, so all of the
+  artwork sits inside x/y 26..84.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Trunk, slightly tapered so it reads as organic at small sizes. -->
+    <path
+        android:fillColor="#8A6244"
+        android:pathData="M50.4,84 L50.4,63 C50.4,60 52,58.2 54,58.2 C56,58.2 57.6,60 57.6,63 L57.6,84 Z" />
+
+    <!-- Two short branches reaching into the canopy. -->
+    <path
+        android:fillColor="#8A6244"
+        android:pathData="M53.2,68.5 L44.6,60.6 L47.2,57.8 L55.8,65.7 Z" />
+    <path
+        android:fillColor="#8A6244"
+        android:pathData="M54.8,66.2 L62.4,58.6 L65,61.4 L57.4,69 Z" />
+
+    <!-- Canopy: three overlapping lobes, back ones first. -->
+    <path
+        android:fillColor="#6FC08A"
+        android:pathData="M40,56 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 Z" />
+    <path
+        android:fillColor="#6FC08A"
+        android:pathData="M68,56 m-14,0 a14,14 0 1,0 28,0 a14,14 0 1,0 -28,0 Z" />
+    <path
+        android:fillColor="#A7E8BD"
+        android:pathData="M54,42 m-18,0 a18,18 0 1,0 36,0 a18,18 0 1,0 -36,0 Z" />
+</vector>

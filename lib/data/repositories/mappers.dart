@@ -1,8 +1,8 @@
 import 'dart:convert';
 
 import 'package:drift/drift.dart';
-import 'package:nova/data/db/database.dart';
-import 'package:nova_core/nova_core.dart';
+import 'package:van/data/db/database.dart';
+import 'package:van_core/van_core.dart';
 
 /// Row-to-domain translation lives here so that repositories stay readable and
 /// no Drift type ever escapes the data layer.
@@ -131,7 +131,7 @@ NudgeResponsesCompanion responseToRow(NudgeResponse response) =>
 /// A payload that fails to decode yields an empty map rather than throwing:
 /// the log is append-only and historical, so one malformed row must never make
 /// the rest of it unreadable.
-NovaEvent eventFromRow(EventRow row) {
+VanEvent eventFromRow(EventRow row) {
   Map<String, Object?> payload;
   try {
     final decoded = jsonDecode(row.payloadJson);
@@ -139,7 +139,7 @@ NovaEvent eventFromRow(EventRow row) {
   } on FormatException {
     payload = const {};
   }
-  return NovaEvent(
+  return VanEvent(
     id: row.id,
     type: row.type,
     timestamp: _utc(row.tsUtc),
@@ -148,7 +148,7 @@ NovaEvent eventFromRow(EventRow row) {
 }
 
 /// Converts a domain event into a row for append.
-EventsCompanion eventToRow(NovaEvent event) => EventsCompanion.insert(
+EventsCompanion eventToRow(VanEvent event) => EventsCompanion.insert(
   tsUtc: _millis(event.timestamp),
   type: event.type,
   payloadJson: Value(jsonEncode(event.payload)),
