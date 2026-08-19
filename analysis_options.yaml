@@ -25,3 +25,6 @@ linter:
     # default, because a scheduling test that hides its offset or its estimate
     # is unreadable. Explicitness wins over terseness here.
     avoid_redundant_argument_values: false
+    # Reports false positives across layer boundaries in an app package:
+    # types reached only through an injected interface look unreachable to it.
+    unreachable_from_main: false
