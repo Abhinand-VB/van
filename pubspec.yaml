@@ -22,6 +22,7 @@ dependencies:
   # enforced by the dependency graph rather than by convention.
   nova_core:
     path: packages/nova_core
+  path: ^1.9.1
   path_provider: ^2.1.6
   sqlite3_flutter_libs: ^0.6.0+eol
 
