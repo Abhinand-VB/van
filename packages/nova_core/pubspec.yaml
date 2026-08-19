@@ -1,0 +1,16 @@
+name: nova_core
+description: >-
+  Pure Dart domain core for Nova. Contains no Flutter, no I/O, no database and
+  no ambient time. Everything here runs under `dart test` and could be lifted
+  to a server unchanged. See docs/ARCHITECTURE.md principle P1.
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ^3.11.5
+dependencies:
+  collection: ">=1.19.0 <2.0.0"
+  meta: ">=1.17.0 <2.0.0"
+dev_dependencies:
+  test: ^1.31.2
+  very_good_analysis: ^10.2.0

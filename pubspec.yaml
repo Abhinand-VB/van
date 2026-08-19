@@ -1,0 +1,42 @@
+name: nova
+description: >-
+  A proactive accountability companion. Nova does not just store what you meant
+  to do - it notices when a planned work session did not start, and responds.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  android_alarm_manager_plus: ^5.1.1
+  cupertino_icons: ^1.0.8
+  drift: ^2.34.3
+  flutter:
+    sdk: flutter
+  flutter_local_notifications: ^22.3.0
+  flutter_riverpod: ^2.6.1
+  flutter_secure_storage: ^11.0.0
+  # The pure domain core. No Flutter, no I/O, no ambient time - see
+  # docs/ARCHITECTURE.md P1. Kept a separate package so the boundary is
+  # enforced by the dependency graph rather than by convention.
+  nova_core:
+    path: packages/nova_core
+  path_provider: ^2.1.6
+  sqlite3_flutter_libs: ^0.6.0+eol
+
+dev_dependencies:
+  build_runner: ^2.15.1
+  drift_dev: ^2.34.0
+  flutter_test:
+    sdk: flutter
+  mocktail: ^1.0.5
+  very_good_analysis: ^10.2.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/prompts/
+    - assets/nudge_templates/
+    - assets/inference_config.json
+    - assets/policy.json
