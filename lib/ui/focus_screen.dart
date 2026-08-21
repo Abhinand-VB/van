@@ -97,9 +97,10 @@ class _FocusScreenState extends State<FocusScreen> {
   }
 
   Future<void> _stuck() async {
-    await widget.service.stopEarly(widget.session.id);
-    if (!mounted) return;
-    await widget.service.snooze(widget.session.id, minutes: 20);
+    // One call, because it is one decision. Doing this as stopEarly followed
+    // by snooze meant an interruption between them could leave the block
+    // stopped with nothing scheduled to pick it up again.
+    await widget.service.stuck(widget.session.id);
     if (mounted) Navigator.of(context).pop();
   }
 

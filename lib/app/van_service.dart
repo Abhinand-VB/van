@@ -589,9 +589,16 @@ class VanService {
   }
 
   /// Pushes a session back by [minutes], re-arming the ladder.
+  ///
+  /// Refuses work that is already closed, and that guard is reachable rather
+  /// than theoretical: with Van killed nothing cancels a notification until
+  /// an action is actually processed, so the 09:00 and 09:10 rungs of one
+  /// ladder can both be sitting in the shade. Pressing Snooze on each would
+  /// otherwise move the same piece of work twice and leave two replacement
+  /// blocks for it.
   Future<WorkSession?> snooze(String sessionId, {int minutes = 10}) async {
     final session = await _sessions.byId(sessionId);
-    if (session == null) return null;
+    if (session == null || session.isResolved) return null;
     final task = await _tasks.byId(session.taskId);
     if (task == null) return null;
 
@@ -614,10 +621,59 @@ class VanService {
     return next;
   }
 
+  /// Records that a running block was abandoned part-way, and offers another
+  /// go in [minutes].
+  ///
+  /// Its own method rather than `stopEarly` followed by `snooze`, which is
+  /// what the focus screen used to do. That pairing had two problems. The
+  /// second call overwrote the first's status, so a block that was genuinely
+  /// worked on ended up recorded only as moved. And it depended on `snooze`
+  /// accepting a resolved session, which is exactly the guard `snooze` needed
+  /// for its own sake.
+  ///
+  /// The original keeps `partial`: it was worked on, and the replacement
+  /// records the link through `parentSessionId`. Nothing reads the status to
+  /// decide behaviour - `hasStarted` and `isResolved` do that - so this is a
+  /// choice about which fact the row tells, and "they got started" is the one
+  /// worth keeping.
+  Future<WorkSession?> stuck(String sessionId, {int minutes = 20}) async {
+    final session = await _sessions.byId(sessionId);
+    if (session == null || session.isResolved) return null;
+    final task = await _tasks.byId(session.taskId);
+    if (task == null) return null;
+
+    final now = _clock.now();
+    // The ladder was already settled when they pressed START; this only
+    // clears anything the OS is still holding.
+    await _notifications.cancelForSession(sessionId);
+    await _sessions.save(session.stopEarly(now));
+    await _events.append(EventType.sessionPartial, {
+      'sessionId': sessionId,
+      'reason': 'stuck',
+    });
+
+    final next = session.replacement(
+      newId: _ids.next(),
+      newStart: now.add(Duration(minutes: minutes)),
+    );
+    await _sessions.save(next);
+    await _events.append(EventType.rescheduleApplied, {
+      'from': sessionId,
+      'to': next.id,
+      'moves': next.rescheduleCount,
+      'reason': 'stuck',
+    });
+    await _armLadder(next, task);
+    return next;
+  }
+
   /// Gives up on a session for today.
+  ///
+  /// Ignores work that is already closed - see the note on [snooze]; two
+  /// notifications for one ladder can outlive the block they are about.
   Future<void> notToday(String sessionId) async {
     final session = await _sessions.byId(sessionId);
-    if (session == null) return;
+    if (session == null || session.isResolved) return;
     await _settleLadder(sessionId, ResponseType.dismissed);
     await _notifications.cancelForSession(sessionId);
     await _sessions.save(session.skip());

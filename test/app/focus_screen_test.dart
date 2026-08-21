@@ -163,16 +163,76 @@ void main() {
         reason: 'being stuck is not the same as never having tried',
       );
 
-      // The status ends as `rescheduled`, not `partial`: _stuck stops the
-      // block early and then snoozes it, and the second call overwrites the
-      // first one's status. `actualStart` survives, and the sessionPartial
-      // event is in the append-only log, so nothing is truly lost - but the
-      // session row alone no longer says they got started. See issue 17.
-      expect(original.status, SessionStatus.rescheduled);
+      // `partial`, not `rescheduled`. The block was worked on, and the
+      // replacement records the link through parentSessionId - so the row
+      // keeps the more informative of the two facts. This used to come out
+      // as `rescheduled`, because _stuck stopped the block and then snoozed
+      // it and the second call overwrote the first's status.
+      expect(original.status, SessionStatus.partial);
 
       final next = (await service.upcoming()).single;
       expect(next.parentSessionId, live.session.id);
       expect(next.hasStarted, isFalse);
+    });
+  });
+
+  group('an action arriving twice', () {
+    // Reachable rather than theoretical. With Van killed nothing cancels a
+    // notification until an action is actually processed, so the 09:00 and
+    // 09:10 rungs of one ladder can both be sitting in the shade. Pressing
+    // the same button on each used to move the work twice.
+
+    test('a second Snooze does not move the work again', () async {
+      final captured = await service.capture('write the report 45 minutes');
+      final session = captured.sessions.first;
+
+      final first = await service.snooze(session.id);
+      final second = await service.snooze(session.id);
+
+      expect(first, isNotNull);
+      expect(second, isNull, reason: 'the block was already moved');
+      expect(
+        await service.upcoming(),
+        hasLength(1),
+        reason: 'two replacements for one block is the bug',
+      );
+    });
+
+    test('a second Not today does not reopen and re-skip', () async {
+      final captured = await service.capture('write the report 45 minutes');
+      final session = captured.sessions.first;
+
+      await service.notToday(session.id);
+      await service.notToday(session.id);
+
+      expect((await sessions.byId(session.id))!.status, SessionStatus.skipped);
+      expect(
+        await EventRepo(db, clock).ofType(EventType.sessionMissed),
+        hasLength(1),
+      );
+    });
+
+    test('Snooze cannot resurrect finished work', () async {
+      final live = await running('write the report 45 minutes');
+      await service.completeSession(live.session.id);
+
+      expect(await service.snooze(live.session.id), isNull);
+      expect(
+        (await sessions.byId(live.session.id))!.status,
+        SessionStatus.completed,
+      );
+      expect(await service.upcoming(), isEmpty);
+    });
+
+    test('being stuck twice does not queue two retries', () async {
+      final live = await running('write the report 45 minutes');
+
+      final first = await service.stuck(live.session.id);
+      final second = await service.stuck(live.session.id);
+
+      expect(first, isNotNull);
+      expect(second, isNull);
+      expect(await service.upcoming(), hasLength(1));
     });
   });
 
