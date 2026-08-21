@@ -275,6 +275,63 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, morning — pointing the new tool at the real phone
+
+**Finished.** The reader built last iteration had only ever been run against
+databases I generated myself. This ran it against the phone.
+
+**Pulling the database is not driving the UI.** The keyguard was up, so
+`OVERNIGHT.md` 3a rules out UI work — but the same document says *pull the
+database to check rather than guessing*, and `adb exec-out run-as` involves no
+screen, no lock screen and no settings change. Read-only, and the phone's copy
+is untouched.
+
+**Section 0 was wrong about the thing the owner was about to do.** It said six
+nudges were armed 09:00–09:55 and told them to ignore the 09:00 block. The
+database at 09:07 says: three live rungs, all for a single block, at 09:30,
+09:40 and 09:55; three further rows stood down as `answeredBeforeItFired`. A
+person following section 0 would have waited at 09:00, seen nothing, and
+concluded Van was broken — thirty minutes before it was due to say anything.
+That is the worst kind of documentation error, because it is confidently
+specific.
+
+**And something I could not explain.** Session `hljn1mbedk2`, the 09:00 block,
+has three `nudgeScheduled` events written at 01:40 — for 09:00, 09:10, 09:25 —
+and no rows at all in the `nudges` table. The session is still `planned`.
+`deleteForSession` is only reachable from `undoCapture`, which also removes the
+session, so that is not it. **I wrote it down as issue 23 and said I do not
+know the cause**, which is the only honest option: the history that would
+explain it is on the phone, and inventing a plausible mechanism in a handover
+document is worse than an open question. It matters because the row is how Van
+knows to mark a rung delivered or stand it down, so an alarm can be live with
+Android while Van has no record of it.
+
+**The tool I shipped an hour ago was lying, gently.** Against the real device it
+printed:
+
+```
+  scheduled          12
+  delivered          0
+```
+
+Van *cannot observe a notification appearing*. `nudgeDelivered` is written by
+`_recordAnswer` when a rung is answered, so an ignored nudge is never counted.
+Those two lines together read as "nudges are broken", and nothing supports that
+— it may equally mean twelve fired and nobody replied. Renamed to `answered`,
+with the caveat printed underneath.
+
+**The lesson is about labels rather than nudges.** A number that is cheap to
+compute and easy to mislabel is worse than no number, because it gets acted on.
+This one would have been read first, precisely because it sits next to the
+count it appears to contradict. Writing the reader was the right call; shipping
+it without asking what each column actually means was not.
+
+**Also worth noting against my own previous iteration:** I had written that the
+report was "verified end-to-end". It was — against databases I generated, which
+had answered rungs in them and so never showed the misleading case. Verification
+against your own fixtures tells you the code runs. It does not tell you the
+output is true.
+
 ### 21 August 2026, overnight — the log nobody could read
 
 **Finished.** Phone still locked, tree green at 545. This one is not a defect
