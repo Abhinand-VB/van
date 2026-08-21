@@ -19,7 +19,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **365 tests passing** — 230 in `packages/van_core` (pure Dart), 135 in the app.
+- **393 tests passing** — 230 in `packages/van_core` (pure Dart), 163 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -41,6 +41,8 @@ working configuration, not a degraded one.
 | App: settings store | 8 |
 | App: Now screen | 4 |
 | App: negotiate capability | 22 |
+| App: chat and task list | 14 |
+| App: notification ids | 6 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -55,7 +57,7 @@ working configuration, not a degraded one.
 | WP-3 | Nudge engine, escalation ladder, simulation harness | **Done** |
 | WP-5 | Inference abstraction, MockBackend, capabilities, fallbacks | **Done** |
 | WP-4 | Notifications (see deviation below) | **Done, altered** |
-| WP-7 | Now + Focus screens | **Done, reduced** |
+| WP-7 | Now + Focus + Chat + task list | **Done** |
 | WP-8 | Composition root, application service | **Done** |
 | WP-6 | On-device model backend | Not started (phase 2) |
 | WP-9 | Cloud backends (Claude / OpenAI / Gemini) | Not started (phase 3) |
@@ -64,6 +66,9 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+6a0d693  Derive notification ids instead of remembering them
+9e08ef3  Build the chat screen and the flat task list
+9a57658  Add the two service calls the chat screen and task list need
 889f23f  Build the negotiate capability, with the model kept on a short lead
 37de632  Stop the Now screen showing the same task twice
 02e045e  Ask for permission once, then say so instead of nagging
@@ -104,9 +109,10 @@ dependency but is currently unused.
 pubspec with no Flutter dependency, so it physically cannot import Flutter.
 This enforces architecture principle P1 structurally rather than by lint.
 
-**WP-7 was reduced.** Now and Focus screens exist. The chat screen and the flat
-task list were not built — quick-add covers capture, the Now screen covers
-execution. Add them if capture friction proves to be a real problem.
+**WP-7 is now complete.** Now and Focus screens shipped first; the chat screen
+and flat task list followed on 21 Aug (`9e08ef3`), reachable from a three-tab
+shell. Three tabs is the ceiling — a fourth would be the beginning of a
+productivity system.
 
 **The sweep marks rescued blocks `rescheduled`, not `skipped`.** The original
 board wording said "marks stale planned sessions skipped". Both statuses count
@@ -265,7 +271,8 @@ than this file.**
 | 7 | ~~`NudgeRepo` is never constructed in production~~ | **Done, 21 Aug 2026** (`c0ba269`). See section 3b. |
 | 8 | ~~The exact-alarm settings screen opens on every cold start~~ | **Done, 21 Aug 2026** (`02e045e`). Asked once, latched in the `settings` table; a standing banner on the Now screen replaces the nagging. Verified on the phone. |
 | 9 | ~~"After that" can repeat the task shown in NEXT~~ | **Done, 21 Aug 2026** (`37de632`). Verified on the phone. |
-| 10 | **`negotiate` is built but nothing calls it** | `889f23f`. The capability, its rules and its tests are done, but no code path invokes it. Its natural trigger is the user telling Van *why* — which is the chat screen, and does not exist. **This is the same shape as issue 7**, where a well-tested class sat unreachable for weeks, so it is on the board rather than buried in a commit message. Either wire it (chat screen) or accept it as phase-3 groundwork, but do not let it quietly become furniture. |
+| 10 | **`negotiate` is built but nothing calls it** | Still true, but the reason is now narrower. `889f23f` built the capability; `9e08ef3` built the chat screen, which is where its trigger belongs. What is missing is the *conversation*: chat currently only captures. Wiring `negotiate` means letting the user reply to a nudge with a reason and rendering the proposal as a second kind of card. That is the next obvious piece of work and it now has a concrete home. |
+| 12 | **`dumpsys alarm` cannot tell you what is pending** | Recorded because it cost me an hour tonight. The `type=RTC_WAKEUP tag=*walarm*:dev.van.app` lines live in a *cancellation history* section — each entry carries `Reason=alarm_cancelled` or `Reason=pi_cancelled`. Cancelling an alarm **adds** a line there, so the count only ever grows and looks like a leak. The truth is in `shared_prefs/scheduled_notifications.xml`, which lists exactly what will fire. See section 5b for the command. |
 | 11 | `ExtractTask` and `ComposeNudge` still hold their prompts inline | AGENTS.md has always said prompts live in `assets/prompts/` and are versioned; that directory sat empty until `889f23f`. `Negotiate` now loads `negotiate.v1.txt` via `PromptTemplate`, which is the loader the other two can move to. Not urgent, but it is a stated rule the codebase was quietly breaking. |
 
 ---
@@ -449,6 +456,78 @@ Press START on any one of them and issue 3 closes.
 - The banner is still showing the understated variant, and all six morning
   alarms survived a third reinstall.
 
+### Fifth run, ~02:55-03:05, the chat screen and a false alarm
+
+**Verified working on the phone:** the three-tab shell; chat capture end to end
+(sentence in, approval card out, composer cleared); Undo, which removed the
+task, its block and its nudges and left the card struck through and marked
+Removed; the flat task list; and swipe-to-complete.
+
+**The thing I got wrong, and how.** After the undo I counted
+`type=RTC_WAKEUP tag=*walarm*:dev.van.app` lines in `dumpsys alarm`, saw nine
+where I expected six, and concluded that undo was leaving alarms armed. It was
+not. That section is *cancellation history* — every line carries
+`Reason=alarm_cancelled` or `Reason=pi_cancelled` — so cancelling an alarm adds
+a line and the count only ever grows. Two of my three theories about the cause
+were wrong before I stopped guessing and read the plugin's own store, which had
+been correct the whole time.
+
+**Read this instead.** It lists precisely what will fire:
+
+```bash
+MSYS_NO_PATHCONV=1 adb exec-out run-as dev.van.app cat /data/data/dev.van.app/shared_prefs/scheduled_notifications.xml
+```
+
+Each entry carries `id`, `payload` (the session id), `scheduledDateTime` and
+`scheduleMode`. That is the source of truth; `dumpsys alarm` is not.
+
+**The chase was still worth it**, because it made me read `cancelForSession`,
+which had a genuine and much worse bug — see the next section.
+
+**Revised: what is on your phone in the morning.** Down to **three
+notifications, at 09:00, 09:10 and 09:25**, all for "Alarm wiring check". I
+undid "Chat card check" while testing the approval card and completed "Fatigue
+wiring check" while testing the swipe, and both correctly took their ladders
+with them. Two tasks remain open: "Alarm wiring check" and "Hi".
+
+Still `inexactAllowWhileIdle`, so they will land near those times rather than
+on them until you grant the alarm permission from the banner.
+
+---
+
+## 5c. The cancel that never worked
+
+Found while chasing the false alarm above, and it is the worst bug the project
+has had.
+
+`cancelForSession` looked up a session's notification ids in
+`_sessionByNotificationId` — an **in-memory map**, filled only by `schedule()`,
+only in the process that did the scheduling. Van arms a ladder and cancels the
+rest of it when the user responds, but that response arrives hours later, in a
+different process, after the phone has been idle. The map is empty by then and
+the cancel silently does nothing.
+
+Every path that stands nudges down was affected across restarts, since WP-4:
+START, snooze, not-today, the sweep, `completeTask`, `undoCapture`. Press START
+and get chased at +10 and +25 anyway.
+
+`LadderIds` (`lib/platform/notifications.dart`) removes the state. Each session
+owns a block of eight consecutive ids derived from its id;
+`cancelForSession` cancels the whole block. Cancelling an id that was never
+scheduled is a no-op, so it cannot miss a rung and cannot drift if the ladder
+changes length.
+
+**The test fake was complicit**, which is why nothing caught this. It
+implemented `cancelForSession` by filtering on `PendingNudge.sessionId` — a
+field the real canceller has never had access to, since it is handed a session
+id and nothing else. The fake passed while the device could not have worked. It
+now derives ids exactly as the device does.
+
+Verified across processes: a ladder armed at 01:55 was cancelled at 03:04 by a
+process started at 03:00 that had scheduled nothing, and the entries are gone
+from the plugin store. That also settles that `String.hashCode` is stable
+across processes here, which the derived ids depend on.
+
 ---
 
 ## 6. Product decisions on record
@@ -476,22 +555,19 @@ Press START on any one of them and issue 3 closes.
 
 ## 7. Suggested next steps, in order
 
-1. **Grant Van "Alarms & reminders"** - tap the banner on the Now screen. One
-   tap, and it is the last thing between Van firing on the minute rather than
-   within the hour.
-2. **Watch a nudge arrive and press START.** That closes the last gap in issue
-   3 and is the only part of the loop never yet observed end to end.
-3. **Use it for a week.** The loop is functionally complete (`74cb226`), can
-   reach you (`3085a06`), backs off when ignored (`c0ba269`), and no longer
-   ambushes you at launch (`02e045e`). Everything after this should be driven
-   by what annoys or fails in real use. Two dials I would watch: the sweep's
-   five-minute replacement lead may feel too eager, and the fatigue threshold
-   of two ignored ladders may prove too twitchy or too slow
-   (`SuppressionPolicy.dismissalLimit`, one number).
-4. **Decide what happens to `negotiate`** (issue 10). It is built and unused.
-   The honest options are to build the chat screen so it has a trigger, or to
-   label it phase-3 groundwork and stop adding capabilities until something
-   calls one. I would not build a fourth capability before either.
+1. **Grant Van "Alarms & reminders"** - tap the banner on the Now screen.
+2. **Watch a nudge arrive and press START.** Three are armed for 09:00, 09:10
+   and 09:25. This closes the last gap in issue 3, and it now also exercises
+   the cancel fix in `5c`: pressing START should stop the 09:10 and 09:25
+   rungs, which before tonight it would not have.
+3. **Use it for a week.** The loop is complete, can reach you, backs off when
+   ignored, no longer ambushes you at launch, and now actually stands nudges
+   down when you respond. Everything after this should be driven by what
+   annoys or fails in real use.
+4. **Wire `negotiate` into chat** (issue 10). The capability is built and the
+   screen now exists; what is missing is letting you reply to a nudge with a
+   reason and rendering the proposal as a second kind of card. It is the last
+   thing standing between Van and the conversation it was designed around.
 
 ---
 
@@ -499,6 +575,53 @@ Press START on any one of them and issue 3 closes.
 
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
+
+### 21 August 2026, overnight — the chat screen, and a cancel that never worked
+
+**Finished.** Work queue item 3, and the answer to the question STATUS left
+open: build the trigger rather than label a finished capability as groundwork.
+
+*The chat screen* (`9e08ef3`), with the plan shown as an approval card. Undo is
+what makes it an approval rather than a receipt: it removes the task, its
+blocks and its armed nudges, and the card stays struck through and marked
+Removed rather than vanishing, because deleting it would make the conversation
+lie about what was asked for.
+
+*The flat task list*, deadline order, swipe right to finish. No folders, no
+labels, no projects. Those turn a list you act on into a system you maintain.
+
+*Two service calls* (`9a57658`) underneath: `completeTask` stands remaining
+blocks down as skipped rather than completed, and settles any nudge that had
+already fired as engagement - finishing the work late must not build fatigue
+against you. `undoCapture` deletes rather than marking `abandoned`, because
+`abandoned` means you gave up and this means Van misread a sentence.
+
+WP-7 is now complete rather than reduced. 365 to 393 tests.
+
+**The thing to actually read: section 5c.** While chasing what turned out to be
+a false alarm, I found that `cancelForSession` has never worked across app
+restarts. It looked ids up in an in-memory map filled only by the process that
+did the scheduling - and the response to a nudge always arrives in a later
+process. So START, snooze, not-today, the sweep and both new methods all
+silently failed to stand nudges down. Press START, get chased anyway. Fixed by
+deriving ids instead of remembering them, and verified across processes.
+
+The test fake had been hiding it by matching on a field the real canceller
+cannot see. That is the second time this week a fake passed while the device
+could not work, and it is worth a standing suspicion: **when a fake takes a
+shortcut the real implementation cannot take, it is not a fake, it is a
+fiction.**
+
+**Tried, and got wrong.** I read `dumpsys alarm` as a list of pending alarms
+and reported a leak that did not exist. It is a cancellation *history* section;
+cancelling adds lines to it. I had two further wrong theories before I stopped
+guessing and read the plugin's own store. Issue 12 records the right command so
+nobody repeats it, and I amended the commit message that had stated the false
+finding.
+
+**What I need from you.** Nothing blocking. Next-step 4 is the interesting one:
+`negotiate` now has a home and wiring it is the last piece of the conversation
+Van was designed around.
 
 ### 21 August 2026, overnight — a small wrongness, and `negotiate`
 
