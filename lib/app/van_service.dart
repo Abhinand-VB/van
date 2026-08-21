@@ -462,8 +462,12 @@ class VanService {
   }
 
   /// A stable notification id for rung [rung] of [sessionId].
+  ///
+  /// Delegates so there is exactly one formula: `cancelForSession` derives the
+  /// same ids without being told them, which is what lets a ladder armed
+  /// yesterday be stood down today.
   static int notificationId(String sessionId, int rung) =>
-      (sessionId.hashCode & 0x3FFFFF) * 8 + rung;
+      LadderIds.forRung(sessionId, rung);
 
   /// Records an explicit START and stands the remaining nudges down.
   Future<WorkSession?> startSession(String sessionId) async {

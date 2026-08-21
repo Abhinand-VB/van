@@ -59,11 +59,13 @@ class FakeNotifications implements Notifications {
 
   @override
   Future<void> cancelForSession(String sessionId) async {
-    final ids = scheduled
-        .where((n) => n.sessionId == sessionId)
-        .map((n) => n.id)
-        .toList();
-    for (final id in ids) {
+    // Deliberately derives the ids exactly as the device does, rather than
+    // filtering on PendingNudge.sessionId. The real canceller has no such
+    // field to look at - it is handed a session id and nothing else, usually
+    // in a process that did no scheduling at all. A fake that matched on the
+    // field would pass while the device silently cancelled nothing, which is
+    // precisely what happened.
+    for (final id in LadderIds.forSession(sessionId)) {
       await cancel(id);
     }
   }

@@ -55,6 +55,36 @@ enum NudgeAction {
   notToday,
 }
 
+/// Notification ids for one session's escalation ladder.
+///
+/// Derived from the session id rather than remembered, and that is the whole
+/// point. Van pre-schedules a ladder and cancels the rest of it the moment the
+/// user responds - but the response routinely arrives in a *later process*
+/// than the arming did, hours later, after the phone has been idle. Anything
+/// that has to be looked up in memory is empty by then, and the cancel
+/// silently does nothing.
+///
+/// Each session owns a block of [perSession] consecutive ids. Cancelling
+/// simply cancels the whole block: cancelling an id that was never scheduled
+/// is a no-op, so this can never miss a rung, and it cannot drift if the
+/// ladder ever grows or shrinks.
+abstract final class LadderIds {
+  /// Ids reserved per session. The ladder is three rungs today; the block is
+  /// deliberately larger so growing it needs no thought here.
+  static const perSession = 8;
+
+  /// The id for rung [rung] of [sessionId].
+  static int forRung(String sessionId, int rung) {
+    assert(rung >= 0 && rung < perSession, 'rung must fit the reserved block');
+    return (sessionId.hashCode & 0x3FFFFF) * perSession + rung;
+  }
+
+  /// Every id [sessionId] could possibly have used.
+  static List<int> forSession(String sessionId) => [
+    for (var rung = 0; rung < perSession; rung++) forRung(sessionId, rung),
+  ];
+}
+
 /// Which of the two grants Van needs the OS has actually given.
 ///
 /// They are separate permissions and they fail differently, so a single
@@ -140,10 +170,6 @@ class AndroidNotifications implements Notifications {
   static const _normalChannel = 'van_nudges_v2';
   static const _urgentChannel = 'van_nudges_urgent_v2';
   static const _retiredChannels = ['van_nudges', 'van_nudges_urgent'];
-
-  /// Maps a notification id back to the session it concerns, so a tap can be
-  /// attributed without round-tripping through the database.
-  final _sessionByNotificationId = <int, String>{};
 
   @override
   Future<void> init(
@@ -238,8 +264,6 @@ class AndroidNotifications implements Notifications {
 
   @override
   Future<void> schedule(PendingNudge nudge) async {
-    _sessionByNotificationId[nudge.id] = nudge.sessionId;
-
     try {
       await _zonedSchedule(nudge, AndroidScheduleMode.exactAllowWhileIdle);
     } on PlatformException catch (e) {
@@ -271,7 +295,6 @@ class AndroidNotifications implements Notifications {
 
   @override
   Future<void> showNow(PendingNudge nudge) async {
-    _sessionByNotificationId[nudge.id] = nudge.sessionId;
     await _plugin.show(
       id: nudge.id,
       title: nudge.title,
@@ -312,18 +335,11 @@ class AndroidNotifications implements Notifications {
   }
 
   @override
-  Future<void> cancel(int id) async {
-    _sessionByNotificationId.remove(id);
-    await _plugin.cancel(id: id);
-  }
+  Future<void> cancel(int id) async => _plugin.cancel(id: id);
 
   @override
   Future<void> cancelForSession(String sessionId) async {
-    final ids = _sessionByNotificationId.entries
-        .where((e) => e.value == sessionId)
-        .map((e) => e.key)
-        .toList();
-    for (final id in ids) {
+    for (final id in LadderIds.forSession(sessionId)) {
       await cancel(id);
     }
   }
