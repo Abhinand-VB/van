@@ -90,12 +90,22 @@ class NudgeResponses extends Table {
 /// reason the log can be trusted later as the app's memory.
 @TableIndex(name: 'idx_events_ts', columns: {#tsUtc})
 @TableIndex(name: 'idx_events_type', columns: {#type})
+@TableIndex(name: 'idx_events_session', columns: {#sessionId})
 @DataClassName('EventRow')
 class Events extends Table {
   IntColumn get id => integer().autoIncrement()();
   IntColumn get tsUtc => integer()();
   TextColumn get type => textEnum<EventType>()();
   TextColumn get payloadJson => text().withDefault(const Constant('{}'))();
+
+  /// Lifted out of [payloadJson] so the log can be read per session without
+  /// loading all of it. Null for events that are not about a session, which is
+  /// most of them.
+  ///
+  /// A denormalisation, and the only one in the schema. It does not weaken the
+  /// append-only rule: the payload is still the record, this is a copy of one
+  /// field made at write time and never edited afterwards.
+  TextColumn get sessionId => text().nullable()();
 }
 
 /// Small key/value store for things that are not worth a table.

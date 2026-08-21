@@ -65,18 +65,23 @@ class EventRepo {
     return query.map(eventFromRow).get();
   }
 
-  /// Every event whose payload names [sessionId], oldest first.
+  /// Every event about [sessionId], oldest first.
   ///
-  /// The session id lives inside the JSON payload rather than a column, so
-  /// this is a scan. That is acceptable at single-user volumes and keeps the
-  /// log schema-free; revisit if the table ever grows past a few hundred
-  /// thousand rows.
-  Future<List<VanEvent>> forSession(String sessionId) async {
-    final all = await (_db.select(
-      _db.events,
-    )..orderBy([(e) => OrderingTerm.asc(e.tsUtc)])).map(eventFromRow).get();
-    return all.where((e) => e.field<String>('sessionId') == sessionId).toList();
-  }
+  /// Reads the indexed column rather than decoding every payload in the log.
+  ///
+  /// Note this finds events that *name* the session in their `sessionId`
+  /// field. A reschedule records `from` and `to` instead, so a replaced block
+  /// does not appear in its predecessor's history - true before this change
+  /// too, and the chain is followed through `WorkSession.parentSessionId`.
+  Future<List<VanEvent>> forSession(String sessionId) =>
+      (_db.select(_db.events)
+            ..where((e) => e.sessionId.equals(sessionId))
+            ..orderBy([
+              (e) => OrderingTerm.asc(e.tsUtc),
+              (e) => OrderingTerm.asc(e.id),
+            ]))
+          .map(eventFromRow)
+          .get();
 
   /// Total number of recorded events.
   Future<int> count() async {

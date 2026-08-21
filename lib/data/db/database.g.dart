@@ -2418,8 +2418,25 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
     requiredDuringInsert: false,
     defaultValue: const Constant('{}'),
   );
+  static const VerificationMeta _sessionIdMeta = const VerificationMeta(
+    'sessionId',
+  );
   @override
-  List<GeneratedColumn> get $columns => [id, tsUtc, type, payloadJson];
+  late final GeneratedColumn<String> sessionId = GeneratedColumn<String>(
+    'session_id',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    tsUtc,
+    type,
+    payloadJson,
+    sessionId,
+  ];
   @override
   String get aliasedName => _alias ?? actualTableName;
   @override
@@ -2452,6 +2469,12 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
         ),
       );
     }
+    if (data.containsKey('session_id')) {
+      context.handle(
+        _sessionIdMeta,
+        sessionId.isAcceptableOrUnknown(data['session_id']!, _sessionIdMeta),
+      );
+    }
     return context;
   }
 
@@ -2479,6 +2502,10 @@ class $EventsTable extends Events with TableInfo<$EventsTable, EventRow> {
         DriftSqlType.string,
         data['${effectivePrefix}payload_json'],
       )!,
+      sessionId: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}session_id'],
+      ),
     );
   }
 
@@ -2496,11 +2523,21 @@ class EventRow extends DataClass implements Insertable<EventRow> {
   final int tsUtc;
   final EventType type;
   final String payloadJson;
+
+  /// Lifted out of [payloadJson] so the log can be read per session without
+  /// loading all of it. Null for events that are not about a session, which is
+  /// most of them.
+  ///
+  /// A denormalisation, and the only one in the schema. It does not weaken the
+  /// append-only rule: the payload is still the record, this is a copy of one
+  /// field made at write time and never edited afterwards.
+  final String? sessionId;
   const EventRow({
     required this.id,
     required this.tsUtc,
     required this.type,
     required this.payloadJson,
+    this.sessionId,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -2511,6 +2548,9 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       map['type'] = Variable<String>($EventsTable.$convertertype.toSql(type));
     }
     map['payload_json'] = Variable<String>(payloadJson);
+    if (!nullToAbsent || sessionId != null) {
+      map['session_id'] = Variable<String>(sessionId);
+    }
     return map;
   }
 
@@ -2520,6 +2560,9 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       tsUtc: Value(tsUtc),
       type: Value(type),
       payloadJson: Value(payloadJson),
+      sessionId: sessionId == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sessionId),
     );
   }
 
@@ -2535,6 +2578,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
         serializer.fromJson<String>(json['type']),
       ),
       payloadJson: serializer.fromJson<String>(json['payloadJson']),
+      sessionId: serializer.fromJson<String?>(json['sessionId']),
     );
   }
   @override
@@ -2547,6 +2591,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
         $EventsTable.$convertertype.toJson(type),
       ),
       'payloadJson': serializer.toJson<String>(payloadJson),
+      'sessionId': serializer.toJson<String?>(sessionId),
     };
   }
 
@@ -2555,11 +2600,13 @@ class EventRow extends DataClass implements Insertable<EventRow> {
     int? tsUtc,
     EventType? type,
     String? payloadJson,
+    Value<String?> sessionId = const Value.absent(),
   }) => EventRow(
     id: id ?? this.id,
     tsUtc: tsUtc ?? this.tsUtc,
     type: type ?? this.type,
     payloadJson: payloadJson ?? this.payloadJson,
+    sessionId: sessionId.present ? sessionId.value : this.sessionId,
   );
   EventRow copyWithCompanion(EventsCompanion data) {
     return EventRow(
@@ -2569,6 +2616,7 @@ class EventRow extends DataClass implements Insertable<EventRow> {
       payloadJson: data.payloadJson.present
           ? data.payloadJson.value
           : this.payloadJson,
+      sessionId: data.sessionId.present ? data.sessionId.value : this.sessionId,
     );
   }
 
@@ -2578,13 +2626,14 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           ..write('id: $id, ')
           ..write('tsUtc: $tsUtc, ')
           ..write('type: $type, ')
-          ..write('payloadJson: $payloadJson')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('sessionId: $sessionId')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, tsUtc, type, payloadJson);
+  int get hashCode => Object.hash(id, tsUtc, type, payloadJson, sessionId);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -2592,7 +2641,8 @@ class EventRow extends DataClass implements Insertable<EventRow> {
           other.id == this.id &&
           other.tsUtc == this.tsUtc &&
           other.type == this.type &&
-          other.payloadJson == this.payloadJson);
+          other.payloadJson == this.payloadJson &&
+          other.sessionId == this.sessionId);
 }
 
 class EventsCompanion extends UpdateCompanion<EventRow> {
@@ -2600,17 +2650,20 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
   final Value<int> tsUtc;
   final Value<EventType> type;
   final Value<String> payloadJson;
+  final Value<String?> sessionId;
   const EventsCompanion({
     this.id = const Value.absent(),
     this.tsUtc = const Value.absent(),
     this.type = const Value.absent(),
     this.payloadJson = const Value.absent(),
+    this.sessionId = const Value.absent(),
   });
   EventsCompanion.insert({
     this.id = const Value.absent(),
     required int tsUtc,
     required EventType type,
     this.payloadJson = const Value.absent(),
+    this.sessionId = const Value.absent(),
   }) : tsUtc = Value(tsUtc),
        type = Value(type);
   static Insertable<EventRow> custom({
@@ -2618,12 +2671,14 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     Expression<int>? tsUtc,
     Expression<String>? type,
     Expression<String>? payloadJson,
+    Expression<String>? sessionId,
   }) {
     return RawValuesInsertable({
       if (id != null) 'id': id,
       if (tsUtc != null) 'ts_utc': tsUtc,
       if (type != null) 'type': type,
       if (payloadJson != null) 'payload_json': payloadJson,
+      if (sessionId != null) 'session_id': sessionId,
     });
   }
 
@@ -2632,12 +2687,14 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     Value<int>? tsUtc,
     Value<EventType>? type,
     Value<String>? payloadJson,
+    Value<String?>? sessionId,
   }) {
     return EventsCompanion(
       id: id ?? this.id,
       tsUtc: tsUtc ?? this.tsUtc,
       type: type ?? this.type,
       payloadJson: payloadJson ?? this.payloadJson,
+      sessionId: sessionId ?? this.sessionId,
     );
   }
 
@@ -2658,6 +2715,9 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
     if (payloadJson.present) {
       map['payload_json'] = Variable<String>(payloadJson.value);
     }
+    if (sessionId.present) {
+      map['session_id'] = Variable<String>(sessionId.value);
+    }
     return map;
   }
 
@@ -2667,7 +2727,8 @@ class EventsCompanion extends UpdateCompanion<EventRow> {
           ..write('id: $id, ')
           ..write('tsUtc: $tsUtc, ')
           ..write('type: $type, ')
-          ..write('payloadJson: $payloadJson')
+          ..write('payloadJson: $payloadJson, ')
+          ..write('sessionId: $sessionId')
           ..write(')'))
         .toString();
   }
@@ -2922,6 +2983,10 @@ abstract class _$VanDatabase extends GeneratedDatabase {
     'idx_events_type',
     'CREATE INDEX idx_events_type ON events (type)',
   );
+  late final Index idxEventsSession = Index(
+    'idx_events_session',
+    'CREATE INDEX idx_events_session ON events (session_id)',
+  );
   @override
   Iterable<TableInfo<Table, Object?>> get allTables =>
       allSchemaEntities.whereType<TableInfo<Table, Object?>>();
@@ -2941,6 +3006,7 @@ abstract class _$VanDatabase extends GeneratedDatabase {
     idxResponsesNudge,
     idxEventsTs,
     idxEventsType,
+    idxEventsSession,
   ];
 }
 
@@ -4536,6 +4602,7 @@ typedef $$EventsTableCreateCompanionBuilder =
       required int tsUtc,
       required EventType type,
       Value<String> payloadJson,
+      Value<String?> sessionId,
     });
 typedef $$EventsTableUpdateCompanionBuilder =
     EventsCompanion Function({
@@ -4543,6 +4610,7 @@ typedef $$EventsTableUpdateCompanionBuilder =
       Value<int> tsUtc,
       Value<EventType> type,
       Value<String> payloadJson,
+      Value<String?> sessionId,
     });
 
 class $$EventsTableFilterComposer
@@ -4572,6 +4640,11 @@ class $$EventsTableFilterComposer
 
   ColumnFilters<String> get payloadJson => $composableBuilder(
     column: $table.payloadJson,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -4604,6 +4677,11 @@ class $$EventsTableOrderingComposer
     column: $table.payloadJson,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get sessionId => $composableBuilder(
+    column: $table.sessionId,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$EventsTableAnnotationComposer
@@ -4628,6 +4706,9 @@ class $$EventsTableAnnotationComposer
     column: $table.payloadJson,
     builder: (column) => column,
   );
+
+  GeneratedColumn<String> get sessionId =>
+      $composableBuilder(column: $table.sessionId, builder: (column) => column);
 }
 
 class $$EventsTableTableManager
@@ -4662,11 +4743,13 @@ class $$EventsTableTableManager
                 Value<int> tsUtc = const Value.absent(),
                 Value<EventType> type = const Value.absent(),
                 Value<String> payloadJson = const Value.absent(),
+                Value<String?> sessionId = const Value.absent(),
               }) => EventsCompanion(
                 id: id,
                 tsUtc: tsUtc,
                 type: type,
                 payloadJson: payloadJson,
+                sessionId: sessionId,
               ),
           createCompanionCallback:
               ({
@@ -4674,11 +4757,13 @@ class $$EventsTableTableManager
                 required int tsUtc,
                 required EventType type,
                 Value<String> payloadJson = const Value.absent(),
+                Value<String?> sessionId = const Value.absent(),
               }) => EventsCompanion.insert(
                 id: id,
                 tsUtc: tsUtc,
                 type: type,
                 payloadJson: payloadJson,
+                sessionId: sessionId,
               ),
           withReferenceMapper: (p0) => p0
               .map((e) => (e.readTable(table), BaseReferences(db, table, e)))

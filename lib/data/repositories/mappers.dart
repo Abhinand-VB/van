@@ -148,8 +148,12 @@ VanEvent eventFromRow(EventRow row) {
 }
 
 /// Converts a domain event into a row for append.
+///
+/// The session id is copied out of the payload here, at write time, so it
+/// can be indexed. The payload remains the record of what happened.
 EventsCompanion eventToRow(VanEvent event) => EventsCompanion.insert(
   tsUtc: _millis(event.timestamp),
   type: event.type,
   payloadJson: Value(jsonEncode(event.payload)),
+  sessionId: Value(event.field<String>('sessionId')),
 );

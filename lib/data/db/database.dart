@@ -24,13 +24,43 @@ class VanDatabase extends _$VanDatabase {
   /// Opens a throwaway in-memory database for tests.
   VanDatabase.memory() : super(NativeDatabase.memory());
 
+  /// Opens over an executor the caller already has.
+  ///
+  /// Exists so a migration can be tested against a database built by hand at
+  /// an older version. This one runs on a phone holding the only copy of the
+  /// event log, so "it compiled" is not enough assurance.
+  VanDatabase.on(super.e);
+
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 2;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) async {
       await m.createAll();
+    },
+    onUpgrade: (m, from, to) async {
+      // v2 lifts sessionId out of the JSON payload into an indexed column, so
+      // reading one session's history stops meaning "load the entire log and
+      // filter it in Dart".
+      if (from < 2) {
+        await m.addColumn(events, events.sessionId);
+        // Backfill rather than leaving history unsearchable. json_extract
+        // returns null for rows whose payload has no sessionId, which is
+        // exactly the value those rows should carry.
+        //
+        // The json_valid guard is not defensive padding. json_extract raises
+        // on malformed JSON, which aborts the whole UPDATE - so one bad row
+        // anywhere in the log would fail the migration and leave the app
+        // unable to open. `eventFromRow` has always tolerated an unparseable
+        // payload, so such a row is possible by construction, and there is a
+        // test for exactly this.
+        await customStatement(
+          'UPDATE events '
+          r"SET session_id = json_extract(payload_json, '$.sessionId') "
+          'WHERE session_id IS NULL AND json_valid(payload_json)',
+        );
+      }
     },
     beforeOpen: (details) async {
       // Foreign keys are off by default in SQLite. Without this the

@@ -35,6 +35,9 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   mocktail: ^1.0.5
+  # Used only by the migration test, which builds a schema-v1 database by hand
+  # so the upgrade is proven against the shape actually on the phone.
+  sqlite3: ^3.5.1
   very_good_analysis: ^10.2.0
 
 flutter:
