@@ -275,6 +275,48 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — one isolate, two operations
+
+**Finished.** Phone still locked. Tree green at 544 before starting. This
+iteration's question was about interleaving: Van's writes are all read-decide-
+write, so what happens when two of them overlap?
+
+**The honest first answer was "probably nothing, it is single-isolate".** That
+is the mistake. One isolate cannot race in the middle of a statement, which is
+not the same as not racing. `capture` and `sweepStaleSessions` both read the
+schedule, pick a gap, and write — and between those they await the database,
+the model, and the notification channel.
+
+**So I reproduced it rather than reasoning about it.** I gave the fake
+notifications a gate that parks the next `schedule` call, parked the sweep
+inside the platform call arming its first replacement, and captured a task.
+Two blocks at 12:05Z. The capture could see the first replacement and not the
+second, so it took the slot the sweep had already promised.
+
+**Two mistakes of my own on the way there**, both worth recording because they
+cost more than the fix.
+
+The first test deadlocked itself: I waited on a completer that had already
+fired during setup, so the *capture* consumed the gate meant for the sweep.
+The second version deadlocked for a better reason — once the queue existed,
+`await`ing the capture before releasing the gate waits on the very lock under
+test. A person does not await their own send either; they press it and the app
+carries on. Starting it without awaiting is both correct and truer.
+
+**Then the fix hung six suites.** Not failed — hung, which has no stack and no
+message and is much worse to diagnose. The cause is worth knowing: an
+eagerly-created `Future.value()` field belongs to whichever zone built the
+service, widget tests build in `setUp` and call in under `fakeAsync`, and a
+continuation chained across that boundary is scheduled in a zone the test never
+drains. Starting the queue at null fixes it. The gate caught it, which is
+exactly what the gate is for.
+
+**On scope.** Only those two methods are serialised. `snooze`, `stuck` and
+`applyNegotiation` write to a time the user named rather than a gap they went
+looking for, so there is nothing for them to lose a race over. Wrapping them
+too would have cost nothing to run and would have made the rule harder to
+state — and a rule you cannot state is one the next person cannot maintain.
+
 ### 21 August 2026, overnight — the id Android remembers
 
 **Finished.** Phone locked again (`isKeyguardShowing=true`), tree green at 541

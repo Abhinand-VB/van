@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **544 tests, all green,
+Van is finished as far as an agent can take it alone. **545 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -67,7 +67,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **544 tests passing** — 238 in `packages/van_core` (pure Dart), 306 in the app.
+- **545 tests passing** — 238 in `packages/van_core` (pure Dart), 307 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -130,6 +130,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+2eed1fb  Serialise the two operations that choose a time
 25cde26  Stop deriving persisted notification ids from String.hashCode
 f2e736b  Do not lose a capture because an alarm failed
 9702dfa  Give Negotiate the same rule set the gate judges by
@@ -770,6 +771,46 @@ external consumer, and it needs the test that says so.
 
 ---
 
+## 3n. One isolate is not the same as no races
+
+`capture` and `sweepStaleSessions` both do the same three things: read the
+schedule, choose a gap in it, and write. Between the read and the write they
+await the database, the model and the notification channel. A second operation
+entering during any of those awaits chooses against a plan that is half
+written, and takes a slot the first has already promised.
+
+**Reproduced before it was fixed.** Park the sweep inside the platform call
+that arms its first replacement, capture a task, and two blocks land at
+12:05Z. The pairing is ordinary rather than contrived: the Now screen sweeps
+every time the app resumes, and its composer is on the same screen.
+
+Both now run through a one-at-a-time queue. **Only these two need it** —
+`snooze`, `stuck` and `applyNegotiation` write to a time the user named rather
+than to a gap they went looking for, so there is nothing for them to lose a
+race over. Serialising them too would have been cheap and would have made the
+rule harder to state, which is its own cost.
+
+### The trap in the queue itself
+
+The obvious way to write it is wrong here:
+
+```dart
+Future<void> _planQueue = Future<void>.value();   // hangs widget tests
+```
+
+An eagerly-created future belongs to whichever zone built the service. Widget
+tests build in `setUp` and then call in under `fakeAsync`, so a continuation
+chained onto it is scheduled in a zone the test never drains. **Six suites hung
+rather than failed**, which is much worse to diagnose — a hang has no stack and
+no message. Starting the queue at null keeps the chain inside the zone actually
+using it.
+
+Worth remembering generally: *a `Future` created at construction time carries a
+zone with it*, and in this codebase construction and use are routinely in
+different ones.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -797,6 +838,7 @@ than this file.**
 | 19 | **The timezone offset is read once, at startup** | `main.dart` computes `DateTime.now().timeZoneOffset` and hands it to `WakingHours`; `VanService` holds it in a `final` field and derives the parser and the suppression policy from it. Nothing recomputes it, so a process alive across a DST change or a flight keeps the old offset — the same class of bug as issue 18, an hour wide instead of seven, until Van is restarted. **Next US transition is 1 Nov 2026**, so there is time to do it properly. Fix is a composition-root change: rebuild the service when the offset moves, off the `resumed` lifecycle callback the three screens already use. Not attempted overnight — it needs device verification, and the phone was locked. |
 | 20 | ~~A failed alarm destroyed the whole capture~~ | **Done, 21 Aug 2026** (`f2e736b`). See section 3l. Both layers: `_armLadder` records `nudgeScheduleFailed` and carries on, and `ChatScreen._send` gives the typed sentence back instead of eating it. |
 | 21 | ~~Notification ids came from `String.hashCode`~~ | **Done, 21 Aug 2026** (`25cde26`). See section 3m. Explicit FNV-1a, pinned by tests, and the mask widened from 22 to 28 bits — the old one had 2 real collisions in 5000 session ids. **One-time cost:** rungs armed by an older build carry old ids and cannot be cancelled by a newer one. Section 0 says to reinstall after the 09:00 nudges have fired. |
+| 22 | ~~A capture during a sweep could double-book a slot~~ | **Done, 21 Aug 2026** (`2eed1fb`). See section 3n. `capture` and `sweepStaleSessions` now run one at a time; reproduced first, with both blocks landing at 12:05Z. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 
