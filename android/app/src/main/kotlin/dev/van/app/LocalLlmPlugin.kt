@@ -44,7 +44,13 @@ class LocalLlmPlugin(
         )
     }
 
-    private val engine: LlmEngine by lazy { engineFactory(context) }
+    // Held through its delegate so detach can ask whether the engine was ever
+    // built. A plain `by lazy` would make teardown *construct* one just to
+    // dispose it - harmless for MissingEngine, and exactly wrong once this
+    // loads a model: an activity that starts and stops without ever asking a
+    // question would pull hundreds of megabytes off disk on its way out.
+    private val engineDelegate = lazy { engineFactory(context) }
+    private val engine: LlmEngine by engineDelegate
     private var worker: ExecutorService? = null
     private var channel: MethodChannel? = null
 
@@ -62,8 +68,10 @@ class LocalLlmPlugin(
     fun detach() {
         channel?.setMethodCallHandler(null)
         channel = null
-        engine.cancel()
-        engine.dispose()
+        if (engineDelegate.isInitialized()) {
+            engine.cancel()
+            engine.dispose()
+        }
         worker?.shutdownNow()
         worker = null
     }
