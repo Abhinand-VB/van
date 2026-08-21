@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **562 tests, all green,
+Van is finished as far as an agent can take it alone. **565 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -108,7 +108,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **562 tests passing** — 249 in `packages/van_core` (pure Dart), 313 in the app.
+- **565 tests passing** — 249 in `packages/van_core` (pure Dart), 316 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -147,6 +147,7 @@ working configuration, not a degraded one.
 | App: timezone | 6 |
 | App: negotiation rule set | 2 |
 | App: capture failure paths | 6 |
+| App: fire-and-forget | 3 |
 | App: week report rendering | 5 |
 | App: ladder ids | 9 |
 | Core: negotiation rules | 19 |
@@ -997,6 +998,43 @@ debugging is.
 
 ---
 
+## 3s. `unawaited` is not a catch
+
+It reads like one. It is a lint suppression: it tells the analyzer you meant
+not to await, and does nothing whatsoever about failure. An `unawaited` future
+that throws becomes an **unhandled asynchronous error in whatever zone it was
+started in** — Flutter's error handler in the app, an unrelated test failure in
+the suite.
+
+`EventLogInferenceObserver.onInference` carried this comment:
+
+> a failed log must never fail the inference it was describing
+
+and delivered half of it. The inference itself was safe — it had already
+returned — but the error escaped sideways into the zone. **I hit this two
+iterations ago**, writing a screen test that closed the database: the failure I
+saw came from this observer, not from the code under test, and I recorded it as
+a quirk of my test rather than the defect it was pointing at.
+
+Fixed for the observer and for `GemmaBackend`'s cancel-on-timeout, which is the
+call most likely to throw — the engine is being abandoned mid-generation, which
+is the reason we are cancelling.
+
+**Swallowing is right in exactly these two places and nowhere else.** This is
+the logging path: a logging failure has no log to report to. Issue 5 already
+accepts that a crash loses the last few inference events. The nine remaining
+sites are UI, where swallowing would hide a lost user action, and they are on
+the board as issue 24 with the ranking.
+
+**The general form, which is the third instance of it tonight:** *a comment
+that promises isolation is a claim about a failure path, and failure paths are
+the least-exercised code there is.* `Notifications.schedule` promised it would
+never take a capture down and did. This promised a failed log could not affect
+anything and it could. Both were true of the happy path and false where it
+mattered.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -1009,7 +1047,7 @@ than this file.**
 | 2 | **Drum sound: needs a listen** | Done and wired, but never heard by a human. `tool/generate_drum.py` synthesises both sounds; re-run it with different parameters if the tone is wrong. Note that Android caches channel settings, so **changing the sound requires bumping the channel id** in `notifications.dart` (currently `_v2`) or it will silently not apply. |
 | 3 | **Device verification: mostly done, one gap** | Confirmed on the S25 on 21 Aug: capture through the UI lands in the database, the sweep runs on real persisted data, and the ladder now registers real `RTC_WAKEUP` alarms (the runs are in `docs/NIGHT_LOG.md`). **Still unconfirmed:** a nudge actually being delivered at its time, the START action round-trip into `sessionStarted`, and Doze behaviour after 30+ minutes idle. **Checked against a database pull at 09:07 on 21 Aug**, which corrected an earlier claim here: three live rungs at 09:30/09:40/09:55, all for one block, plus three stood-down rows. Still nothing started — `sessionStarted` count is zero. **At 09:31, one minute after a rung was due, Android had no Van notification posted** (checked package-scoped against `dumpsys notification`; channels healthy, app not blocked). Consistent with the exact-alarm permission never having been granted, which makes the alarm inexact and deferrable by up to an hour. Not proven — see section 3r. |
 | 4 | ~~`EventRepo.forSession` is a table scan~~ | **Done, 21 Aug 2026** (`890d8a7`, `da1209c`). `sessionId` is a nullable indexed column now. See section 5d — the migration needed two attempts and the second was found on the phone. |
-| 5 | Inference logging is fire-and-forget | `EventLogInferenceObserver` uses `unawaited` so a slow write never delays the call it describes. A crash can therefore lose the last few inference events. Accepted; the alternative is making every model call wait on a database write. Tests must `flushLog()` before asserting. |
+| 5 | Inference logging is fire-and-forget | `EventLogInferenceObserver` uses `unawaited` so a slow write never delays the call it describes. A crash can therefore lose the last few inference events — accepted, and the alternative is making every model call wait on a database write. **Amended 21 Aug (`c860476`):** the write now has an error handler. `unawaited` catches nothing, so until then a *failed* write escaped as an unhandled async error rather than being dropped. Losing events quietly is the accepted cost; losing them destructively was not. |
 | 6 | ~~Legacy launcher icons are Flutter's default~~ | **Done, 21 Aug 2026** (`d2abb52`). Generated from the vector by `tool/generate_launcher_icons.py`. Not verifiable on the S25, which is API 36 and draws the adaptive icon. |
 | 7 | ~~`NudgeRepo` is never constructed in production~~ | **Done, 21 Aug 2026** (`c0ba269`). See section 3b. |
 | 8 | ~~The exact-alarm settings screen opens on every cold start~~ | **Done, 21 Aug 2026** (`02e045e`). Asked once, latched in the `settings` table; a standing banner on the Now screen replaces the nagging. Verified on the phone. |
@@ -1026,6 +1064,7 @@ than this file.**
 | 21 | ~~Notification ids came from `String.hashCode`~~ | **Done, 21 Aug 2026** (`25cde26`). See section 3m. Explicit FNV-1a, pinned by tests, and the mask widened from 22 to 28 bits — the old one had 2 real collisions in 5000 session ids. **One-time cost:** rungs armed by an older build carry old ids and cannot be cancelled by a newer one. Section 0 says to reinstall after the 09:30–09:55 nudges have fired. |
 | 22 | ~~A capture during a sweep could double-book a slot~~ | **Done, 21 Aug 2026** (`2eed1fb`). See section 3n. `capture` and `sweepStaleSessions` now run one at a time; reproduced first, with both blocks landing at 12:05Z. |
 | 23 | ~~Three armed nudges have no rows in the database~~ | **Explained and closed, 21 Aug 2026.** Not a defect. Session `hljn1mbedk2` was armed at **01:40:54**; `c0ba269` — the fix for issue 7, *`NudgeRepo` is never constructed in production* — landed at **01:53:22** and is what added `_nudges.save(...)` to `_armLadder`. Twelve minutes earlier, the build on the phone wrote `nudgeScheduled` events and no rows, because it had no `NudgeRepo`. The alarms are still registered with Android; `cancelForSession` derives its ids rather than reading them back, so Van can still cancel them — which is section 3m's decision paying for itself. See section 3q. |
+| 24 | **Nine other `unawaited` calls have no error handler** | Found while fixing issue 5. `unawaited` silences the analyzer and catches nothing, so any of these becomes an unhandled async error if it throws. Two were fixed (`c860476`); the rest are in the UI and need a decision about what the user *sees*, not just a `catchError`. Ranked by how bad the failure would be: **`task_list_screen.dart:98`** — swipe-to-complete writes unawaited, so a failed write leaves the row visually dismissed and the task still open, which is the one that silently loses a user action. **`now_screen.dart:51,66`** and **`task_list_screen.dart:36,47`** — refresh-on-resume, which would fail to a red screen rather than a stale list. **`chat_screen.dart:105,118`** — the stall prompt, same shape. **`focus_screen.dart:57,66`** and **`chat_screen.dart:269`** — `SystemChrome` and a scroll animation, low risk. The pattern to follow is `ChatScreen._send` (section 3l): catch, put the user's action back where they can see it, and say so. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 

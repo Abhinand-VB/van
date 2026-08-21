@@ -275,6 +275,46 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, morning — the error I had already seen and explained away
+
+**Finished.** Phone still locked; the 09:40 rung had not appeared either, which
+is consistent with the inexact-alarm reading already in section 3r and not
+worth re-documenting. So: code.
+
+**Issue 5 turned out to be two issues wearing one coat.** The accepted half is
+that fire-and-forget logging can lose the last few events in a crash — that is
+a real trade and it was made on purpose. The unaccepted half is that
+`unawaited` **catches nothing**. It is a lint suppression. A failed append
+became an unhandled asynchronous error in whichever zone the inference ran in.
+
+The comment above it said a failed log "must never fail the inference it was
+describing", which was half true in the worst way: the inference had already
+returned, so the damage landed somewhere else entirely.
+
+**I had already seen this and explained it away.** Two iterations ago I wrote a
+chat-screen test that closed the database to make `capture` fail, and it blew
+up with errors that were not from the code under test. I diagnosed it as "the
+fire-and-forget observer also writes to that database" and switched to a
+different technique — correct, and I stopped one step short. The observer
+throwing into the zone *was the bug*, and I had it in front of me. Noticing
+that something is noise is not the same as asking why the noise exists.
+
+**Fixed in two places, deliberately not in eleven.** The observer and
+`GemmaBackend`'s cancel-on-timeout can be swallowed honestly, because the
+first is the logging path and the second is abandoning an engine that is
+already being given up on. The other nine are UI, where a bare `catchError`
+would hide a lost user action — `task_list_screen.dart:98` is the sharp one, a
+swipe that writes unawaited, so a failed write leaves the row visually gone and
+the task still open. Those are on the board as issue 24, ranked, with the fix
+pattern named rather than applied at speed.
+
+**Third instance tonight of the same shape.** `Notifications.schedule`
+promised it would never take a capture down with it. This promised a failed log
+could not affect anything. Both promises were about failure paths, and failure
+paths are the least-exercised code in any program — so a comment asserting one
+is a claim nobody has checked. It is now worth treating every "must never" in a
+comment as an unverified test case.
+
 ### 21 August 2026, morning — the database was innocent, and so was the code
 
 **Finished.** Issue 23, opened an iteration earlier and deliberately recorded
