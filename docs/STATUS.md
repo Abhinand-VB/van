@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **523 tests, all green,
+Van is finished as far as an agent can take it alone. **527 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -51,7 +51,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **523 tests passing** — 238 in `packages/van_core` (pure Dart), 285 in the app.
+- **527 tests passing** — 238 in `packages/van_core` (pure Dart), 289 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -86,7 +86,7 @@ working configuration, not a degraded one.
 | App: negotiation guards (review) | 5 |
 | App: fatigue window | 2 |
 | App: notification actions | 11 |
-| App: focus screen | 13 |
+| App: focus screen | 17 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -110,6 +110,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+04c31da  Guard the last two methods that could rewrite a closed block
 87fe6f3  Refuse an action arriving twice for the same block
 ff7c20d  Resuming a block is not starting it again
 59e063d  Make every nudge button open the app, reversing last night's call
@@ -572,6 +573,30 @@ and then `snooze`** — deliberately snoozing a block it had just closed. Adding
 the obvious guard to `snooze` would have silently broken it. The two had to be
 fixed together, which is why "I'm stuck" is now a single `VanService.stuck`
 call that says what it means.
+
+### Every mutating method, and what it does to closed work
+
+A systematic pass on 21 Aug, asking each method what it does when the block is
+already finished. Two had no answer.
+
+| Method | Refuses closed work |
+|---|---|
+| `startSession` | yes — and returns the running session unchanged if it has already started |
+| `completeSession` | yes, since `04c31da` |
+| `stopEarly` | yes, since `04c31da` |
+| `snooze`, `notToday`, `stuck` | yes |
+| `negotiate`, `applyNegotiation` | yes, and also refuse a *started* block |
+| `capture`, `sweepStaleSessions`, `completeTask`, `undoCapture` | not applicable — they select their own targets |
+
+The two that were missing are reachable by a fumbled thumb, not by anything
+exotic: the focus screen's buttons write and then pop, and all three stay
+tappable until the pop lands. Done followed by Need more time rewrote a
+completion as a partial.
+
+Guarded at both layers on purpose. The service refuses closed work because
+that is the layer that owns the data and the guarantee must not depend on a
+screen behaving; the screen also disables its buttons after the first press,
+because otherwise you press one and correctly observe nothing happening.
 
 **On `SessionStatus` after "I'm stuck":** the block keeps `partial` rather than
 `rescheduled`. Nothing reads the status to decide behaviour — `hasStarted` and

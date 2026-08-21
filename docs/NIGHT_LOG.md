@@ -275,6 +275,44 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — asking the same question of everything
+
+**Finished.** Nothing was left on the board an agent could close alone, and the
+phone had locked at 06:15 — `isKeyguardShowing=true` — so this was code-only by
+the rules in `OVERNIGHT.md` 3a.
+
+The previous iteration found that `snooze` and `notToday` would act on a block
+that was already closed. Rather than treat that as one bug, I asked the same
+question of **every** mutating method on `VanService`: what does this do when
+the work is already finished? Five had a guard. `completeSession` and
+`stopEarly` did not.
+
+Both reachable, and not by anything exotic. The focus screen's three buttons
+write to the database and then pop, and until the pop lands all three stay
+tappable — so Done followed by Need more time is one fumbled thumb apart. That
+sequence rewrote a completion as a partial and moved `actualEnd` to whenever
+the second tap happened. The table is now in section 3j.
+
+**Fixed at both layers on purpose.** The service refuses closed work, because
+that is the layer that owns the data and the guarantee should not depend on a
+screen behaving. The screen also disables its buttons after the first press,
+because otherwise you press one and correctly observe nothing happening, which
+is its own kind of broken.
+
+**A test I deleted rather than fixed.** I wrote one asserting the buttons were
+disabled after a press, and it failed with "Bad state: No element" — because
+the screen pops before the assertion can run, which is itself the thing that
+stops a second press. It was checking the belt rather than the guarantee. The
+replacement asserts what a user could actually observe: the screen is gone and
+exactly one completion was recorded.
+
+**The method that worked, again.** Four nights of review have now used four
+questions: what does the comment claim against what the line does, what has
+never been exercised, who reads this field, and — tonight — what does this do
+when called out of order. Each found something the others did not. None of
+them is "read the code carefully"; each is a specific question with a
+mechanical answer.
+
 ### 21 August 2026, overnight — a bug I half-invented, next to one I had not
 
 **Finished.** Issue 17, which I had opened an iteration earlier and described
