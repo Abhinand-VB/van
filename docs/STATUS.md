@@ -19,7 +19,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **425 tests passing** — 230 in `packages/van_core` (pure Dart), 195 in the app.
+- **475 tests passing** — 230 in `packages/van_core` (pure Dart), 245 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -46,6 +46,10 @@ working configuration, not a degraded one.
 | App: negotiation, service and chat | 19 |
 | App: schema migration | 9 |
 | App: launcher icons | 4 |
+| App: local model channel | 13 |
+| App: Gemma backend | 15 |
+| App: golden set and runner | 9 |
+| App: inference config | 13 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -62,13 +66,14 @@ working configuration, not a degraded one.
 | WP-4 | Notifications (see deviation below) | **Done, altered** |
 | WP-7 | Now + Focus + Chat + task list | **Done** |
 | WP-8 | Composition root, application service | **Done** |
-| WP-6 | On-device model backend | Not started (phase 2) |
+| WP-6 | On-device model backend | **Groundwork done, engine not wired** |
 | WP-9 | Cloud backends (Claude / OpenAI / Gemini) | Not started (phase 3) |
 | WP-10 | Usage-stats distraction detection | Not started (phase 4) |
 
 ### Commits
 
 ```
+ca5df7e  WP-6 groundwork: the channel, the backend, the goldens, and the harness
 d2abb52  Give Van its own icon below API 26
 da1209c  Add schema v3, because v2 created the column without the index
 890d8a7  Index the event log by session, and prove the migration first
@@ -130,6 +135,14 @@ as resolved so the loop behaves identically, but only one of them is true, and
 deadline, no slot big enough, or moved too many times already. The event log
 can therefore distinguish rescued work from abandoned work, which it could not
 have done otherwise. See `DECISIONS_PENDING.md` D1.
+
+**`assets/inference_config.json` was never read until 21 Aug.** Four comments
+across the codebase claimed that swapping a backend was "a config change and
+one class". It was a `main.dart` edit: the router took backends as constructor
+arguments and the asset was decoration. `InferenceConfig` (`ca5df7e`) now reads
+it, resolves backend names against instances the composition root builds, and
+records a warning rather than throwing when a route names something missing —
+a typo in a config asset must not stop Van starting. The claim is true now.
 
 **`plan_day` capability was not built.** `SessionPlanner` is deterministic and
 the app calls it directly. A capability wrapper would add indirection with no
@@ -304,6 +317,64 @@ there is a test pinning that so it does not erode back into "OK".
 
 ---
 
+## 3e. WP-6 groundwork: what exists and what does not
+
+**Nothing has been measured.** No model has been downloaded, no benchmark run.
+Every number below about the model is a guess and is labelled as one in the
+code. The one measured number is the parser's.
+
+**Exists and is tested:**
+
+- `LocalLlmPlugin.kt` — five methods (`isAvailable`, `warmUp`, `generate`,
+  `cancel`, `dispose`), matching `LlmBackend` one for one. Generation runs on a
+  single background thread: inference takes seconds and would freeze the UI,
+  and the engine holds one model session that concurrent calls are not safe
+  against. Compiles and attaches on the device.
+- `LlmEngine` + `MissingEngine` — the seam. Not a stub to delete: reporting
+  "unavailable" is the correct behaviour for a build with no model file, which
+  is every build today and most builds afterwards, since the model is
+  downloaded on first run rather than bundled.
+- `MethodChannelLocalLlm` — the Dart half, translating platform errors. A
+  missing model raises rather than returning `''`, so it cannot be mistaken for
+  a model that answered with nothing.
+- `GemmaBackend` — the only file in the app that knows the model's name.
+- The golden set, runner and `tool/run_goldens.dart`.
+
+**Does not exist:** the LiteRT-LM dependency and the engine behind it. Adding
+it is confined to two edits, and if a third is needed the abstraction has
+failed and that is worth stopping over:
+
+1. a LiteRT-LM dependency in `android/app/build.gradle.kts`, and
+2. one `LlmEngine` implementation, returned from
+   `LocalLlmPlugin.defaultEngine`.
+
+**One thing to change in the same commit, not before:**
+`GemmaBackend.capabilities.supportsNativeStructuredOutput` is `false`. Gemma 4
+supports constrained decoding through LiteRT-LM, but claiming it before the
+engine does it means `ExtractTask` asks for schema-constrained JSON and gets
+prose — which reads as a model failure rather than a wiring one.
+
+### The gate, and the number to beat
+
+**The deterministic parser scores 26/28 — 92.9% — measured, not asserted.**
+
+```bash
+dart run tool/run_goldens.dart
+```
+
+That is what a candidate model has to beat, not the 80% floor in section 6.
+Routing `extract_task` to something that scores 85% would be a downgrade
+dressed as progress. The floor is for capabilities where the fallback is a
+template rather than a parser.
+
+CI runs the same cases through the same runner against the parser. That
+sameness is the point: a measurement taken by a different harness than the one
+gating the change is not a measurement of the change. And see issue 14 — the
+harness cannot reach `GemmaBackend`, so measuring the model itself still needs
+work.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -324,6 +395,8 @@ than this file.**
 | 10 | ~~`negotiate` is built but nothing calls it~~ | **Done, 21 Aug 2026** (`01d24ed`, `a4a6cd8`). See section 3d. |
 | 12 | **`dumpsys alarm` cannot tell you what is pending** | Recorded because it cost me an hour tonight. The `type=RTC_WAKEUP tag=*walarm*:dev.van.app` lines live in a *cancellation history* section — each entry carries `Reason=alarm_cancelled` or `Reason=pi_cancelled`. Cancelling an alarm **adds** a line there, so the count only ever grows and looks like a leak. The truth is in `shared_prefs/scheduled_notifications.xml`, which lists exactly what will fire. The command is in section 5a, under the fifth run. |
 | 11 | `ExtractTask` and `ComposeNudge` still hold their prompts inline | AGENTS.md has always said prompts live in `assets/prompts/` and are versioned; that directory sat empty until `889f23f`. `Negotiate` now loads `negotiate.v1.txt` via `PromptTemplate`, which is the loader the other two can move to. Not urgent, but it is a stated rule the codebase was quietly breaking. |
+| 13 | **Two parser gaps the golden set found** | Both fail in `test/golden/extract_task.json` on purpose, because a set trimmed to what already passes is a change detector rather than a measurement. (a) *"next week"* is not parsed at all — the parser handles weekdays, today, tomorrow and parts of day, but not week offsets. (b) An **all-caps sentence keeps its shouting**: `TIDY THE DESK` becomes a task titled `TIDY THE DESK`. A blanket downcase would be wrong — it would wreck `call HMRC` and `fix API docs` — so this needs a judgement, which is why it is here rather than fixed. |
+| 14 | **`GemmaBackend` cannot be measured off-device** | It needs the platform channel and a model file, so `tool/run_goldens.dart` deliberately has no flag for it. Measuring a candidate model means running the golden set on the phone, which needs a small debug screen or an integration test. Nothing built yet; the WP-6 gate cannot be evaluated until it is. |
 
 ---
 
@@ -593,6 +666,23 @@ and checks the corner pixel is the brand green rather than Flutter's white.
 09:10, 09:25 ("Alarm wiring check") and 09:30, 09:40, 09:55 ("Negotiate wiring
 check"). Both survived tonight's four reinstalls.
 
+### Eighth run, ~04:00, the local model channel
+
+- **The Kotlin compiles and attaches.** App boots, no crashes, nothing from
+  `LocalLlmPlugin` in logcat.
+- **The app now boots through the config path** and records zero routing
+  warnings, so `assets/inference_config.json` resolves cleanly against the two
+  backends `main.dart` can build.
+- Nothing calls the model, because the config routes every capability to
+  `none` — which is the shipped configuration and a working one.
+
+**Not verified, and cannot be until an engine exists:** any actual generation.
+`MissingEngine` is what answers today, so the device confirms the channel is
+reachable and correctly reports "unavailable", and nothing more than that.
+
+**Unchanged: six notifications, two ladders**, at 09:00, 09:10, 09:25 and
+09:30, 09:40, 09:55. They have now survived nine reinstalls.
+
 ---
 
 ## 5c. The cancel that never worked
@@ -702,13 +792,16 @@ EXPLAIN QUERY PLAN SELECT * FROM events WHERE session_id = ?
 3. **Ignore the 09:00 block on purpose, then open Chat.** One minute, and it
    is the only part of the negotiation loop never reached on hardware.
 4. **Use it for a week.** Everything in the loop is built, connected and
-   verified except the three checks above. The remaining open issues are all
-   small or accepted; there is no obvious next feature, and that is the point.
-   Let real annoyance pick it. Three dials worth watching, one number each:
-   the sweep's five-minute replacement lead, `SuppressionPolicy.dismissalLimit`,
-   and whether halving a block is the right first concession.
-5. Then WP-6 (on-device Gemma 4) if nudge quality turns out to be the problem,
-   or issue 11 if it does not. Both are optional.
+   verified except the three checks above. Let real annoyance pick what comes
+   next. Three dials worth watching, one number each: the sweep's five-minute
+   replacement lead, `SuppressionPolicy.dismissalLimit`, and whether halving a
+   block is the right first concession.
+5. **Only then decide about WP-6.** The groundwork is done (section 3e) and
+   the remaining work is real: a LiteRT-LM dependency, one `LlmEngine`, and a
+   way to run the golden set on the phone (issue 14). Worth doing **only if a
+   week of use shows nudge wording or parsing is actually the problem** — the
+   parser already scores 92.9%, so `extract_task` is not the case for it.
+   `compose_nudge` and `negotiate`, where the fallback is a template, are.
 
 ---
 
@@ -716,6 +809,45 @@ EXPLAIN QUERY PLAN SELECT * FROM events WHERE session_id = ?
 
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
+
+### 21 August 2026, overnight — WP-6 groundwork, and a config that was never read
+
+**Finished.** OVERNIGHT work queue item 5, the last item on the list.
+
+The Kotlin `LocalLlm` channel, `GemmaBackend`, a 28-case golden set, and
+`tool/run_goldens.dart`. Code only: no model downloaded, no benchmark run, and
+nothing claims otherwise. Section 3e says exactly what exists, what does not,
+and the two edits that would finish it. Commit `ca5df7e`. 425 to 475 tests.
+
+**The one measured number: the deterministic parser scores 26/28, 92.9%.**
+That, not the 80% floor, is what a candidate model has to beat for
+`extract_task` — routing to something that scored 85% would be a downgrade
+dressed as progress.
+
+**Two of the three golden failures are real parser gaps and stay failing on
+purpose.** "next week" is not parsed at all, and an all-caps sentence keeps its
+shouting. Issue 13. A set trimmed to what already passes is a change detector,
+not a measurement. The third failure was my own wrong expectation — "tonight"
+resolves to the evening rather than end of day, which is deliberate and better
+— and I corrected the golden rather than the parser.
+
+**The thing I did not expect.** `assets/inference_config.json` has never been
+read by anything. Four comments across the codebase claim that swapping a
+backend is "a config change and one class"; it was a `main.dart` edit, and
+`GemmaBackend` would have been born unreachable. That is the third time this
+week a claim in the docs described behaviour that did not exist — issues 7 and
+10 were the others — so I fixed it rather than filing it. `InferenceConfig`
+reads the asset now, and there is a test asserting the shipped file resolves
+cleanly against what `main.dart` can build.
+
+**What I would do next.** Nothing, for a week. Every queue item in
+`OVERNIGHT.md` is now done. WP-6's remaining work is real but should wait for
+evidence that nudge wording is the problem — and note issue 14: the golden
+harness cannot reach `GemmaBackend`, so the gate cannot actually be evaluated
+until there is a way to run the set on the phone.
+
+**What I need from you.** Nothing blocking. Next-step 5 is the judgement call:
+whether WP-6 is worth it at all, once you have used this for a week.
 
 ### 21 August 2026, overnight — the two chores, and a migration lesson
 
