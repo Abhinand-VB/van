@@ -97,8 +97,14 @@ class AndroidNotifications implements Notifications {
 
   final FlutterLocalNotificationsPlugin _plugin;
 
-  static const _normalChannel = 'van_nudges';
-  static const _urgentChannel = 'van_nudges_urgent';
+  // Android caches channel settings permanently: once a channel exists, later
+  // changes to its sound are ignored. Changing the sound therefore means
+  // creating a NEW channel id and deleting the old one. Bump the suffix if the
+  // sound ever changes again, or the drum will silently not play for anyone
+  // who already installed Van.
+  static const _normalChannel = 'van_nudges_v2';
+  static const _urgentChannel = 'van_nudges_urgent_v2';
+  static const _retiredChannels = ['van_nudges', 'van_nudges_urgent'];
 
   /// Maps a notification id back to the session it concerns, so a tap can be
   /// attributed without round-tripping through the database.
@@ -131,15 +137,20 @@ class AndroidNotifications implements Notifications {
           AndroidFlutterLocalNotificationsPlugin
         >();
 
-    // Two channels so the user can silence ordinary nudges in Android
-    // settings without losing the ones that actually matter, and so the drum
-    // sound can be set per channel rather than baked into the app.
+    for (final retired in _retiredChannels) {
+      await android?.deleteNotificationChannel(channelId: retired);
+    }
+
+    // Two channels so the user can silence ordinary nudges in Android settings
+    // without losing the ones that matter, and so the drum is set per channel
+    // and stays user-changeable rather than baked into the app.
     await android?.createNotificationChannel(
       const AndroidNotificationChannel(
         _normalChannel,
         'Nudges',
         description: 'Session prompts and check-ins.',
         importance: Importance.high,
+        sound: RawResourceAndroidNotificationSound('nudge_drum'),
       ),
     );
     await android?.createNotificationChannel(
@@ -148,6 +159,7 @@ class AndroidNotifications implements Notifications {
         'Urgent nudges',
         description: 'Deadlines and imminent commitments.',
         importance: Importance.max,
+        sound: RawResourceAndroidNotificationSound('nudge_drum_urgent'),
       ),
     );
   }
@@ -228,6 +240,9 @@ class AndroidNotifications implements Notifications {
         priority: nudge.urgent ? Priority.max : Priority.high,
         actions: actions,
         category: AndroidNotificationCategory.reminder,
+        sound: RawResourceAndroidNotificationSound(
+          nudge.urgent ? 'nudge_drum_urgent' : 'nudge_drum',
+        ),
       ),
     );
   }

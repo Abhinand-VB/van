@@ -29,7 +29,6 @@ on them; note them and move on.
 
 | # | Blocker | Why an agent cannot do it |
 |---|---|---|
-| B1 | Drum notification sound | Needs an audio file. Cannot be generated from source. Drop it at `android/app/src/main/res/raw/nudge_drum.ogg`. |
 | B2 | Device verification of a firing nudge | The phone auto-locks and an agent cannot get past the keyguard. Needs the screen unlocked, timeout raised, Do Not Disturb off. |
 | B3 | Cloud backends (WP-9) | Needs an API key, which must never be committed. |
 | B4 | On-device model download (WP-6) | A multi-gigabyte download onto the device, plus a real benchmark run on hardware the agent cannot unlock. Code can be written; the numbers cannot be taken. |
@@ -40,4 +39,4 @@ on them; note them and move on.
 
 | # | Question | Owner's answer | Follow-up |
 |---|---|---|---|
-| — | _(none yet)_ | | |
+| B1 | Drum notification sound - I had recorded this as impossible for an agent | Owner pushed back, correctly. A drum hit is synthesisable, not something needing a recording. | Resolved: `tool/generate_drum.py` synthesises both sounds from stdlib only. Owner should listen and re-run the script with different parameters if the tone is wrong. |
