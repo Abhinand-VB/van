@@ -1,7 +1,8 @@
 # Van — Project Status
 
-**Last updated:** 21 August 2026. Update this file at the end of every work
-session; it is the handover document between sessions and between agents.
+**Last updated:** 21 August 2026 (overnight session; see section 8). Update
+this file at the end of every work session; it is the handover document
+between sessions and between agents.
 
 Read order for a new session: this file, then `AGENTS.md`, then
 `docs/ARCHITECTURE.md`, then `docs/AGENT_TASKS.md`.
@@ -18,7 +19,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **263 tests passing** — 188 in `packages/van_core` (pure Dart), 75 in the app.
+- **294 tests passing** — 211 in `packages/van_core` (pure Dart), 83 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -28,12 +29,13 @@ working configuration, not a degraded one.
 |---|---|
 | Core: clock, result, models | 63 |
 | Core: scheduling | 38 |
+| Core: stale-session sweep | 17 |
 | Core: nudge engine, policy, scoring, suppression | 47 |
-| Core: simulation scenarios | 14 |
+| Core: simulation scenarios | 20 |
 | Core: temporal parser | 40 (approx, in `temporal_parser_test.dart`) |
 | App: repositories | 39 |
 | App: inference | 27 |
-| App: end-to-end loop | 9 |
+| App: end-to-end loop | 17 |
 
 ---
 
@@ -56,6 +58,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+74cb226  Move abandoned work instead of losing it (stale-session sweep)
 b442280  WP-4, WP-7, WP-8: notifications, Now/Focus screens, composition root
 312a2d6  WP-5: inference abstraction with deterministic fallbacks
 d5ffe9b  Rename Nova to Van, add the tree mark
@@ -94,10 +97,57 @@ This enforces architecture principle P1 structurally rather than by lint.
 task list were not built — quick-add covers capture, the Now screen covers
 execution. Add them if capture friction proves to be a real problem.
 
+**The sweep marks rescued blocks `rescheduled`, not `skipped`.** The original
+board wording said "marks stale planned sessions skipped". Both statuses count
+as resolved so the loop behaves identically, but only one of them is true, and
+`snooze` already set the precedent of `markRescheduled()` for a move.
+`skipped` is now reserved for work that genuinely had nowhere to go — past its
+deadline, no slot big enough, or moved too many times already. The event log
+can therefore distinguish rescued work from abandoned work, which it could not
+have done otherwise. See `DECISIONS_PENDING.md` D1.
+
 **`plan_day` capability was not built.** `SessionPlanner` is deterministic and
 the app calls it directly. A capability wrapper would add indirection with no
 current benefit. `extract_task`, `compose_nudge` exist; `negotiate` is declared
 in config but has no implementation class yet.
+
+---
+
+## 3a. The stale-session sweep
+
+The loop is now closed. Before this, `NudgeEngine` stopped nudging about a
+block an hour past its start and *nothing else happened* — the block stayed
+`planned` forever, never came due again, and the work left the plan without
+anyone deciding it should.
+
+**`StaleSessionSweep`** (`packages/van_core/lib/src/scheduling/`) is pure. Give
+it the abandoned blocks and the time still free and it runs `Rescheduler` over
+them oldest-first, returning for each either a replacement or the reason there
+could not be one (`pastDeadline`, `noSlotAvailable`, `tooManyMoves`).
+Placements are subtracted from the running slot list as they are made, so two
+abandoned blocks are never sent to the same half hour.
+
+**`VanService.sweepStaleSessions()`** does the I/O half: cancels the dead
+rungs, persists the transition, writes `sessionMissed` and then
+`rescheduleApplied`, and arms the new ladder. It is a no-op when nothing is
+stale.
+
+Three things to know before changing it:
+
+1. **`giveUpAfterMinutes` must match `NudgeEngine.giveUpAfterMinutes`.** Both
+   default to 60. If the sweep threshold were higher there would be a window in
+   which Van has stopped asking and has not yet moved anything — the original
+   hole, in miniature.
+2. **`maxMoves` is 5.** Without a cap, work nobody will ever do gets a fresh
+   three-rung ladder every hour forever, which is how an accountability app
+   earns a permanent mute. 5 sits deliberately above
+   `InterventionPolicy.renegotiateAfterMoves` (3) so Van names the pattern to
+   the user before it stops rescuing the block by itself.
+3. **The simulation harness has `sim.sweep()`**, which models opening the app
+   rather than running on every tick — that is the real shape, since there is
+   no background isolate. The scenario worth reading is *"work ignored all week
+   is let go, not nagged about forever"* in `scenarios_test.dart`: it is the
+   one that would have caught a missing move cap.
 
 ---
 
@@ -108,7 +158,8 @@ than this file.**
 
 | # | Issue | Notes |
 |---|---|---|
-| 1 | **Stale sessions need a reschedule sweep** | `NudgeEngine` abandons a session 60 minutes past its start (`giveUpAfterMinutes`) so it stops nagging. Nothing yet *moves* that work. Needs a sweep that marks stale planned sessions skipped, runs `Rescheduler`, and emits `sessionMissed` + `rescheduleApplied`. Without it, abandoned blocks quietly vanish from the plan. **Highest-value open item.** |
+| 1 | ~~Stale sessions need a reschedule sweep~~ | **Done, 21 Aug 2026** (`74cb226`). See section 3a. One caveat left below. |
+| 1a | The sweep only runs when the app is open | There is no background isolate, so work abandoned while Van is closed is not moved until you next open the app. In practice that means the replacement block's notification cannot fire before you have opened Van at least once since the original went stale. Acceptable for now — the alternative is the headless-isolate design WP-4 deliberately rejected — but it is the first thing to revisit if the sweep feels late in real use. |
 | 2 | **Drum sound: needs a listen** | Done and wired, but never heard by a human. `tool/generate_drum.py` synthesises both sounds; re-run it with different parameters if the tone is wrong. Note that Android caches channel settings, so **changing the sound requires bumping the channel id** in `notifications.dart` (currently `_v2`) or it will silently not apply. |
 | 3 | **Device verification incomplete** | Cannot confirm on hardware: a nudge actually firing, Doze behaviour after 30 min idle, notification action round-trip. Blocked by the phone's lock screen (see section 5). |
 | 4 | `EventRepo.forSession` is a table scan | `sessionId` lives in the JSON payload, so filtering happens in Dart. Fine at single-user volume. Fix later with a nullable indexed column or SQLite `json_extract`. |
@@ -189,12 +240,58 @@ MSYS_NO_PATHCONV=1 adb exec-out run-as dev.van.app cat /data/data/dev.van.app/ap
 
 ## 7. Suggested next steps, in order
 
-1. **Finish device verification** (issue 3). Unlock the phone, raise the screen
-   timeout, disable DND, capture a task through the UI, confirm the notification
-   fires and the START action round-trips.
-2. **Build the stale-session sweep** (issue 1). It is the one functional hole in
-   the loop.
-3. **Use it for a week.** Everything after this should be driven by what
-   actually annoys or fails in real use, not by the plan.
-4. Then either WP-6 (on-device Gemma 4) or the chat screen, depending on
-   whether nudge quality or capture friction turns out to be the real problem.
+1. **Finish device verification** (issue 3). Capture a task through the UI,
+   confirm the notification fires with the drum, and confirm the START action
+   round-trips into `sessionStarted`. See `OVERNIGHT.md` section 3a for the
+   wake-without-unlocking procedure.
+2. **Use it for a week.** The loop is functionally complete as of `74cb226`;
+   everything after this should be driven by what actually annoys or fails in
+   real use, not by the plan. In particular, the sweep's five-minute
+   replacement lead (inherited from `Rescheduler.minimumLeadMinutes`) may feel
+   too eager in practice — "you missed 9am, so start in five minutes" is a
+   plausible thing to hate.
+3. Then either the `negotiate` capability, the chat screen, or WP-6
+   (on-device Gemma 4), depending on whether nudge quality or capture friction
+   turns out to be the real problem.
+
+---
+
+## 8. Unattended session log
+
+Newest first. Each entry is one overnight loop iteration, written from a cold
+context; see `docs/OVERNIGHT.md` for the standing brief.
+
+### 21 August 2026, overnight — the stale-session sweep
+
+**Finished.** Work queue item 1, completely: `StaleSessionSweep` in the pure
+core, `VanService.sweepStaleSessions()`, the app-open and resume triggers, a
+Now-screen message so the user is told when their plan changed, 17 core unit
+tests, 8 end-to-end tests through the real database and a fake notifier, and 6
+simulation scenarios including the multi-day one. Commit `74cb226`. Suite went
+from 263 to 294 tests; format, `analyze --fatal-infos` and `check_layers` all
+clean before and after.
+
+**Decided on your behalf** — full reasoning in `DECISIONS_PENDING.md` D1–D4,
+all cheap to reverse:
+
+- Rescued blocks are marked `rescheduled`, not `skipped` as the brief said, so
+  the event log can tell rescued work from abandoned work.
+- The sweep stops rescuing a block after 5 moves. This was not in the brief and
+  is the one addition I would most want you to look at — see D2 for why a cap
+  has to exist at all.
+- The sweep is triggered by app open and resume, not by a background isolate.
+- The Now screen tells you when work was moved rather than doing it silently.
+
+**Not done, and why.** No device verification this iteration: the whole
+iteration went into item 1 and the brief is explicit that an item is finished
+completely or not started. `adb` was not touched, so nothing about the phone in
+section 5 has been re-confirmed — issue 3 is exactly where the last session
+left it.
+
+**What I would do next.** Device verification, then live with it for a week
+before writing more code. The loop is functionally complete now; the next
+useful signal is real annoyance, not more features.
+
+**What I need from you.** Nothing blocking. Two things worth a minute over
+coffee: whether the five-move cap is right, and whether a replacement landing
+five minutes from now is helpful or infuriating.
