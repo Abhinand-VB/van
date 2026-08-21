@@ -174,6 +174,15 @@ class VanService {
        _clock = clock,
        _ids = ids,
        _waking = waking,
+       // The parser reads wall-clock words - "friday", "tonight" - and must
+       // read them in the same timezone the planner schedules in. Left at its
+       // default it runs at UTC, which on a UTC-7 phone turned "by friday"
+       // into Friday 16:59 local and made anything captured after five in the
+       // afternoon "due today" and already overdue.
+       _extractTask = ExtractTask(
+         prompt: prompts.extractTask,
+         parser: TemporalParser(utcOffset: waking.utcOffset),
+       ),
        _policy = policy,
        _rules = rules,
        _sweep = StaleSessionSweep(
@@ -191,6 +200,7 @@ class VanService {
   final Notifications _notifications;
   final NudgeTemplates _templates;
   final Prompts _prompts;
+  final ExtractTask _extractTask;
   final Negotiate _negotiate;
   final Clock _clock;
   final IdGenerator _ids;
@@ -208,7 +218,7 @@ class VanService {
     final now = _clock.now();
 
     final draft = await _router.run(
-      ExtractTask(prompt: _prompts.extractTask),
+      _extractTask,
       ExtractTaskInput(text, now: now),
     );
 
