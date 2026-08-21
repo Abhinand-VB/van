@@ -188,7 +188,14 @@ class WeekReview {
   /// Nudges handed to the platform.
   final int nudgesScheduled;
 
-  /// Nudges that reached the user.
+  /// Nudges recorded as delivered.
+  ///
+  /// **Not a delivery count.** Van has no way to observe a notification
+  /// appearing: `nudgeDelivered` is written by `_recordAnswer` on the way past
+  /// when a rung is *answered*, so a nudge that showed up and was ignored is
+  /// never counted. Reading this as "how many reached the user" understates it
+  /// by exactly the nudges that were shrugged off, which are the ones worth
+  /// knowing about.
   final int nudgesDelivered;
 
   /// Nudges Van decided against sending.

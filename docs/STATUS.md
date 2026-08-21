@@ -13,21 +13,36 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **561 tests, all green,
+Van is finished as far as an agent can take it alone. **562 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
    tap. Until then nudges land within the hour rather than on the minute.
-2. **Wait for a nudge and press START.** Six are armed, 09:00–09:55. This is
-   the last unverified step of the loop, and until 05:15 this morning it would
-   have silently done nothing with Van not running — which is exactly the
-   state your phone will be in. Fixed and tested (issue 16).
+2. **Wait for a nudge and press START — the live ones are at 09:30, 09:40 and
+   09:55.** I pulled the database at 09:07 and checked, rather than repeating
+   what an earlier note here claimed. **That note said "six armed, 09:00–09:55"
+   and it was wrong**; the truth is narrower:
 
-   **On those six notifications, only START works.** They were armed hours
-   before the fix and carry the old flags, which I checked rather than
-   assumed. Their Snooze and Not today will dismiss the notification and do
-   nothing. Any nudge armed from now on has all three working. Issue 15.
-3. **Ignore the 09:00 block on purpose, then open Chat.** One minute, and the
+   - **Three live rungs, all for one block** ("Negotiate wiring check"), at
+     09:30, 09:40 and 09:55.
+   - Three more rows exist but are stood down (`answeredBeforeItFired`) and
+     will not fire.
+   - The 09:00 block ("Alarm wiring check") **has no nudge rows left in Van's
+     database at all**, though the log shows three were armed with Android at
+     01:40 for 09:00, 09:10 and 09:25. Whether Android still fires them is not
+     something I can see from here — see issue 23. If a notification did appear
+     around 09:00, that is why, and pressing START on it is still the useful
+     test.
+
+   This is the last unverified step of the loop, and until 05:15 this morning
+   it would have silently done nothing with Van not running — which is exactly
+   the state your phone will be in. Fixed and tested (issue 16).
+
+   **On those notifications, only START works.** They were armed hours before
+   the fix and carry the old flags, which I checked rather than assumed. Their
+   Snooze and Not today will dismiss the notification and do nothing. Any nudge
+   armed from now on has all three working. Issue 15.
+3. **Ignore the 09:30 block on purpose, then open Chat.** One minute, and the
    only part of the negotiation loop never reached on hardware.
 4. **Listen to the drum.** Nobody ever has. Your ringer was muted every time
    I looked, so unmute first.
@@ -58,7 +73,7 @@ database still carries the old deadline, so re-type it if it matters.
 **If you rebuild and reinstall, do it after 10:00.** Notification ids are
 derived from the session id, and I changed the derivation this morning
 (`25cde26`) for good reasons written up in section 3m. The six nudges armed for
-09:00–09:55 were armed by the *installed* build and carry the old ids, so a new
+09:30–09:55 were armed by the *installed* build and carry the old ids, so a new
 build could no longer cancel them. They would still fire. I could not check on
 a locked phone whether Android clears an app's alarms on update anyway — if it
 does, this is moot and you would simply lose them. Either way, letting them
@@ -79,7 +94,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **561 tests passing** — 249 in `packages/van_core` (pure Dart), 312 in the app.
+- **562 tests passing** — 249 in `packages/van_core` (pure Dart), 313 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -861,6 +876,37 @@ fields that do not exist would be worse than no report at all.
 
 ---
 
+## 3p. "Delivered" is inferred, and the first report said so wrongly
+
+Van **cannot observe a notification appearing.** There is no callback for it.
+`EventType.nudgeDelivered` is written by `_recordAnswer` on the way past, when
+a rung is *answered* — so a nudge that showed up and was shrugged off is never
+counted as delivered.
+
+The reader shipped an hour earlier printed that number under the label
+`delivered`, directly beneath `scheduled`. Run against the real device it read:
+
+```
+  scheduled          12
+  delivered          0
+```
+
+which invites exactly one conclusion — nudges are broken — and that conclusion
+is not supported. It may equally mean twelve fired and nobody replied. The
+column is now `answered`, with the caveat printed underneath it.
+
+**The lesson is about labels, not about nudges.** A number that is cheap to
+compute and easy to mislabel is worse than no number, because it gets acted on.
+This one was wrong for an hour and would have been read first by whoever ran
+the tool, since it sits next to the count it appears to contradict.
+
+If genuine delivery counts are ever wanted, they need something that runs when
+the notification does — the same background isolate that issues 1a and 15 are
+waiting on. Until then the honest report is the one that says what it does not
+know.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -871,7 +917,7 @@ than this file.**
 | 1 | ~~Stale sessions need a reschedule sweep~~ | **Done, 21 Aug 2026** (`74cb226`). See section 3a. One caveat left below. |
 | 1a | The sweep only runs when the app is open | There is no background isolate, so work abandoned while Van is closed is not moved until you next open the app. In practice that means the replacement block's notification cannot fire before you have opened Van at least once since the original went stale. Acceptable for now — the alternative is the headless-isolate design WP-4 deliberately rejected — but it is the first thing to revisit if the sweep feels late in real use. |
 | 2 | **Drum sound: needs a listen** | Done and wired, but never heard by a human. `tool/generate_drum.py` synthesises both sounds; re-run it with different parameters if the tone is wrong. Note that Android caches channel settings, so **changing the sound requires bumping the channel id** in `notifications.dart` (currently `_v2`) or it will silently not apply. |
-| 3 | **Device verification: mostly done, one gap** | Confirmed on the S25 on 21 Aug: capture through the UI lands in the database, the sweep runs on real persisted data, and the ladder now registers real `RTC_WAKEUP` alarms (the runs are in `docs/NIGHT_LOG.md`). **Still unconfirmed:** a nudge actually being delivered at its time, the START action round-trip into `sessionStarted`, and Doze behaviour after 30+ minutes idle. Six real nudges are armed across two blocks, 09:00 to 09:55 on 21 Aug. |
+| 3 | **Device verification: mostly done, one gap** | Confirmed on the S25 on 21 Aug: capture through the UI lands in the database, the sweep runs on real persisted data, and the ladder now registers real `RTC_WAKEUP` alarms (the runs are in `docs/NIGHT_LOG.md`). **Still unconfirmed:** a nudge actually being delivered at its time, the START action round-trip into `sessionStarted`, and Doze behaviour after 30+ minutes idle. **Checked against a database pull at 09:07 on 21 Aug**, which corrected an earlier claim here: three live rungs at 09:30/09:40/09:55, all for one block, plus three stood-down rows. Still nothing started — `sessionStarted` count is zero. |
 | 4 | ~~`EventRepo.forSession` is a table scan~~ | **Done, 21 Aug 2026** (`890d8a7`, `da1209c`). `sessionId` is a nullable indexed column now. See section 5d — the migration needed two attempts and the second was found on the phone. |
 | 5 | Inference logging is fire-and-forget | `EventLogInferenceObserver` uses `unawaited` so a slow write never delays the call it describes. A crash can therefore lose the last few inference events. Accepted; the alternative is making every model call wait on a database write. Tests must `flushLog()` before asserting. |
 | 6 | ~~Legacy launcher icons are Flutter's default~~ | **Done, 21 Aug 2026** (`d2abb52`). Generated from the vector by `tool/generate_launcher_icons.py`. Not verifiable on the S25, which is API 36 and draws the adaptive icon. |
@@ -887,8 +933,9 @@ than this file.**
 | 18 | ~~Deadlines were parsed in UTC, not the user's timezone~~ | **Done, 21 Aug 2026** (`6b1f4b3`). `TemporalParser` takes a `utcOffset`, `ExtractTask` defaults it to zero, and `VanService` never passed one — so on a UTC-7 phone every typed deadline was seven hours early. The planner had the right offset the whole time, so the two disagreed about what day it was. **Existing rows keep their wrong deadlines**; nothing back-fills them. |
 | 19 | **The timezone offset is read once, at startup** | `main.dart` computes `DateTime.now().timeZoneOffset` and hands it to `WakingHours`; `VanService` holds it in a `final` field and derives the parser and the suppression policy from it. Nothing recomputes it, so a process alive across a DST change or a flight keeps the old offset — the same class of bug as issue 18, an hour wide instead of seven, until Van is restarted. **Next US transition is 1 Nov 2026**, so there is time to do it properly. Fix is a composition-root change: rebuild the service when the offset moves, off the `resumed` lifecycle callback the three screens already use. Not attempted overnight — it needs device verification, and the phone was locked. |
 | 20 | ~~A failed alarm destroyed the whole capture~~ | **Done, 21 Aug 2026** (`f2e736b`). See section 3l. Both layers: `_armLadder` records `nudgeScheduleFailed` and carries on, and `ChatScreen._send` gives the typed sentence back instead of eating it. |
-| 21 | ~~Notification ids came from `String.hashCode`~~ | **Done, 21 Aug 2026** (`25cde26`). See section 3m. Explicit FNV-1a, pinned by tests, and the mask widened from 22 to 28 bits — the old one had 2 real collisions in 5000 session ids. **One-time cost:** rungs armed by an older build carry old ids and cannot be cancelled by a newer one. Section 0 says to reinstall after the 09:00 nudges have fired. |
+| 21 | ~~Notification ids came from `String.hashCode`~~ | **Done, 21 Aug 2026** (`25cde26`). See section 3m. Explicit FNV-1a, pinned by tests, and the mask widened from 22 to 28 bits — the old one had 2 real collisions in 5000 session ids. **One-time cost:** rungs armed by an older build carry old ids and cannot be cancelled by a newer one. Section 0 says to reinstall after the 09:30–09:55 nudges have fired. |
 | 22 | ~~A capture during a sweep could double-book a slot~~ | **Done, 21 Aug 2026** (`2eed1fb`). See section 3n. `capture` and `sweepStaleSessions` now run one at a time; reproduced first, with both blocks landing at 12:05Z. |
+| 23 | **Three armed nudges have no rows left in the database** | Found in the 09:07 pull. Session `hljn1mbedk2` (the 09:00 block) has three `nudgeScheduled` events from 01:40 — for 09:00, 09:10 and 09:25 — and **zero rows in the `nudges` table**. The session itself is still `planned`. `NudgeRepo.deleteForSession` is only called from `undoCapture`, which also removes the session, so that is not what happened. **I do not know the cause and have not guessed at one.** It matters because the row is how Van knows to mark a rung delivered or stand it down: an alarm can be live with Android while Van has no record of it, and `cancelForSession` works off derived ids so it would still cancel. Reproducing needs the history, which is on the phone. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 

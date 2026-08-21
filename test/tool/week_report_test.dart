@@ -73,6 +73,18 @@ void main() {
       );
     });
 
+    test('never presents the answered count as a delivery count', () {
+      // Van cannot observe a notification appearing; nudgeDelivered is only
+      // written when a rung is answered. Printing it as "delivered" next to
+      // "scheduled" invites exactly the wrong conclusion - that nudges are
+      // not arriving - when it may only mean nobody replied to them.
+      final text = render(review(), 1);
+
+      expect(text, isNot(contains('delivered  ')));
+      expect(text, contains('answered'));
+      expect(text, contains('is not a delivery count'));
+    });
+
     test('platform refusals are called out, and only when there are any', () {
       expect(render(review(), 1), isNot(contains('REFUSED')));
       expect(

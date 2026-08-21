@@ -115,9 +115,14 @@ String render(WeekReview review, int rowCount) {
     ..writeln()
     ..writeln('Nudges')
     ..writeln('  scheduled          ${review.nudgesScheduled}')
-    ..writeln('  delivered          ${review.nudgesDelivered}')
+    ..writeln('  answered           ${review.nudgesDelivered}')
     ..writeln('  held back          ${review.nudgesSuppressed}')
-    ..writeln(_group('    ', review.suppressedByReason));
+    ..writeln(_group('    ', review.suppressedByReason))
+    ..writeln(
+      '  (Van marks a nudge delivered only when a rung is answered, so',
+    )
+    ..writeln('   "answered" is not a delivery count - one that appeared')
+    ..writeln('   and was ignored is invisible here. See STATUS 3p.)');
 
   if (review.nudgeScheduleFailures > 0) {
     out.writeln(
