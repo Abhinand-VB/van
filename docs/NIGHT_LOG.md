@@ -275,6 +275,42 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — reversing myself on the other two buttons
+
+**Finished.** Issue 15, which I had opened a few hours earlier and decided not
+to fix. The decision was wrong, and it was wrong because I had described the
+bug inaccurately to myself.
+
+I wrote that pressing Snooze or Not today with Van killed "does nothing".
+Checking the plugin, `cancelNotification` defaults to true — so the
+notification is *dismissed* while the action is dropped. The user presses
+"Snooze 10", watches it disappear, and gets nudged again ten minutes later
+about a block that never moved. That is not a button doing nothing; that is a
+button lying, and then Van appearing to ignore them.
+
+D33 weighed "intrusive" against "does nothing" and picked intrusive as the
+worse option. Weighed against "appears to work and doesn't", it is plainly the
+better one. All three actions are `showsUserInterface` now, and the response
+arrives through the launch-details path built an hour earlier.
+
+The intrusiveness is real and unfixed: pressing "Not today" now opens the app
+to dismiss something. Issue 15 stays open, describing the actual fix — a
+background isolate with its own database connection.
+
+**What the device showed that I would otherwise have got wrong.** The six
+notifications already armed for this morning were serialised hours ago, with
+the old flags — actions are baked in at schedule time, not read fresh when the
+notification fires. So their Snooze and Not today are still lost. I checked
+this rather than assuming the fix was retroactive, and STATUS now tells the
+owner exactly which button works on which notification. Section 3h records the
+three routes an action can take, because only one of them is obvious.
+
+**On reversing a decision made hours earlier.** Worth being clear that this was
+not new information about the world — `cancelNotification` has defaulted to
+true the whole time. It was new attention. I wrote the original decision from
+a description I had made up and not checked, which is the same failure as the
+comments in section 3g, applied to my own reasoning instead of someone else's.
+
 ### 21 August 2026, overnight — the button that never worked
 
 **Finished.** Nothing was left on the board that an agent could close alone, so

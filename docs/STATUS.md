@@ -13,17 +13,20 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **510 tests, all green,
+Van is finished as far as an agent can take it alone. **512 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
    tap. Until then nudges land within the hour rather than on the minute.
 2. **Wait for a nudge and press START.** Six are armed, 09:00–09:55. This is
-   the last unverified step of the loop — and until 05:15 this morning it
-   would have silently done nothing when Van was not running, which is
-   exactly the state your phone will be in. Fixed and tested; see issue 16.
-   **Snooze and Not today still do nothing from a killed app** (issue 15), so
-   if you want to try those, open Van first.
+   the last unverified step of the loop, and until 05:15 this morning it would
+   have silently done nothing with Van not running — which is exactly the
+   state your phone will be in. Fixed and tested (issue 16).
+
+   **On those six notifications, only START works.** They were armed hours
+   before the fix and carry the old flags, which I checked rather than
+   assumed. Their Snooze and Not today will dismiss the notification and do
+   nothing. Any nudge armed from now on has all three working. Issue 15.
 3. **Ignore the 09:00 block on purpose, then open Chat.** One minute, and the
    only part of the negotiation loop never reached on hardware.
 4. **Listen to the drum.** Nobody ever has. Your ringer was muted every time
@@ -48,7 +51,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **510 tests passing** — 238 in `packages/van_core` (pure Dart), 272 in the app.
+- **512 tests passing** — 238 in `packages/van_core` (pure Dart), 274 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -82,7 +85,7 @@ working configuration, not a degraded one.
 | App: prompt assets | 9 |
 | App: negotiation guards (review) | 5 |
 | App: fatigue window | 2 |
-| App: notification actions | 9 |
+| App: notification actions | 11 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -106,6 +109,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+59e063d  Make every nudge button open the app, reversing last night's call
 d104b1a  Collect the notification action that launched the app
 73505a8  Do not build the model just to throw it away
 e32ce8a  Fatigue is measured over the day the rung fires, not the day it is armed
@@ -484,6 +488,38 @@ fixed the case I was looking at rather than the class of case.
 
 ---
 
+## 3h. Notification actions: what reaches Van, and when
+
+Three routes, and only one of them is obvious.
+
+| When you press a button | What happens |
+|---|---|
+| Van is running | the callback passed to `Notifications.init` fires directly |
+| Van is killed, action opens the app | Android launches Van; the response waits in `getNotificationAppLaunchDetails` and `main.dart` collects it once at startup |
+| Van is killed, action does *not* open the app | it reaches `notificationTapBackground`, an isolate with no Flutter engine, and is **lost** |
+
+The third row is why every action in `AndroidNotifications.nudgeActions` is
+marked `showsUserInterface`. Dropping that flag from one is invisible during
+development — the button keeps working while Van is running, and starts being
+silently dropped when it is not, which is precisely the case nobody tests by
+hand. There is a test asserting all three carry it.
+
+It is also why the flag is not free: opening the app to dismiss a nudge is
+intrusive. The right answer is to handle actions in the background isolate with
+its own database connection. That is real work and it is issue 15.
+
+**`cancelNotification` defaults to true**, which is what makes the failure
+nasty rather than merely inert. A lost action still dismisses the notification,
+so the user sees the button work and then gets nudged again about a block that
+never moved.
+
+**Actions are baked into each notification when it is scheduled.** Changing
+`nudgeActions` does not touch anything already armed — the flags are serialised
+into `shared_prefs/scheduled_notifications.xml` at schedule time. After a
+change here, existing ladders keep the old behaviour until they are re-armed.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -506,7 +542,7 @@ than this file.**
 | 11 | ~~`ExtractTask` and `ComposeNudge` still hold their prompts inline~~ | **Done, 21 Aug 2026** (`86ce1ec`). All three prompts are assets, loaded through `Prompts`. See section 3f. |
 | 13 | ~~Two parser gaps the golden set found~~ | **Done, 21 Aug 2026** (`61e3e72`), and the two halves needed opposite treatment. *"next week"* was simply unparsed and is now handled, along with `this week` and `in N weeks`. The **all-caps case is closed as deliberate**: Van cannot tell shouting from acronyms, so any rule turning `TIDY THE DESK` into `Tidy the desk` also turns `FIX API DOCS` into `Fix api docs` — loud versus lossy. The golden now specifies preservation. `extract_task` scores 29/29. |
 | 14 | **`GemmaBackend` cannot be measured off-device** | It needs the platform channel and a model file, so `tool/run_goldens.dart` deliberately has no flag for it. Measuring a candidate model means running the golden set on the phone, which needs a small debug screen or an integration test. Nothing built yet; the WP-6 gate cannot be evaluated until it is. |
-| 15 | **Snooze and Not today are lost when Van is not running** | They are not marked `showsUserInterface`, so they never open the app, and the background handler runs in an isolate with no Flutter engine — it cannot reach `VanService` or the database without opening a second connection to both. Pressing them with Van killed does nothing at all, silently. START survives because it *does* open the app (issue 16). Fixing this properly means a background isolate with its own database; marking them `showsUserInterface` would 'fix' it by yanking you into the app every time you dismiss something, which is worse. |
+| 15 | **Snooze and Not today need the app to open** | Fixed the cheap way on 21 Aug (`59e063d`): all three actions are now `showsUserInterface`, so Android launches Van and the response arrives through `consumeLaunchAction`. That works, and it is intrusive — pressing "Not today" opens the app to dismiss something. The real fix is handling actions in the background isolate, which needs its own database connection; until then this is honest rather than silent. **Notifications armed before the fix keep the old flags**, so the six pending for this morning still lose Snooze and Not today. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 
 ---
