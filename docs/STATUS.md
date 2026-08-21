@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **527 tests, all green,
+Van is finished as far as an agent can take it alone. **533 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -36,6 +36,13 @@ Then use it for a week and let real annoyance decide what comes next. There is
 no obvious next feature, and section 7 argues the case for WP-6 got *weaker*
 last night rather than stronger.
 
+**One thing to know about anything you typed before this morning.** Deadlines
+were being parsed in UTC rather than your timezone, so every one came out
+seven hours early — "by friday" meant Friday at 16:59, and "today" typed after
+five in the evening produced a task that was already overdue. Fixed at 06:55
+(issue 18). Tasks captured from now on are right; anything already in the
+database still carries the old deadline, so re-type it if it matters.
+
 Two things on your phone are mine, not yours: test tasks called "Alarm wiring
 check" and "Negotiate wiring check". Delete them whenever.
 
@@ -51,7 +58,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **527 tests passing** — 238 in `packages/van_core` (pure Dart), 289 in the app.
+- **533 tests passing** — 238 in `packages/van_core` (pure Dart), 295 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -87,6 +94,7 @@ working configuration, not a degraded one.
 | App: fatigue window | 2 |
 | App: notification actions | 11 |
 | App: focus screen | 17 |
+| App: timezone | 6 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -110,6 +118,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+6b1f4b3  Parse deadlines in the user's timezone, not UTC
 04c31da  Guard the last two methods that could rewrite a closed block
 87fe6f3  Refuse an action arriving twice for the same block
 ff7c20d  Resuming a block is not starting it again
@@ -606,6 +615,42 @@ The replacement records the link through `parentSessionId` either way.
 
 ---
 
+## 3k. The tell: a thoughtful default that production never overrides
+
+Four mechanisms this week existed, were documented, and were never wired:
+
+| Mechanism | How long it was dead |
+|---|---|
+| `NudgeRepo` and the whole fatigue path | since WP-1 |
+| `negotiate` | since WP-5 |
+| `assets/inference_config.json` | since WP-5 |
+| `TemporalParser.utcOffset` | since WP-1a |
+
+Every one has the same shape: **a constructor parameter with a sensible
+default, and no call site that overrides it.** The default makes the class
+look complete and the tests pass, because tests construct it directly and pass
+the interesting value themselves.
+
+The timezone one is the sharpest example. `TemporalParser` takes a `utcOffset`
+and is deliberately written to use it rather than calling `toLocal()`, with a
+comment explaining that this keeps the core deterministic. `ExtractTask`
+defaults it to zero. `VanService` never passed one. `main.dart` computes the
+real device offset and hands it only to `WakingHours` — so the planner read
+the right clock and the parser read UTC, and they quietly disagreed about what
+day it was.
+
+**Nothing caught it because every suite ran at UTC**, where the bug is
+invisible by construction, and the golden set encodes UTC expectations for the
+same reason. `test/app/timezone_test.dart` runs at the device's real offset and
+is the first thing in the project to do so.
+
+**How to look for the next one:** grep for a parameter with a default, then
+grep for its name at the call sites. If production never mentions it, either
+the default is the only value anyone wanted — in which case delete the
+parameter — or nobody wired it.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -629,6 +674,7 @@ than this file.**
 | 13 | ~~Two parser gaps the golden set found~~ | **Done, 21 Aug 2026** (`61e3e72`), and the two halves needed opposite treatment. *"next week"* was simply unparsed and is now handled, along with `this week` and `in N weeks`. The **all-caps case is closed as deliberate**: Van cannot tell shouting from acronyms, so any rule turning `TIDY THE DESK` into `Tidy the desk` also turns `FIX API DOCS` into `Fix api docs` — loud versus lossy. The golden now specifies preservation. `extract_task` scores 29/29. |
 | 14 | **`GemmaBackend` cannot be measured off-device** | It needs the platform channel and a model file, so `tool/run_goldens.dart` deliberately has no flag for it. Measuring a candidate model means running the golden set on the phone, which needs a small debug screen or an integration test. Nothing built yet; the WP-6 gate cannot be evaluated until it is. |
 | 15 | **Snooze and Not today need the app to open** | Fixed the cheap way on 21 Aug (`59e063d`): all three actions are now `showsUserInterface`, so Android launches Van and the response arrives through `consumeLaunchAction`. That works, and it is intrusive — pressing "Not today" opens the app to dismiss something. The real fix is handling actions in the background isolate, which needs its own database connection; until then this is honest rather than silent. **Notifications armed before the fix keep the old flags**, so the six pending for this morning still lose Snooze and Not today. |
+| 18 | ~~Deadlines were parsed in UTC, not the user's timezone~~ | **Done, 21 Aug 2026** (`6b1f4b3`). `TemporalParser` takes a `utcOffset`, `ExtractTask` defaults it to zero, and `VanService` never passed one — so on a UTC-7 phone every typed deadline was seven hours early. The planner had the right offset the whole time, so the two disagreed about what day it was. **Existing rows keep their wrong deadlines**; nothing back-fills them. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 

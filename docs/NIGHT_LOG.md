@@ -275,6 +275,49 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — every deadline was seven hours early
+
+**Finished.** The phone was still locked, so code-only again. Four review
+passes had used four questions; the one never asked was about **time**, which
+for a time-driven app is a conspicuous gap.
+
+**`TemporalParser` has a `utcOffset` and production never passed one.** It
+defaults to zero. `ExtractTask` defaults the parser. `VanService` built
+`ExtractTask` without one. `main.dart` computes the real device offset and
+hands it only to `WakingHours`.
+
+So on this UTC-7 phone, "finish the report by friday" meant Friday at 16:59.
+"today" typed after five in the evening produced a deadline in the past — a
+task born overdue. "tonight" meant one in the afternoon.
+
+The planner was reading the right clock the whole time, because `WakingHours`
+did get the offset. Blocks were being placed correctly in local waking hours
+against deadlines computed in a different timezone, and the two silently
+disagreed about what day it was.
+
+**Why nothing caught it.** Every suite in the project runs at UTC, where the
+bug is invisible by construction, and the golden set encodes UTC expectations
+for the same reason. `test/app/timezone_test.dart` is the first thing here to
+run at the device's real offset. I checked all three deadline tests fail
+against the old wiring before keeping them.
+
+**The pattern is now named, in section 3k.** This is the fourth mechanism this
+week that existed, was documented, and was never wired — after `NudgeRepo`,
+`negotiate`, and the inference config. Every one is a constructor parameter
+with a thoughtful default that production never overrides. The default is what
+makes it invisible: the class looks complete, and the tests pass because they
+construct it directly and pass the interesting value themselves.
+
+That is a better search than any of the four questions, because it is
+mechanical: grep for a parameter with a default, grep for its name at the call
+sites, and see whether production ever mentions it.
+
+**What the owner has to do about it.** Nothing automatic — existing rows keep
+their wrong deadlines, and I did not write a migration to shift them. A
+back-fill would have to guess which rows were parsed under the bug, and
+guessing at someone's deadlines is worse than telling them. Section 0 says to
+re-type anything that matters.
+
 ### 21 August 2026, overnight — asking the same question of everything
 
 **Finished.** Nothing was left on the board an agent could close alone, and the
