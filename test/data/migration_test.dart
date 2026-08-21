@@ -37,6 +37,12 @@ Database v1DatabaseWith(List<({EventType type, int ts, String payload})> rows) {
   return db;
 }
 
+/// Index names currently on the events table.
+List<String> indexesOn(Database db) => db
+    .select('PRAGMA index_list(events)')
+    .map((r) => r['name'] as String)
+    .toList();
+
 void main() {
   ({EventType type, int ts, String payload}) event(
     EventType type,
@@ -135,6 +141,42 @@ void main() {
 
       expect(await events.count(), 2);
       expect(await events.forSession('s1'), hasLength(1));
+    });
+
+    test('creates the index, not just the column', () async {
+      // The point of the whole migration. addColumn does not create declared
+      // indexes - only createAll does, and an upgrade never calls it - so an
+      // upgraded database would otherwise have the column and still scan.
+      // This was missed here and caught on the phone.
+      final raw = v1DatabaseWith([
+        event(EventType.sessionPlanned, 1000, {'sessionId': 's1'}),
+      ]);
+      final db = VanDatabase.on(NativeDatabase.opened(raw));
+      addTearDown(db.close);
+
+      // Force the upgrade to run before inspecting the schema.
+      await EventRepo(db, FakeClock(DateTime.utc(2026, 8, 21))).count();
+
+      expect(indexesOn(raw), contains('idx_events_session'));
+    });
+
+    test('a database already at v2 still gets the index', () async {
+      // Not hypothetical: this is the exact state the phone was left in by
+      // the first attempt, and it will never re-run the v2 step.
+      final raw =
+          v1DatabaseWith([
+              event(EventType.sessionPlanned, 1000, {'sessionId': 's1'}),
+            ])
+            ..execute('ALTER TABLE events ADD COLUMN session_id TEXT NULL')
+            ..execute("UPDATE events SET session_id = 's1'")
+            ..execute('PRAGMA user_version = 2');
+
+      final db = VanDatabase.on(NativeDatabase.opened(raw));
+      addTearDown(db.close);
+      final events = EventRepo(db, FakeClock(DateTime.utc(2026, 8, 21)));
+
+      expect(await events.forSession('s1'), hasLength(1));
+      expect(indexesOn(raw), contains('idx_events_session'));
     });
 
     test('appending after the upgrade fills the column too', () async {

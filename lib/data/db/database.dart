@@ -32,7 +32,7 @@ class VanDatabase extends _$VanDatabase {
   VanDatabase.on(super.e);
 
   @override
-  int get schemaVersion => 2;
+  int get schemaVersion => 3;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -59,6 +59,22 @@ class VanDatabase extends _$VanDatabase {
           'UPDATE events '
           r"SET session_id = json_extract(payload_json, '$.sessionId') "
           'WHERE session_id IS NULL AND json_valid(payload_json)',
+        );
+      }
+
+      // v3 exists only because v2 shipped without this. `addColumn` does not
+      // create the indexes declared on a table - only `createAll` does, and an
+      // upgrade never calls it - so a database upgraded to v2 got the column
+      // and no index, which is the one thing the change was for. Found on the
+      // phone rather than in the tests.
+      //
+      // Separate from the v2 block because a device that already ran v2 will
+      // never run it again, and that device exists. IF NOT EXISTS makes the
+      // statement safe on every path into v3.
+      if (from < 3) {
+        await customStatement(
+          'CREATE INDEX IF NOT EXISTS idx_events_session '
+          'ON events (session_id)',
         );
       }
     },
