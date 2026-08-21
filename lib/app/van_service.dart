@@ -1031,6 +1031,26 @@ class VanService {
     return (session: candidate, task: task);
   }
 
+  /// The block that is due and has not been started, if there is one.
+  ///
+  /// Earliest first, because the one that has been waiting longest is the one
+  /// worth asking about. Deliberately not [next]: that answers "what should I
+  /// do", and this answers "what did I say I would do and then not".
+  Future<({WorkSession session, Task task})?> stalled() async {
+    final now = _clock.now();
+    final candidates =
+        (await _sessions.unresolved())
+            .where((s) => !s.hasStarted && s.plannedStart.isBefore(now))
+            .toList()
+          ..sort((a, b) => a.plannedStart.compareTo(b.plannedStart));
+    if (candidates.isEmpty) return null;
+
+    final session = candidates.first;
+    final task = await _tasks.byId(session.taskId);
+    if (task == null) return null;
+    return (session: session, task: task);
+  }
+
   /// Everything still open, deadline first.
   Future<List<Task>> openTasks() => _tasks.open();
 

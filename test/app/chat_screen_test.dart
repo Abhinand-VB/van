@@ -159,6 +159,119 @@ void main() {
     });
   });
 
+  group('renegotiating a stalled block in chat', () {
+    /// Captures a task and walks the clock past its block without starting it.
+    Future<WorkSession> stall(String sentence, {int late = 20}) async {
+      final result = await service.capture(sentence);
+      final session = result.sessions.first;
+      clock.advanceTo(session.plannedStart.add(Duration(minutes: late)));
+      return session;
+    }
+
+    testWidgets('chat opens the conversation about a block that stalled', (
+      tester,
+    ) async {
+      await stall('write the report 60 minutes');
+
+      await showChat(tester);
+
+      expect(find.text('Write the report'), findsOneWidget);
+      expect(find.textContaining('Not started'), findsOneWidget);
+      expect(find.text("What's in the way?"), findsWidgets);
+    });
+
+    testWidgets('says nothing when no block has stalled', (tester) async {
+      await service.capture('write the report 60 minutes');
+
+      await showChat(tester);
+
+      expect(find.textContaining('Not started'), findsNothing);
+      expect(find.textContaining('Say what needs doing'), findsOneWidget);
+    });
+
+    testWidgets('what you type is an answer, not a new task', (tester) async {
+      await stall('write the report 60 minutes');
+      await showChat(tester);
+
+      await send(tester, 'too tired to face an hour of it');
+
+      expect(
+        await service.openTasks(),
+        hasLength(1),
+        reason: 'answering a stall must not capture a task called "too tired"',
+      );
+      expect(find.text('Shrink it'), findsOneWidget);
+    });
+
+    testWidgets('the proposal changes nothing until it is accepted', (
+      tester,
+    ) async {
+      final session = await stall('write the report 60 minutes');
+      await showChat(tester);
+      await send(tester, 'too tired');
+
+      final untouched = await SessionRepo(db).byId(session.id);
+      expect(untouched!.status, SessionStatus.planned);
+      expect(untouched.plannedMinutes, 60);
+    });
+
+    testWidgets('accepting a shrink actually shrinks the block', (
+      tester,
+    ) async {
+      final session = await stall('write the report 60 minutes');
+      await showChat(tester);
+      await send(tester, 'too tired');
+
+      await tester.tap(find.text('Shrink it'));
+      await tester.pumpAndSettle();
+
+      final replaced = await SessionRepo(db).byId(session.id);
+      expect(replaced!.status, SessionStatus.rescheduled);
+
+      final live = (await service.upcoming()).single;
+      expect(live.plannedMinutes, 30);
+      expect(live.parentSessionId, session.id);
+      expect(find.textContaining('Moved to'), findsOneWidget);
+    });
+
+    testWidgets('declining leaves the block exactly as it was', (tester) async {
+      final session = await stall('write the report 60 minutes');
+      await showChat(tester);
+      await send(tester, 'too tired');
+
+      await tester.tap(find.text('Leave it'));
+      await tester.pumpAndSettle();
+
+      final untouched = await SessionRepo(db).byId(session.id);
+      expect(untouched!.status, SessionStatus.planned);
+      expect(untouched.plannedMinutes, 60);
+      expect(find.text('Left as it is.'), findsOneWidget);
+    });
+
+    testWidgets('once answered, typing captures a task again', (tester) async {
+      await stall('write the report 60 minutes');
+      await showChat(tester);
+      await send(tester, 'too tired');
+      await tester.tap(find.text('Leave it'));
+      await tester.pumpAndSettle();
+
+      await send(tester, 'call the bank 20 minutes');
+
+      final open = await service.openTasks();
+      expect(open.map((t) => t.title), contains('Call the bank'));
+    });
+
+    testWidgets('the accept button names what it will do', (tester) async {
+      // "OK" on a card that might cancel your afternoon is not consent.
+      await stall('write the report 60 minutes');
+      await showChat(tester);
+      await send(tester, 'too tired');
+
+      expect(find.text('Shrink it'), findsOneWidget);
+      expect(find.text('OK'), findsNothing);
+    });
+  });
+
   group('the task list', () {
     Future<void> showList(WidgetTester tester) async {
       await tester.pumpWidget(

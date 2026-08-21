@@ -37,6 +37,37 @@ class PlanCard extends ChatEntry {
   final bool undone;
 }
 
+/// Van opening a conversation about a block that did not start.
+class StallPrompt extends ChatEntry {
+  /// Creates a prompt.
+  const StallPrompt({required this.session, required this.task});
+
+  /// The block in question.
+  final WorkSession session;
+
+  /// The work it belongs to.
+  final Task task;
+}
+
+/// Van's answer to a reason: a way out, awaiting a yes.
+class ProposalCard extends ChatEntry {
+  /// Creates a card.
+  const ProposalCard(this.outcome, {this.reason, this.settled});
+
+  /// What Van proposes, and whether the domain would allow it.
+  final NegotiationOutcome outcome;
+
+  /// What the user said, which the level depended on.
+  final String? reason;
+
+  /// What happened once the user answered, or null while it is still open.
+  final String? settled;
+
+  /// A copy of this card, closed with [note].
+  ProposalCard closed(String note) =>
+      ProposalCard(outcome, reason: reason, settled: note);
+}
+
 /// Capture as a conversation, with the plan shown for approval.
 ///
 /// The quick-add field on the Now screen answers "get this out of my head".
@@ -57,23 +88,65 @@ class ChatScreen extends StatefulWidget {
   State<ChatScreen> createState() => _ChatScreenState();
 }
 
-class _ChatScreenState extends State<ChatScreen> {
+class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   final _input = TextEditingController();
   final _scroll = ScrollController();
   final _entries = <ChatEntry>[];
   bool _busy = false;
 
+  /// The block the next typed line is about, or null when typing captures a
+  /// new task instead. Chat has exactly two modes and the composer says which.
+  String? _answering;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    unawaited(_askAboutStall());
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _input.dispose();
     _scroll.dispose();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(_askAboutStall());
+  }
+
+  /// Opens the conversation if a block is sitting there unstarted.
+  ///
+  /// Only ever asks once per block. Van reopening the same question every time
+  /// the app comes back would be the notification-fatigue problem wearing a
+  /// different hat.
+  Future<void> _askAboutStall() async {
+    if (_answering != null) return;
+    final stalled = await widget.service.stalled();
+    if (stalled == null || !mounted) return;
+
+    final alreadyAsked = _entries.whereType<StallPrompt>().any(
+      (p) => p.session.id == stalled.session.id,
+    );
+    if (alreadyAsked) return;
+
+    setState(() {
+      _entries.add(
+        StallPrompt(session: stalled.session, task: stalled.task),
+      );
+      _answering = stalled.session.id;
+    });
+    _toBottom();
   }
 
   Future<void> _send() async {
     final text = _input.text.trim();
     if (text.isEmpty || _busy) return;
 
+    final answering = _answering;
     setState(() {
       _entries.add(UserLine(text));
       _busy = true;
@@ -81,15 +154,78 @@ class _ChatScreenState extends State<ChatScreen> {
     _input.clear();
     _toBottom();
 
-    final result = await widget.service.capture(text);
+    final entry = answering == null
+        ? PlanCard(await widget.service.capture(text))
+        : await _proposalFor(answering, text);
     if (!mounted) return;
 
     setState(() {
-      _entries.add(PlanCard(result));
+      _entries.add(entry);
       _busy = false;
     });
     _toBottom();
   }
+
+  Future<ChatEntry> _proposalFor(String sessionId, String reason) async {
+    final outcome = await widget.service.negotiate(sessionId, reason: reason);
+    // The block was started or swept while they were typing. Say so rather
+    // than proposing a change to something that has already moved on.
+    if (outcome == null) {
+      return ProposalCard(
+        NegotiationOutcome(
+          session: WorkSession(
+            id: sessionId,
+            taskId: '',
+            plannedStart: widget.clock.now(),
+            plannedMinutes: 1,
+          ),
+          task: Task(id: '', title: '', createdAt: widget.clock.now()),
+          proposal: const NegotiationProposal(
+            action: NegotiationAction.hold,
+            message: 'That block has already moved on.',
+          ),
+          level: InterventionLevel.l0Gentle,
+        ),
+        settled: 'Nothing to do.',
+      );
+    }
+    return ProposalCard(outcome, reason: reason);
+  }
+
+  Future<void> _accept(int index, ProposalCard card) async {
+    final next = await widget.service.applyNegotiation(
+      card.outcome.session.id,
+      card.outcome.proposal,
+      reason: card.reason,
+    );
+    if (!mounted) return;
+
+    final note = switch (card.outcome.proposal.action) {
+      NegotiationAction.hold => 'Left as it is.',
+      NegotiationAction.release => 'Let go for today.',
+      _ when next == null => 'That block has already moved on.',
+      _ =>
+        'Moved to ${_clockTime(next.plannedStart.toLocal())}, '
+            '${next.plannedMinutes} min.',
+    };
+
+    setState(() {
+      _entries[index] = card.closed(note);
+      _answering = null;
+    });
+    _toBottom();
+  }
+
+  void _declineProposal(int index, ProposalCard card) {
+    setState(() {
+      _entries[index] = card.closed('Left as it is.');
+      _answering = null;
+    });
+  }
+
+  static String _clockTime(DateTime local) =>
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
 
   Future<void> _undo(int index, CaptureResult result) async {
     await widget.service.undoCapture(result.task.id);
@@ -132,10 +268,25 @@ class _ChatScreenState extends State<ChatScreen> {
                         clock: widget.clock,
                         onUndo: () => _undo(i, result),
                       ),
+                      StallPrompt(:final session, :final task) => _StallBubble(
+                        session: session,
+                        task: task,
+                        now: widget.clock.now(),
+                      ),
+                      final ProposalCard card => _ProposalBubble(
+                        card: card,
+                        onAccept: () => _accept(i, card),
+                        onDecline: () => _declineProposal(i, card),
+                      ),
                     },
                   ),
           ),
-          _Composer(controller: _input, busy: _busy, onSend: _send),
+          _Composer(
+            controller: _input,
+            busy: _busy,
+            answering: _answering != null,
+            onSend: _send,
+          ),
         ],
       ),
     );
@@ -339,11 +490,17 @@ class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
     required this.busy,
+    required this.answering,
     required this.onSend,
   });
 
   final TextEditingController controller;
   final bool busy;
+
+  /// Whether what gets typed is an answer about a stalled block rather than a
+  /// new task. The hint is the only thing telling the user which, so it is
+  /// not decoration.
+  final bool answering;
   final VoidCallback onSend;
 
   @override
@@ -360,11 +517,13 @@ class _Composer extends StatelessWidget {
                 enabled: !busy,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => onSend(),
-                decoration: const InputDecoration(
-                  hintText: 'finish the assignment by friday, 2 hours',
-                  border: OutlineInputBorder(),
+                decoration: InputDecoration(
+                  hintText: answering
+                      ? "what's in the way?"
+                      : 'finish the assignment by friday, 2 hours',
+                  border: const OutlineInputBorder(),
                   isDense: true,
-                  contentPadding: EdgeInsets.symmetric(
+                  contentPadding: const EdgeInsets.symmetric(
                     horizontal: 14,
                     vertical: 14,
                   ),
@@ -388,4 +547,119 @@ class _Composer extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Van asking about a block that did not start.
+class _StallBubble extends StatelessWidget {
+  const _StallBubble({
+    required this.session,
+    required this.task,
+    required this.now,
+  });
+
+  final WorkSession session;
+  final Task task;
+  final DateTime now;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final late = session.minutesLate(now);
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16, right: 32),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(task.title, style: theme.textTheme.titleMedium),
+            const SizedBox(height: 6),
+            Text(
+              late < 1
+                  ? '${session.plannedMinutes} minutes, due now. Not started.'
+                  : 'Due $late min ago. Not started.',
+              style: theme.textTheme.bodySmall,
+            ),
+            const SizedBox(height: 10),
+            Text("What's in the way?", style: theme.textTheme.bodyMedium),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Van's proposed way out, awaiting a yes.
+class _ProposalBubble extends StatelessWidget {
+  const _ProposalBubble({
+    required this.card,
+    required this.onAccept,
+    required this.onDecline,
+  });
+
+  final ProposalCard card;
+  final VoidCallback onAccept;
+  final VoidCallback onDecline;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final proposal = card.outcome.proposal;
+    final settled = card.settled;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 16, right: 32),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(proposal.message, style: theme.textTheme.bodyMedium),
+            if (settled != null) ...[
+              const SizedBox(height: 8),
+              Text(settled, style: theme.textTheme.bodySmall),
+            ] else ...[
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: onDecline,
+                    child: const Text('Leave it'),
+                  ),
+                  const SizedBox(width: 8),
+                  FilledButton(
+                    onPressed: onAccept,
+                    child: Text(_acceptLabel(proposal)),
+                  ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Names what the button will actually do, rather than saying "OK".
+  static String _acceptLabel(NegotiationProposal proposal) =>
+      switch (proposal.action) {
+        NegotiationAction.hold => 'Keep it',
+        NegotiationAction.shrink => 'Shrink it',
+        NegotiationAction.defer => 'Move it',
+        NegotiationAction.release => 'Drop it',
+      };
 }
