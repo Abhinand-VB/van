@@ -161,17 +161,21 @@ than this file.**
 | 1 | ~~Stale sessions need a reschedule sweep~~ | **Done, 21 Aug 2026** (`74cb226`). See section 3a. One caveat left below. |
 | 1a | The sweep only runs when the app is open | There is no background isolate, so work abandoned while Van is closed is not moved until you next open the app. In practice that means the replacement block's notification cannot fire before you have opened Van at least once since the original went stale. Acceptable for now — the alternative is the headless-isolate design WP-4 deliberately rejected — but it is the first thing to revisit if the sweep feels late in real use. |
 | 2 | **Drum sound: needs a listen** | Done and wired, but never heard by a human. `tool/generate_drum.py` synthesises both sounds; re-run it with different parameters if the tone is wrong. Note that Android caches channel settings, so **changing the sound requires bumping the channel id** in `notifications.dart` (currently `_v2`) or it will silently not apply. |
-| 3 | **Device verification incomplete** | Cannot confirm on hardware: a nudge actually firing, Doze behaviour after 30 min idle, notification action round-trip. Blocked by the phone's lock screen (see section 5). |
+| 3 | **Device verification: mostly done, one gap** | Confirmed on the S25 on 21 Aug: capture through the UI lands in the database, the sweep runs on real persisted data, and the ladder now registers real `RTC_WAKEUP` alarms (see section 5a). **Still unconfirmed:** a nudge actually being delivered at its time, the START action round-trip into `sessionStarted`, and Doze behaviour after 30+ minutes idle. Three real nudges are armed for 09:00, 09:10 and 09:25 on 21 Aug — see 5a. |
 | 4 | `EventRepo.forSession` is a table scan | `sessionId` lives in the JSON payload, so filtering happens in Dart. Fine at single-user volume. Fix later with a nullable indexed column or SQLite `json_extract`. |
 | 5 | Inference logging is fire-and-forget | `EventLogInferenceObserver` uses `unawaited` so a slow write never delays the call it describes. A crash can therefore lose the last few inference events. Accepted; the alternative is making every model call wait on a database write. Tests must `flushLog()` before asserting. |
 | 6 | Legacy launcher icons are Flutter's default | `mipmap-*/ic_launcher.png` still show the Flutter logo below API 26. The adaptive icon covers everything at or above it. |
+| 7 | **`NudgeRepo` is never constructed in production** | It exists, it is tested, and nothing in `lib/` uses it. The `nudges` table on the device is empty. That means `SuppressionPolicy`'s `consecutiveDismissals` input has no data source in the real app: the fatigue logic that stops Van nagging after repeated ignores is dead code on hardware, even though it is well covered in the simulation. Worth fixing before living with it for a week, since the week is meant to test exactly that. |
 
 ---
 
 ## 5. Device and environment notes
 
 **Test device:** Samsung Galaxy S25 (`SM-S931U`), Android 16 (API 36), arm64,
-Snapdragon 8 Elite, ~10.9 GB RAM. Serial `<device-serial>`.
+Snapdragon 8 Elite, ~10.9 GB RAM. Serial `<device-serial>`. **Timezone
+`America/Los_Angeles`** — not IST, whatever the example in `WakingHours` says.
+Convert `planned_start_utc` with that offset or every hand-read of the schedule
+comes out half a day wrong.
 
 This is a **flagship**, so it is the best case for on-device model work, not a
 representative one. Any WP-6 benchmark taken here must carry that caveat; test
@@ -179,9 +183,11 @@ on a mid-range phone before trusting the numbers.
 
 **Two things that will waste time if forgotten:**
 
-1. **Do Not Disturb was on.** `SuppressionPolicy` holds back everything below
+1. **Do Not Disturb.** `SuppressionPolicy` holds back everything below
    importance 10 under DND. Nudges will be silently suppressed and it will look
-   like the engine is broken. It is not.
+   like the engine is broken. It is not. **As of 21 Aug `zen_mode` is `0`**, so
+   this is not currently in the way — but the ringer was muted, which is a
+   different setting and does hide the drum.
 2. **The phone auto-locks.** Driving the UI with `adb shell input` silently does
    nothing while the screen is off — taps land on a blank screen and no error is
    reported. Unlock and raise the screen timeout before any adb UI work.
@@ -215,6 +221,71 @@ MSYS_NO_PATHCONV=1 adb exec-out run-as dev.van.app cat /data/data/dev.van.app/ap
 
 ---
 
+## 5a. What the device actually proved, 21 August 2026
+
+Run against the Galaxy S25 (`<device-serial>`) at ~01:30–01:45 local. The phone
+was awake and unlocked throughout, `zen_mode` was `0`, and no system setting
+was changed.
+
+**Timezone matters and is not what the docs assumed.** The device is on
+`America/Los_Angeles`, not IST. Anything reading `planned_start_utc` by hand
+must convert with that offset or every conclusion about the schedule comes out
+wrong by half a day.
+
+**Confirmed working:**
+
+- Capture through the quick-add field lands in the database: `taskCreated`,
+  `sessionPlanned`, the `extract_task` fallback, all present.
+- **The stale-session sweep works on real persisted data.** A session planned
+  on 19 Aug and never started was found 1953 minutes late, closed as
+  `rescheduled`, and given a replacement at 08:00 local — the first minute of
+  the next waking window, which is correct given it ran at 01:32. The event log
+  shows `sessionMissed` (`reason: stale`, `outcome: rescheduled`) followed by
+  `rescheduleApplied` (`reason: sweep`, `moves: 1`).
+- The `_v2` notification channels carry the drum:
+  `android.resource://dev.van.app/raw/nudge_drum` and `..._urgent`. The old
+  channels are `mDeleted=true`. The channel-bump procedure in issue 2 works.
+- After the fix in `3085a06`, three `RTC_WAKEUP` alarms are registered against
+  `dev.van.app` at 09:00, 09:10 and 09:25 — the exact ladder spacing the
+  policy specifies — and three `nudgeScheduled` events exist in the database.
+
+**The defect this run found, now fixed (`3085a06`).** No nudge had ever been
+able to fire on this device. `dumpsys alarm` listed 190 alarms and none
+belonged to Van. The manifest declared no permissions, so
+`AndroidScheduleMode.exactAllowWhileIdle` threw
+`exact_alarms_not_permitted` on every call, and `hasPermission()` only checked
+notifications so the app could never even ask for the exact-alarm grant. The
+event log had been saying this since the 19th: `sessionPlanned` on every
+session, `nudgeScheduled` on none. See the commit message for the full
+reasoning.
+
+**Still not proven, and honestly so:**
+
+- **A nudge being delivered.** The alarms are armed but none has fired yet.
+- **The START round-trip.** Untested, because there was no delivered
+  notification to press it on.
+- **Doze after 30+ minutes.** Not attempted.
+- **The drum's sound.** Still needs a human ear (issue 2). The phone's ringer
+  was muted during this run in any case.
+
+**Two things left on your phone that are mine, not yours:**
+
+1. A task **"Hi"** from an earlier session, whose block the sweep moved to
+   08:00 on 21 Aug.
+2. A test task **"Alarm wiring check"**, 30 minutes, with real nudges armed for
+   **09:00, 09:10 and 09:25 on 21 Aug**. They will go off. They are the proof
+   the fix works — pressing START on the first one would also close out the
+   round-trip gap above. Dismiss them whenever you like.
+
+**One caveat on how they will fire.** The exact-alarm grant is still withheld —
+opening that settings screen is your call, not mine, so I backed out of it
+without changing anything. The alarms registered through the new inexact
+fallback instead, with a one-hour window (`WL=3600000` in `dumpsys`), so they
+will land *near* those times rather than on them. Grant "Alarms & reminders"
+for Van in system settings and they become exact.
+
+---
+
 ## 6. Product decisions on record
 
 - **Name:** Van. **Mark:** a tree, as adaptive-icon vector drawables.
@@ -240,17 +311,19 @@ MSYS_NO_PATHCONV=1 adb exec-out run-as dev.van.app cat /data/data/dev.van.app/ap
 
 ## 7. Suggested next steps, in order
 
-1. **Finish device verification** (issue 3). Capture a task through the UI,
-   confirm the notification fires with the drum, and confirm the START action
-   round-trips into `sessionStarted`. See `OVERNIGHT.md` section 3a for the
-   wake-without-unlocking procedure.
-2. **Use it for a week.** The loop is functionally complete as of `74cb226`;
-   everything after this should be driven by what actually annoys or fails in
-   real use, not by the plan. In particular, the sweep's five-minute
-   replacement lead (inherited from `Rescheduler.minimumLeadMinutes`) may feel
-   too eager in practice — "you missed 9am, so start in five minutes" is a
-   plausible thing to hate.
-3. Then either the `negotiate` capability, the chat screen, or WP-6
+1. **Grant Van "Alarms & reminders"** in system settings, then confirm the
+   armed nudges fire on time. That is one tap and it is the last thing standing
+   between Van and doing its actual job. Pressing START on a delivered nudge
+   also closes the round-trip gap in issue 3.
+2. **Wire up `NudgeRepo`** (issue 7). The fatigue logic that stops Van nagging
+   is dead code on hardware, and the whole point of step 3 is to test that.
+3. **Use it for a week.** The loop is functionally complete as of `74cb226`
+   and can actually reach you as of `3085a06`. Everything after this should be
+   driven by what annoys or fails in real use, not by the plan. In particular
+   the sweep's five-minute replacement lead (from
+   `Rescheduler.minimumLeadMinutes`) may feel too eager — "you missed 9am, so
+   start in five minutes" is a plausible thing to hate.
+4. Then either the `negotiate` capability, the chat screen, or WP-6
    (on-device Gemma 4), depending on whether nudge quality or capture friction
    turns out to be the real problem.
 
@@ -261,37 +334,56 @@ MSYS_NO_PATHCONV=1 adb exec-out run-as dev.van.app cat /data/data/dev.van.app/ap
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
-### 21 August 2026, overnight — the stale-session sweep
+### 21 August 2026, overnight — the sweep, and why nudges never fired
 
-**Finished.** Work queue item 1, completely: `StaleSessionSweep` in the pure
-core, `VanService.sweepStaleSessions()`, the app-open and resume triggers, a
-Now-screen message so the user is told when their plan changed, 17 core unit
-tests, 8 end-to-end tests through the real database and a fake notifier, and 6
-simulation scenarios including the multi-day one. Commit `74cb226`. Suite went
-from 263 to 294 tests; format, `analyze --fatal-infos` and `check_layers` all
-clean before and after.
+**Finished.**
 
-**Decided on your behalf** — full reasoning in `DECISIONS_PENDING.md` D1–D4,
+*Work queue item 1, completely.* `StaleSessionSweep` in the pure core,
+`VanService.sweepStaleSessions()`, the app-open and resume triggers, a
+Now-screen message so you are told when your plan changed, 17 core unit tests,
+8 end-to-end tests through the real database, and 6 simulation scenarios
+including a multi-day one. Commit `74cb226`. Suite went 263 → 294 tests.
+
+*Device verification, and the defect it uncovered.* Section 5a has the detail.
+The short version: **no nudge had ever been able to fire on your phone.** The
+manifest declared no permissions, so every `zonedSchedule` threw
+`exact_alarms_not_permitted`, and `hasPermission()` only checked notifications
+so the app could never ask for the missing grant. `dumpsys alarm` showed 190
+alarms on the device and none belonging to Van. The event log had been saying
+it since the 19th — `sessionPlanned` on every session, `nudgeScheduled` on
+none — and nobody had looked. Fixed and verified on hardware in `3085a06`;
+three real alarms are now registered at 09:00, 09:10 and 09:25.
+
+This is the thing to take from tonight. The sweep was the planned work and it
+is good work, but it was fixing a hole in a loop whose last step was silently
+broken the whole time. **Verify on the device earlier.**
+
+**Decided on your behalf** — full reasoning in `DECISIONS_PENDING.md` D1–D6,
 all cheap to reverse:
 
 - Rescued blocks are marked `rescheduled`, not `skipped` as the brief said, so
   the event log can tell rescued work from abandoned work.
-- The sweep stops rescuing a block after 5 moves. This was not in the brief and
-  is the one addition I would most want you to look at — see D2 for why a cap
-  has to exist at all.
-- The sweep is triggered by app open and resume, not by a background isolate.
+- The sweep stops rescuing a block after 5 moves. Not in the brief, and the one
+  I would most like you to look at — D2 says why a cap has to exist.
+- The sweep is triggered by app open and resume, not a background isolate.
 - The Now screen tells you when work was moved rather than doing it silently.
+- `schedule()` falls back to an inexact alarm rather than throwing when the
+  exact-alarm grant is missing.
+- I did **not** grant the exact-alarm permission. The settings screen opened
+  and I backed out without touching it — see D6.
 
-**Not done, and why.** No device verification this iteration: the whole
-iteration went into item 1 and the brief is explicit that an item is finished
-completely or not started. `adb` was not touched, so nothing about the phone in
-section 5 has been re-confirmed — issue 3 is exactly where the last session
-left it.
+**Tried, and learned from.** Two false alarms worth recording so the next
+iteration does not repeat them. A completely black screenshot looked like a
+crash on the new build; it was the 15-second screen timeout, exactly as
+`OVERNIGHT.md` warns — logcat showed `windowStopped`, no Dart error. And I read
+the device database assuming IST and got a schedule that made no sense; the
+phone is on `America/Los_Angeles`. Both cost about ten minutes each.
 
-**What I would do next.** Device verification, then live with it for a week
-before writing more code. The loop is functionally complete now; the next
-useful signal is real annoyance, not more features.
+**What I would do next.** Grant Van "Alarms & reminders" (one tap), confirm a
+nudge is delivered and START round-trips, then wire up `NudgeRepo` — issue 7,
+found tonight: the fatigue logic that stops Van nagging has no data source in
+the real app. Then live with it for a week.
 
-**What I need from you.** Nothing blocking. Two things worth a minute over
-coffee: whether the five-move cap is right, and whether a replacement landing
-five minutes from now is helpful or infuriating.
+**What I need from you.** Nothing blocking. Worth a minute over coffee: the
+five-move cap, whether a replacement landing five minutes from now is helpful
+or infuriating, and whether to grant the exact-alarm permission.
