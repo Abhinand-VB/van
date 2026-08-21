@@ -84,10 +84,6 @@ Future<void> main() async {
 
   await service.noteAppOpened();
 
-  // Before the first frame: anything abandoned while the app was closed gets
-  // a new home, so the Now screen never opens on a plan that already lapsed.
-  await service.sweepStaleSessions();
-
   runApp(VanApp(service: service, clock: clock, notifications: notifications));
 }
 

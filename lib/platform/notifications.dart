@@ -1,3 +1,4 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_timezone/flutter_timezone.dart';
 import 'package:timezone/data/latest_all.dart' as tzdata;
@@ -61,7 +62,11 @@ abstract interface class Notifications {
     void Function(String sessionId, NudgeAction action) onAction,
   );
 
-  /// Whether the OS will let Van post notifications.
+  /// Whether the OS will let Van interrupt at a chosen minute.
+  ///
+  /// Both halves matter and they are separate grants on Android: posting
+  /// notifications at all, and scheduling an exact alarm. An app that may post
+  /// but may not schedule exactly is a task list.
   Future<bool> hasPermission();
 
   /// Asks for permission. Returns whether it was granted.
@@ -177,7 +182,14 @@ class AndroidNotifications implements Notifications {
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
-    return await android?.areNotificationsEnabled() ?? false;
+    // Notifications alone are not enough. Until this iteration the exact-alarm
+    // grant was only ever requested when notifications were *also* missing, so
+    // on a device where the user had allowed notifications it was never asked
+    // for at all - and every zonedSchedule threw.
+    final canPost = await android?.areNotificationsEnabled() ?? false;
+    final canScheduleExactly =
+        await android?.canScheduleExactNotifications() ?? false;
+    return canPost && canScheduleExactly;
   }
 
   @override
@@ -194,16 +206,35 @@ class AndroidNotifications implements Notifications {
   @override
   Future<void> schedule(PendingNudge nudge) async {
     _sessionByNotificationId[nudge.id] = nudge.sessionId;
-    await _plugin.zonedSchedule(
-      id: nudge.id,
-      title: nudge.title,
-      body: nudge.body,
-      scheduledDate: tz.TZDateTime.from(nudge.at.toLocal(), tz.local),
-      notificationDetails: _details(nudge),
-      androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-      payload: nudge.sessionId,
-    );
+
+    try {
+      await _zonedSchedule(nudge, AndroidScheduleMode.exactAllowWhileIdle);
+    } on PlatformException catch (e) {
+      // Exact alarms are a permission the user can take away at any time from
+      // system settings, and on API 33+ they do not have it until they grant
+      // it. A rung that fires a few minutes late is worth enormously more than
+      // a rung that never fires, so drop to inexact rather than lose it - and
+      // never let a failed alarm take the capture down with it.
+      if (!_isExactAlarmRefusal(e)) rethrow;
+      await _zonedSchedule(nudge, AndroidScheduleMode.inexactAllowWhileIdle);
+    }
   }
+
+  Future<void> _zonedSchedule(PendingNudge nudge, AndroidScheduleMode mode) =>
+      _plugin.zonedSchedule(
+        id: nudge.id,
+        title: nudge.title,
+        body: nudge.body,
+        scheduledDate: tz.TZDateTime.from(nudge.at.toLocal(), tz.local),
+        notificationDetails: _details(nudge),
+        androidScheduleMode: mode,
+        payload: nudge.sessionId,
+      );
+
+  /// Whether [e] is the platform refusing an exact alarm, as opposed to a real
+  /// fault worth surfacing.
+  static bool _isExactAlarmRefusal(PlatformException e) =>
+      e.code == 'exact_alarms_not_permitted';
 
   @override
   Future<void> showNow(PendingNudge nudge) async {

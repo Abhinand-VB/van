@@ -1,4 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Van's whole premise is a notification arriving at a chosen minute, so
+         `AndroidScheduleMode.exactAllowWhileIdle` in lib/platform/notifications.dart
+         is not a nicety. On API 31+ that mode needs this permission; without it
+         zonedSchedule throws, registers nothing with AlarmManager, and no nudge
+         ever fires. It is user-revocable, which is why schedule() falls back to
+         an inexact alarm rather than losing the rung entirely. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- A pre-scheduled ladder is armed once and must survive a restart.
+         Without this every rung is silently dropped on reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <application
         android:label="Van"
         android:name="${applicationName}"
