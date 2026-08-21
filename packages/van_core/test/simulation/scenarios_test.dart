@@ -256,6 +256,132 @@ void main() {
     });
   });
 
+  group('abandoned work', () {
+    test('a block nobody started is moved, not lost', () {
+      final sim = harnessAt(19, 8)
+        ..addTask('Database assignment', deadline: u(23, 23), minutes: 45);
+      final planned = sim.scheduleSession(taskId: 't1', start: u(19, 9));
+
+      // Nudged, ignored, and then left alone: the engine gives up at 60.
+      sim.advanceTo(u(19, 10, 30));
+      final before = sim.deliveredCount;
+      sim.advanceBy(hours: 2);
+      expect(
+        sim.deliveredCount,
+        before,
+        reason: 'the engine should have stopped asking\n${sim.dumpTimeline()}',
+      );
+
+      // Without the sweep this is where the work quietly disappears.
+      final outcomes = sim.sweep();
+
+      expect(outcomes, hasLength(1));
+      expect(sim.sessions[planned.id]!.status, SessionStatus.rescheduled);
+      final replacement = outcomes.single.replacement!;
+      expect(replacement.plannedStart.isAfter(sim.now), isTrue);
+      expect(replacement.plannedMinutes, 45);
+    });
+
+    test('the moved block gets nudged at its new time', () {
+      final sim = harnessAt(19, 8)
+        ..addTask('Database assignment', deadline: u(23, 23), minutes: 45);
+      sim.scheduleSession(taskId: 't1', start: u(19, 9));
+
+      sim.advanceTo(u(19, 10, 30));
+      final replacement = sim.sweep().single.replacement!;
+
+      sim.advanceTo(replacement.plannedStart);
+      sim.expectNudge(
+        level: InterventionLevel.l0Gentle,
+        type: NudgeType.sessionStart,
+      );
+      sim.userStarts();
+      expect(sim.sessions[replacement.id]!.hasStarted, isTrue);
+    });
+
+    test('the sweep does not touch a conversation still in progress', () {
+      final sim = harnessAt(19, 8)..addTask('Reading', minutes: 45);
+      sim.scheduleSession(taskId: 't1', start: u(19, 9));
+
+      sim.advanceTo(u(19, 9, 40));
+      expect(sim.sweep(), isEmpty);
+      expect(sim.sessions['s1']!.status, SessionStatus.planned);
+    });
+
+    test('work ignored all week is let go, not nagged about forever', () {
+      // The failure mode this guards: sweep re-arms the ladder, user ignores
+      // it again, sweep re-arms again - an accountability app that never
+      // stops, which is an accountability app that gets uninstalled.
+      final sim = harnessAt(19, 8)..addTask('Dreaded task', minutes: 45);
+      sim.scheduleSession(taskId: 't1', start: u(19, 9));
+
+      var opens = 0;
+      while (sim.sessions.values.any((s) => !s.isResolved) && opens < 40) {
+        sim.advanceBy(hours: 3);
+        sim.sweep();
+        opens++;
+      }
+
+      expect(
+        opens,
+        lessThan(40),
+        reason: 'Van never stopped moving this\n${sim.dumpTimeline()}',
+      );
+      expect(
+        sim.sessions.values.where((s) => s.status == SessionStatus.skipped),
+        hasLength(1),
+        reason: 'exactly one block should be the one Van gave up on',
+      );
+      expect(
+        sim.deliveredCount,
+        lessThanOrEqualTo(18),
+        reason: 'too many nudges for one dodged task\n${sim.dumpTimeline()}',
+      );
+    });
+
+    test('the move history survives every hop', () {
+      final sim = harnessAt(19, 8)..addTask('Dreaded task', minutes: 45);
+      sim.scheduleSession(taskId: 't1', start: u(19, 9));
+
+      final chain = <String>['s1'];
+      for (var hop = 0; hop < 3; hop++) {
+        sim.advanceBy(hours: 3);
+        final replacement = sim.sweep().single.replacement!;
+        expect(replacement.parentSessionId, chain.last);
+        expect(replacement.rescheduleCount, hop + 1);
+        chain.add(replacement.id);
+      }
+
+      // Every hop is still on the record, none of them overwritten.
+      for (final id in chain) {
+        expect(sim.sessions[id], isNotNull);
+      }
+    });
+
+    test('two abandoned blocks are not sent to the same slot', () {
+      final sim = harnessAt(19, 8)
+        ..addTask('Assignment', minutes: 45)
+        ..addTask('Reading', minutes: 45);
+      sim.scheduleSession(taskId: 't1', start: u(19, 9));
+      sim.scheduleSession(taskId: 't2', start: u(19, 10));
+
+      sim.advanceTo(u(19, 11, 30));
+      final moved = sim
+          .sweep()
+          .where((o) => o.wasMoved)
+          .map((o) => o.replacement!)
+          .toList();
+
+      expect(moved, hasLength(2));
+      expect(
+        moved[0].plannedEnd.isAfter(moved[1].plannedStart) &&
+            moved[1].plannedEnd.isAfter(moved[0].plannedStart),
+        isFalse,
+        reason: 'double-booked by the sweep\n${sim.dumpTimeline()}',
+      );
+    });
+  });
+
   group('performance', () {
     test('a simulated week runs in well under a second', () {
       final stopwatch = Stopwatch()..start();

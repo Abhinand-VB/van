@@ -17,6 +17,7 @@ class SimulationHarness {
     NudgeEngine? engine,
     WakingHours waking = const WakingHours(utcOffset: Duration.zero),
     PlannerConstraints constraints = const PlannerConstraints(),
+    StaleSessionSweep? sweep,
   }) : _clock = FakeClock(startAt),
        _waking = waking,
        _engine =
@@ -26,12 +27,16 @@ class SimulationHarness {
          ids: SequentialIds('s'),
          constraints: constraints,
          waking: waking,
-       );
+       ),
+       _sweep =
+           sweep ??
+           StaleSessionSweep(rescheduler: Rescheduler(ids: SequentialIds('w')));
 
   final FakeClock _clock;
   final WakingHours _waking;
   final NudgeEngine _engine;
   final SessionPlanner _planner;
+  final StaleSessionSweep _sweep;
 
   final _tasks = <String, Task>{};
   final _sessions = <String, WorkSession>{};
@@ -276,6 +281,78 @@ class SimulationHarness {
       '(move ${next.rescheduleCount})',
     );
   }
+
+  /// Runs the stale-session sweep, as opening the app does on the device.
+  ///
+  /// Explicit rather than automatic on every tick, because that is the shape
+  /// of the real thing: Van has no background isolate, so abandoned work is
+  /// moved the next time the user shows up, not the instant it goes stale. A
+  /// scenario that wants the sweep must say when the app was opened.
+  List<SweepOutcome> sweep() {
+    final now = _clock.now();
+    final stale = _sessions.values
+        .where((s) => _sweep.isStale(s, now))
+        .map((s) => s.id)
+        .toSet();
+    if (stale.isEmpty) {
+      _log('sweep: nothing abandoned');
+      return const [];
+    }
+
+    final slots = FreeSlotFinder(waking: _waking).find(
+      commitments: [
+        for (final s in _sessions.values)
+          if (!stale.contains(s.id) && !s.isResolved)
+            Commitment(
+              start: s.plannedStart,
+              end: s.plannedEnd,
+              label: s.taskId,
+            ),
+      ],
+      from: now,
+      to: now.add(const Duration(days: 7)),
+    );
+
+    final outcomes = _sweep.run(
+      candidates: [
+        for (final id in stale)
+          SweepCandidate(
+            session: _sessions[id]!,
+            deadline: _tasks[_sessions[id]!.taskId]!.deadline,
+          ),
+      ],
+      slots: slots,
+      clock: _clock,
+    );
+
+    for (final outcome in outcomes) {
+      _sessions[outcome.stale.id] = outcome.stale;
+      // A block that has been closed is no longer something to answer.
+      if (_pendingSessionId == outcome.stale.id) {
+        _pending = null;
+        _pendingSessionId = null;
+      }
+
+      final replacement = outcome.replacement;
+      if (replacement == null) {
+        _log(
+          'sweep DROPPED ${outcome.stale.id} '
+          '(${outcome.skipReason!.name})',
+        );
+        continue;
+      }
+      _sessions[replacement.id] = replacement;
+      _log(
+        'sweep MOVED ${outcome.stale.id} -> ${replacement.id} at '
+        '${_hhmm(replacement.plannedStart)} (move '
+        '${replacement.rescheduleCount})',
+      );
+    }
+    return outcomes;
+  }
+
+  /// Every session the harness knows about, by id.
+  Map<String, WorkSession> get sessions => Map.unmodifiable(_sessions);
 
   /// The session currently under discussion, if any.
   WorkSession? get pendingSession =>

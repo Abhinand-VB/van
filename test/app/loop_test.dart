@@ -267,4 +267,147 @@ void main() {
       expect(await events.ofType(EventType.inferenceOk), isEmpty);
     });
   });
+
+  group('the stale-session sweep', () {
+    /// Captures a task and walks the clock past the point where the nudge
+    /// engine has given up on the resulting block.
+    Future<WorkSession> abandon(String sentence) async {
+      final result = await service.capture(sentence);
+      final session = result.sessions.first;
+      clock.advanceTo(session.plannedStart.add(const Duration(minutes: 90)));
+      return session;
+    }
+
+    test('an abandoned block gets a new home and a new ladder', () async {
+      final session = await abandon('read the paper 45 minutes');
+
+      final report = await service.sweepStaleSessions();
+
+      expect(report.moved, hasLength(1));
+      expect(report.dropped, isEmpty);
+
+      final replacement = report.moved.single;
+      expect(replacement.parentSessionId, session.id);
+      expect(replacement.rescheduleCount, 1);
+      expect(replacement.plannedMinutes, session.plannedMinutes);
+      expect(replacement.plannedStart.isAfter(clock.now()), isTrue);
+
+      expect(
+        notifications.scheduled.where((n) => n.sessionId == replacement.id),
+        hasLength(3),
+        reason: 'the moved block needs its own ladder',
+      );
+    });
+
+    test('the original is closed and its rungs stood down', () async {
+      final session = await abandon('write the report 45 minutes');
+      expect(
+        notifications.scheduled.where((n) => n.sessionId == session.id),
+        isNotEmpty,
+      );
+
+      await service.sweepStaleSessions();
+
+      final reloaded = await sessions.byId(session.id);
+      expect(reloaded!.status, SessionStatus.rescheduled);
+      expect(reloaded.isResolved, isTrue);
+      expect(
+        notifications.scheduled.where((n) => n.sessionId == session.id),
+        isEmpty,
+        reason: 'a block that has been moved must stop nudging',
+      );
+    });
+
+    test('it records both the miss and the move', () async {
+      await abandon('practise scales 45 minutes');
+      await service.sweepStaleSessions();
+
+      final missed = await events.ofType(EventType.sessionMissed);
+      expect(missed, hasLength(1));
+      expect(missed.single.field<String>('reason'), 'stale');
+      expect(missed.single.field<String>('outcome'), 'rescheduled');
+      expect(missed.single.field<int>('minutesLate'), 90);
+
+      final moves = await events.ofType(EventType.rescheduleApplied);
+      expect(moves, hasLength(1));
+      expect(moves.single.field<String>('reason'), 'sweep');
+      expect(moves.single.field<int>('moves'), 1);
+    });
+
+    test('a block Van is still nudging about is left alone', () async {
+      final result = await service.capture('stretch 30 minutes');
+      final session = result.sessions.first;
+      // Half an hour late: the ladder has not finished with it yet.
+      clock.advanceTo(session.plannedStart.add(const Duration(minutes: 30)));
+
+      expect((await service.sweepStaleSessions()).isEmpty, isTrue);
+      expect((await sessions.byId(session.id))!.status, SessionStatus.planned);
+    });
+
+    test('a session the user actually started is never swept', () async {
+      final result = await service.capture('deep work 60 minutes');
+      final session = result.sessions.first;
+      await service.startSession(session.id);
+
+      clock.advanceTo(session.plannedStart.add(const Duration(hours: 4)));
+
+      expect((await service.sweepStaleSessions()).isEmpty, isTrue);
+      expect((await sessions.byId(session.id))!.status, SessionStatus.started);
+    });
+
+    test('sweeping again straight away does nothing', () async {
+      await abandon('inbox zero 45 minutes');
+      expect((await service.sweepStaleSessions()).moved, hasLength(1));
+      expect(
+        (await service.sweepStaleSessions()).isEmpty,
+        isTrue,
+        reason: 'the sweep must not churn work it has just placed',
+      );
+    });
+
+    test('work that can no longer meet its deadline is dropped', () async {
+      final result = await service.capture(
+        'submit the form by tomorrow 30 minutes',
+      );
+      final session = result.sessions.first;
+      // Well past both the block and the deadline it existed to protect.
+      clock.advanceTo(result.task.deadline!.add(const Duration(hours: 2)));
+
+      final report = await service.sweepStaleSessions();
+
+      expect(report.moved, isEmpty);
+      expect(report.dropped, hasLength(1));
+      expect(report.dropped.single.reason, SweepSkipReason.pastDeadline);
+
+      final reloaded = await sessions.byId(session.id);
+      expect(reloaded!.status, SessionStatus.skipped);
+
+      final missed = await events.ofType(EventType.sessionMissed);
+      expect(missed.single.field<String>('outcome'), 'dropped');
+      expect(missed.single.field<String>('skipReason'), 'pastDeadline');
+      expect(await events.ofType(EventType.rescheduleApplied), isEmpty);
+    });
+
+    test('two abandoned blocks are both rescued, without colliding', () async {
+      final first = await service.capture('task one 45 minutes');
+      final second = await service.capture('task two 45 minutes');
+      final latest = [
+        first.sessions.first.plannedStart,
+        second.sessions.first.plannedStart,
+      ].reduce((a, b) => a.isAfter(b) ? a : b);
+      clock.advanceTo(latest.add(const Duration(minutes: 90)));
+
+      final report = await service.sweepStaleSessions();
+
+      expect(report.moved, hasLength(2));
+      final a = report.moved[0];
+      final b = report.moved[1];
+      expect(
+        a.plannedEnd.isAfter(b.plannedStart) &&
+            b.plannedEnd.isAfter(a.plannedStart),
+        isFalse,
+        reason: 'rescued blocks must not be double-booked: $a vs $b',
+      );
+    });
+  });
 }

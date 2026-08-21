@@ -24,7 +24,7 @@ class NowScreen extends StatefulWidget {
   State<NowScreen> createState() => _NowScreenState();
 }
 
-class _NowScreenState extends State<NowScreen> {
+class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
   final _input = TextEditingController();
   ({WorkSession session, Task task})? _next;
   List<Task> _open = const [];
@@ -34,24 +34,52 @@ class _NowScreenState extends State<NowScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     unawaited(_refresh());
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _input.dispose();
     super.dispose();
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Coming back to the app is Van's cheapest reliable trigger. It is also
+    // the moment the user is most likely to accept being told that this
+    // morning's block has been moved to this afternoon.
+    if (state == AppLifecycleState.resumed) unawaited(_refresh());
+  }
+
   Future<void> _refresh() async {
+    final swept = await widget.service.sweepStaleSessions();
     final next = await widget.service.next();
     final open = await widget.service.openTasks();
     if (!mounted) return;
     setState(() {
       _next = next;
       _open = open;
+      if (!swept.isEmpty) _message = _sweepMessage(swept);
     });
   }
+
+  /// Says plainly what happened to work nobody started.
+  ///
+  /// Silently reshuffling the plan would make Van feel arbitrary; the whole
+  /// point is that the user can see the deal being renegotiated.
+  static String _sweepMessage(SweepReport swept) {
+    final moved = swept.moved.length;
+    final dropped = swept.dropped.length;
+    final parts = <String>[
+      if (moved > 0) 'Moved $moved missed ${_blocks(moved)} to later',
+      if (dropped > 0) 'Dropped $dropped that would not fit',
+    ];
+    return '${parts.join('. ')}.';
+  }
+
+  static String _blocks(int n) => n == 1 ? 'block' : 'blocks';
 
   Future<void> _capture() async {
     final text = _input.text.trim();

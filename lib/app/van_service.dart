@@ -31,6 +31,28 @@ class CaptureResult {
   bool get isPartial => shortfallMinutes > 0;
 }
 
+/// What one pass of the stale-session sweep did.
+class SweepReport {
+  /// Creates a report.
+  const SweepReport({this.moved = const [], this.dropped = const []});
+
+  /// The replacement sessions that were placed and armed.
+  final List<WorkSession> moved;
+
+  /// Abandoned blocks that had nowhere left to go, with the reason.
+  final List<({WorkSession session, SweepSkipReason reason})> dropped;
+
+  /// How many abandoned blocks the sweep dealt with.
+  int get total => moved.length + dropped.length;
+
+  /// Whether the sweep found nothing to do.
+  bool get isEmpty => total == 0;
+
+  @override
+  String toString() =>
+      'SweepReport(moved=${moved.length}, dropped=${dropped.length})';
+}
+
 /// Appends inference outcomes to the event log.
 ///
 /// Lives here rather than in `lib/inference/` so the inference layer never
@@ -87,6 +109,7 @@ class VanService {
     required IdGenerator ids,
     WakingHours waking = const WakingHours(),
     InterventionPolicy policy = const InterventionPolicy(),
+    int giveUpAfterMinutes = 60,
   }) : _tasks = tasks,
        _sessions = sessions,
        _events = events,
@@ -96,7 +119,11 @@ class VanService {
        _clock = clock,
        _ids = ids,
        _waking = waking,
-       _policy = policy;
+       _policy = policy,
+       _sweep = StaleSessionSweep(
+         rescheduler: Rescheduler(ids: ids),
+         giveUpAfterMinutes: giveUpAfterMinutes,
+       );
 
   final TaskRepo _tasks;
   final SessionRepo _sessions;
@@ -108,6 +135,7 @@ class VanService {
   final IdGenerator _ids;
   final WakingHours _waking;
   final InterventionPolicy _policy;
+  final StaleSessionSweep _sweep;
 
   /// Captures [text], plans it, stores it and arms the notifications.
   Future<CaptureResult> capture(String text) async {
@@ -142,14 +170,7 @@ class VanService {
 
   Future<CaptureResult> _planFor(Task task, DateTime now) async {
     final existing = await _sessions.unresolved();
-    final slots = FreeSlotFinder(waking: _waking).find(
-      commitments: [
-        for (final s in existing)
-          Commitment(start: s.plannedStart, end: s.plannedEnd, label: s.taskId),
-      ],
-      from: now,
-      to: now.add(const Duration(days: 7)),
-    );
+    final slots = _freeSlots(around: existing, from: now);
 
     final result = SessionPlanner(
       ids: _ids,
@@ -178,6 +199,23 @@ class VanService {
       shortfallMinutes: shortfall,
     );
   }
+
+  /// The week ahead, minus the time [around] already claims.
+  ///
+  /// A week is the planning horizon everywhere in Van: far enough that a
+  /// missed morning has somewhere to land, near enough that the plan is still
+  /// about this week rather than a fantasy of next month.
+  List<FreeSlot> _freeSlots({
+    required Iterable<WorkSession> around,
+    required DateTime from,
+  }) => FreeSlotFinder(waking: _waking).find(
+    commitments: [
+      for (final s in around)
+        Commitment(start: s.plannedStart, end: s.plannedEnd, label: s.taskId),
+    ],
+    from: from,
+    to: from.add(const Duration(days: 7)),
+  );
 
   /// Pre-schedules the escalation ladder for [session].
   ///
@@ -305,6 +343,83 @@ class VanService {
       'sessionId': sessionId,
       'reason': 'not_today',
     });
+  }
+
+  /// Moves work that was quietly abandoned, and closes what cannot move.
+  ///
+  /// `NudgeEngine` stops nudging about a block an hour past its start. That
+  /// keeps Van from nagging, but on its own it leaves the block sitting in
+  /// `planned` forever: never due again, never nudged again, silently gone
+  /// from the plan without anyone deciding it should be. This is the other
+  /// half of that behaviour, and it is the only thing that turns "you didn't
+  /// start" into "here is when you will".
+  ///
+  /// Safe to call often. It is a no-op when nothing is stale, which is why
+  /// app open is a good enough trigger and no background isolate is needed.
+  Future<SweepReport> sweepStaleSessions() async {
+    final now = _clock.now();
+    final unresolved = await _sessions.unresolved();
+    final stale = unresolved.where((s) => _sweep.isStale(s, now)).toList();
+    if (stale.isEmpty) return const SweepReport();
+
+    // The stale blocks are the ones being vacated, so their time is free
+    // again and they must not be passed in as commitments against themselves.
+    final staleIds = stale.map((s) => s.id).toSet();
+    final slots = _freeSlots(
+      around: unresolved.where((s) => !staleIds.contains(s.id)),
+      from: now,
+    );
+
+    final tasks = <String, Task>{};
+    final candidates = <SweepCandidate>[];
+    for (final session in stale) {
+      final task = tasks[session.taskId] ?? await _tasks.byId(session.taskId);
+      if (task == null) continue;
+      tasks[task.id] = task;
+      candidates.add(
+        SweepCandidate(session: session, deadline: task.deadline),
+      );
+    }
+
+    final moved = <WorkSession>[];
+    final dropped = <({WorkSession session, SweepSkipReason reason})>[];
+
+    for (final outcome in _sweep.run(
+      candidates: candidates,
+      slots: slots,
+      clock: _clock,
+    )) {
+      final original = outcome.stale;
+      await _notifications.cancelForSession(original.id);
+      await _sessions.save(original);
+      await _events.append(EventType.sessionMissed, {
+        'sessionId': original.id,
+        'taskId': original.taskId,
+        'reason': 'stale',
+        'minutesLate': original.minutesLate(now),
+        'outcome': outcome.wasMoved ? 'rescheduled' : 'dropped',
+        'skipReason': ?outcome.skipReason?.name,
+      });
+
+      final replacement = outcome.replacement;
+      if (replacement == null) {
+        dropped.add((session: original, reason: outcome.skipReason!));
+        continue;
+      }
+
+      await _sessions.save(replacement);
+      await _events.append(EventType.rescheduleApplied, {
+        'from': original.id,
+        'to': replacement.id,
+        'moves': replacement.rescheduleCount,
+        'start': replacement.plannedStart.toIso8601String(),
+        'reason': 'sweep',
+      });
+      await _armLadder(replacement, tasks[replacement.taskId]!);
+      moved.add(replacement);
+    }
+
+    return SweepReport(moved: moved, dropped: dropped);
   }
 
   /// Marks the task done once no unresolved sessions remain.

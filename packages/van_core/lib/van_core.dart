@@ -20,5 +20,6 @@ export 'src/result.dart';
 export 'src/scheduling/free_slot_finder.dart';
 export 'src/scheduling/rescheduler.dart';
 export 'src/scheduling/session_planner.dart';
+export 'src/scheduling/stale_session_sweep.dart';
 export 'src/scheduling/time_window.dart';
 export 'src/text/temporal_parser.dart';
