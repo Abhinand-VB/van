@@ -407,6 +407,92 @@ void main() {
       expect(await eventTypes(), contains('nudgeSuppressed'));
     });
 
+    /// Records [count] delivered, unanswered nudges of [type] on [day].
+    ///
+    /// Built directly rather than by ignoring real ladders, so the test says
+    /// what it is about in six lines instead of forty.
+    Future<void> buildStreak(
+      NudgeType type,
+      DateTime day, {
+      int count = 3,
+    }) async {
+      for (var i = 0; i < count; i++) {
+        final at = day.add(Duration(hours: 9, minutes: i));
+        await nudges.save(
+          Nudge(
+            id: 'streak-${type.name}-$i',
+            sessionId: 'gone-$i',
+            type: type,
+            importance: 7,
+            level: InterventionLevel.l1Check,
+            scheduledAt: at,
+            deliveredAt: at,
+            copy: 'ignored',
+          ),
+        );
+      }
+    }
+
+    test("today's swipes do not silence tomorrow morning", () async {
+      // The twin of the spacing bug, and it survived that fix. Fatigue was
+      // measured over the day the ladder was *armed*, so ignoring three
+      // nudges tonight would have suppressed a block scheduled for tomorrow
+      // before it ever had a chance to fire.
+      await buildStreak(NudgeType.sessionMissed, DateTime.utc(2026, 8, 19));
+      expect(
+        await nudges.consecutiveDismissals(
+          NudgeType.sessionMissed,
+          DateTime.utc(2026, 8, 19),
+        ),
+        greaterThanOrEqualTo(3),
+        reason: 'the streak must actually be over the limit',
+      );
+
+      // Past the end of the waking day, so the block lands tomorrow.
+      clock.advanceTo(DateTime.utc(2026, 8, 19, 23, 30));
+      final result = await service.capture('tomorrow work 45 minutes');
+      final session = result.sessions.first;
+      expect(session.plannedStart.day, 20, reason: 'must be tomorrow');
+
+      final chases = (await nudges.forSession(
+        session.id,
+      )).where((n) => n.type == NudgeType.sessionMissed).toList();
+
+      expect(chases, isNotEmpty);
+      for (final chase in chases) {
+        expect(
+          chase.suppressionReason,
+          isNot(SuppressionReason.dismissalFatigue.name),
+          reason: 'a new day starts with a clean slate',
+        );
+      }
+      expect(
+        notifications.scheduled.where((n) => n.sessionId == session.id),
+        hasLength(3),
+      );
+    });
+
+    test("but tonight's swipes do still silence tonight", () async {
+      // The other half: the fix must not have turned fatigue off entirely.
+      await buildStreak(NudgeType.sessionMissed, DateTime.utc(2026, 8, 19));
+
+      final result = await service.capture('later today 30 minutes');
+      final session = result.sessions.first;
+      expect(session.plannedStart.day, 19, reason: 'must be today');
+
+      final chases = (await nudges.forSession(
+        session.id,
+      )).where((n) => n.type == NudgeType.sessionMissed).toList();
+
+      expect(chases, isNotEmpty);
+      for (final chase in chases) {
+        expect(
+          chase.suppressionReason,
+          SuppressionReason.dismissalFatigue.name,
+        );
+      }
+    });
+
     test('fatigue is a today measure, not a permanent verdict', () async {
       await abandon('read the paper 45 minutes');
       await service.sweepStaleSessions();

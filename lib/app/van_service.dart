@@ -304,14 +304,23 @@ class VanService {
       (InterventionLevel.l2Diagnose, _policy.diagnoseAfterMinutes),
     ];
 
+    // Fatigue is a *today* measure, and "today" is the day the rung fires -
+    // not the day it is armed. Arming a ladder for tomorrow morning right
+    // after being nudged must not silence tomorrow morning, which is the same
+    // reasoning as the spacing rule below and was applied there but not here.
+    //
+    // All three rungs share a day: the planner keeps blocks inside waking
+    // hours, so a start plus twenty-five minutes cannot cross midnight.
+    //
     // One read for the whole ladder: the streak cannot change while it is
     // being armed, and re-querying per rung would only cost three scans.
+    final fatigueSince = _startOfDayContaining(session.plannedStart);
     final fatigue = <NudgeType, int>{
       for (final type in const [
         NudgeType.sessionStart,
         NudgeType.sessionMissed,
       ])
-        type: await _nudges.consecutiveDismissals(type, _startOfToday()),
+        type: await _nudges.consecutiveDismissals(type, fatigueSince),
     };
 
     // Spacing is measured to the instant a rung will *fire*, not the instant
@@ -433,12 +442,12 @@ class VanService {
     }
   }
 
-  /// Midnight local at the start of the current day, as UTC.
+  /// Midnight local on the day [instant] falls in, as UTC.
   ///
-  /// Fatigue is a *today* measure: yesterday's swipes should not silence Van
-  /// this morning.
-  DateTime _startOfToday() {
-    final wall = _waking.toLocalWall(_clock.now());
+  /// Fatigue is a *today* measure: yesterday's swipes must not silence Van
+  /// this morning, and today's must not silence it tomorrow.
+  DateTime _startOfDayContaining(DateTime instant) {
+    final wall = _waking.toLocalWall(instant);
     return _waking.toUtcInstant(DateTime.utc(wall.year, wall.month, wall.day));
   }
 
