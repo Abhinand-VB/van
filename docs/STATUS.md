@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **571 tests, all green,
+Van is finished as far as an agent can take it alone. **575 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -108,7 +108,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **571 tests passing** — 249 in `packages/van_core` (pure Dart), 322 in the app.
+- **575 tests passing** — 249 in `packages/van_core` (pure Dart), 326 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -1085,6 +1085,51 @@ there is an API that wanted the future all along.
 
 ---
 
+## 3u. A test that asserted nothing, and what was under it
+
+Set out to answer a question section 7 asks: does the nudge wording go stale?
+The answer is reassuring — **seven keys, eight variants each**, with the two
+most recent excluded from each pick, so there is no forced rotation and no
+immediate repeat. That is evidence *against* needing a model for
+`compose_nudge`, which is the direction section 7 already leaned.
+
+Looking at the bank turned up two things it was not looking for.
+
+**The tone could contradict the action.** The bank holds one `sessionStart` key
+and six `sessionMissed` keys, so five of the twelve type-level combinations
+have no entry, and those fell back to `sessionMissed_l0Gentle` *regardless of
+level*. `Negotiate.fallback` asks for one of them whenever it proposes at l3 or
+above for a block that is not yet a whole minute late — reachable, because
+`stalled()` only requires `plannedStart` to be in the past and `minutesLate`
+floors to zero for the first sixty seconds. Van would offer to shrink or
+concede the block while saying a gentle *"not started yet?"*. The fix drops the
+*type* rather than the level, because the level is what carries the tone.
+
+**`templateId` was echoing the question back.** It was built from the key that
+was *requested*, not the one that actually supplied the line, so every fallback
+was mislabelled in the event log. `_recent` had the same fault — it tracked
+chosen indices under the requested key while those indices addressed a
+different list, so the anti-repeat was counting against the wrong bucket.
+
+### How the second one surfaced
+
+**My test for the first bug passed against the broken code.** It asserted that
+the level in `templateId` matched the level requested — and `templateId` was
+built from the request, so it could not have failed for any input.
+
+The habit that caught it is the one worth keeping: *run the new test against
+the old code before believing it.* I have done that for every fix tonight, and
+this is the first time the answer was "it passes" — which is not a small
+inconvenience, it is the test telling you it is measuring nothing. A test that
+cannot fail is worse than no test, because it reports safety.
+
+**Nothing on the phone is mislabelled.** The three keys its armed ladders used
+— `sessionStart_l0Gentle`, `sessionMissed_l1Check`, `sessionMissed_l2Diagnose`
+— all exist, so no fallback ran and the `templateId`s read off the device this
+morning are accurate.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -1115,6 +1160,7 @@ than this file.**
 | 22 | ~~A capture during a sweep could double-book a slot~~ | **Done, 21 Aug 2026** (`2eed1fb`). See section 3n. `capture` and `sweepStaleSessions` now run one at a time; reproduced first, with both blocks landing at 12:05Z. |
 | 23 | ~~Three armed nudges have no rows in the database~~ | **Explained and closed, 21 Aug 2026.** Not a defect. Session `hljn1mbedk2` was armed at **01:40:54**; `c0ba269` — the fix for issue 7, *`NudgeRepo` is never constructed in production* — landed at **01:53:22** and is what added `_nudges.save(...)` to `_armLadder`. Twelve minutes earlier, the build on the phone wrote `nudgeScheduled` events and no rows, because it had no `NudgeRepo`. The alarms are still registered with Android; `cancelForSession` derives its ids rather than reading them back, so Van can still cancel them — which is section 3m's decision paying for itself. See section 3q. |
 | 24 | ~~`unawaited` calls with no error handler~~ | **Done, 21 Aug 2026** (`c860476`, `8e030ba`, `fe933c2`). Twelve sites. One needed the call to stop being fire-and-forget at all (the swipe — section 3t); two are logging paths that can be swallowed honestly; the remaining eight are lifecycle and post-frame callbacks that return void, so nothing *can* await them, and they go through `inBackground` in `lib/ui/background.dart`. Every `unawaited` left in `lib/` is either that helper or already handled. |
+| 25 | ~~Nudge copy could contradict the action, and `templateId` was unreliable~~ | **Done, 21 Aug 2026** (`b7ad37d`). See section 3u. Five of the twelve type-level combinations have no template and fell back to `sessionMissed_l0Gentle` regardless of level, so Van could offer to shrink or concede a block while saying a gentle "not started yet?". Separately, `templateId` reported the key that was *requested* rather than the one that supplied the line, mislabelling every fallback in the event log. **No mislabelled rows on the phone** — the three keys its armed ladders used all exist, so no fallback ran. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 
@@ -1314,7 +1360,12 @@ evidence from real use.
    correctly, so `extract_task` does not need a model. If nudge *wording* gets
    stale after a week — the same handful of phrasings, in the same order —
    that is the argument for one, and it points at `compose_nudge` and
-   `negotiate` only. Note issue 14: the golden harness cannot reach
+   `negotiate` only. **Counted on 21 Aug (section 3u): seven keys, eight
+   variants each, with the two most recent excluded from every pick.** So
+   there is no rotation to spot and no immediate repeat. If it still feels
+   samey after a week, that is about the *writing* rather than the variety,
+   and a model is a plausible answer; if it does not, this argument is spent.
+   Note issue 14: the golden harness cannot reach
    `GemmaBackend`, so the gate cannot be evaluated until there is a way to run
    the set on the phone.
 

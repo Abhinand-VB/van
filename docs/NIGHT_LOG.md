@@ -275,6 +275,54 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, morning — the test that could not fail
+
+**Finished.** I went looking for evidence on the question section 7 leaves
+open: does Van's nudge wording go stale without a model? Counted the bank —
+seven keys, eight variants each, two most recent excluded from every pick. No
+forced rotation, no immediate repeat. That is evidence against needing a model
+for `compose_nudge`, and it is now in section 7 next to the question it
+answers.
+
+**Then the bank turned up two bugs it was not asked about.**
+
+The first: five of the twelve type-level combinations have no template, and
+they fell back to `sessionMissed_l0Gentle` *regardless of level*.
+`Negotiate.fallback` requests exactly one of those when it proposes at l3 or
+above for a block under a minute late — and that is reachable, because
+`stalled()` only wants `plannedStart` in the past and `minutesLate` floors to
+zero for the first sixty seconds. Van would offer to shrink or concede while
+saying a gentle "not started yet?".
+
+**The second only appeared because my test for the first passed against the
+broken code.** I have run every fix tonight against the old code before
+believing the test, and this is the first time the answer came back green. That
+is not a formality clearing — it is the test saying it measures nothing. It
+asserted that the level inside `templateId` matched the level requested, and
+`templateId` was built from the request. It was echoing the question back.
+
+Which is the bug: `templateId` reported the key *asked for* rather than the one
+that supplied the line, so every fallback was mislabelled in the event log.
+`_recent` shared the fault, tracking indices under the requested key while
+those indices addressed a different list — so the anti-repeat had been counting
+against the wrong bucket.
+
+**A test that cannot fail is worse than no test**, because it reports safety.
+The only reason I know that one could not fail is the habit of reverting the
+fix and re-running, and I nearly skipped it here because the change was small
+and obviously right.
+
+**One thing I got wrong on the way and should note.** My first revert script
+used `\$` inside a Python string, which silently did not match, so one of the
+two edits I thought I was reverting stayed in place. The warning was printed
+and I read past it. The verification still held — both tests failed for the
+right reasons — but it held by luck rather than by care, and next time the luck
+runs the other way.
+
+**Checked before alarming anyone:** the three keys the phone's armed ladders
+used all exist, so no fallback ran and the `templateId`s I read off the device
+this morning are accurate.
+
 ### 21 August 2026, morning — the same defect, three different right answers
 
 **Finished.** The rest of issue 24, and the interesting part is that the twelve
