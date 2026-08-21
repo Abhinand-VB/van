@@ -19,7 +19,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **412 tests passing** — 230 in `packages/van_core` (pure Dart), 182 in the app.
+- **425 tests passing** — 230 in `packages/van_core` (pure Dart), 195 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -44,6 +44,8 @@ working configuration, not a degraded one.
 | App: chat and task list | 14 |
 | App: notification ids | 6 |
 | App: negotiation, service and chat | 19 |
+| App: schema migration | 9 |
+| App: launcher icons | 4 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -67,6 +69,9 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+d2abb52  Give Van its own icon below API 26
+da1209c  Add schema v3, because v2 created the column without the index
+890d8a7  Index the event log by session, and prove the migration first
 a4a6cd8  Give the conversation somewhere to happen
 01d24ed  Let Van renegotiate a stalled block, and act on the answer
 6a0d693  Derive notification ids instead of remembering them
@@ -310,9 +315,9 @@ than this file.**
 | 1a | The sweep only runs when the app is open | There is no background isolate, so work abandoned while Van is closed is not moved until you next open the app. In practice that means the replacement block's notification cannot fire before you have opened Van at least once since the original went stale. Acceptable for now — the alternative is the headless-isolate design WP-4 deliberately rejected — but it is the first thing to revisit if the sweep feels late in real use. |
 | 2 | **Drum sound: needs a listen** | Done and wired, but never heard by a human. `tool/generate_drum.py` synthesises both sounds; re-run it with different parameters if the tone is wrong. Note that Android caches channel settings, so **changing the sound requires bumping the channel id** in `notifications.dart` (currently `_v2`) or it will silently not apply. |
 | 3 | **Device verification: mostly done, one gap** | Confirmed on the S25 on 21 Aug: capture through the UI lands in the database, the sweep runs on real persisted data, and the ladder now registers real `RTC_WAKEUP` alarms (see section 5a). **Still unconfirmed:** a nudge actually being delivered at its time, the START action round-trip into `sessionStarted`, and Doze behaviour after 30+ minutes idle. Three real nudges are armed for 09:00, 09:10 and 09:25 on 21 Aug — see 5a. |
-| 4 | `EventRepo.forSession` is a table scan | `sessionId` lives in the JSON payload, so filtering happens in Dart. Fine at single-user volume. Fix later with a nullable indexed column or SQLite `json_extract`. |
+| 4 | ~~`EventRepo.forSession` is a table scan~~ | **Done, 21 Aug 2026** (`890d8a7`, `da1209c`). `sessionId` is a nullable indexed column now. See section 5d — the migration needed two attempts and the second was found on the phone. |
 | 5 | Inference logging is fire-and-forget | `EventLogInferenceObserver` uses `unawaited` so a slow write never delays the call it describes. A crash can therefore lose the last few inference events. Accepted; the alternative is making every model call wait on a database write. Tests must `flushLog()` before asserting. |
-| 6 | Legacy launcher icons are Flutter's default | `mipmap-*/ic_launcher.png` still show the Flutter logo below API 26. The adaptive icon covers everything at or above it. |
+| 6 | ~~Legacy launcher icons are Flutter's default~~ | **Done, 21 Aug 2026** (`d2abb52`). Generated from the vector by `tool/generate_launcher_icons.py`. Not verifiable on the S25, which is API 36 and draws the adaptive icon. |
 | 7 | ~~`NudgeRepo` is never constructed in production~~ | **Done, 21 Aug 2026** (`c0ba269`). See section 3b. |
 | 8 | ~~The exact-alarm settings screen opens on every cold start~~ | **Done, 21 Aug 2026** (`02e045e`). Asked once, latched in the `settings` table; a standing banner on the Now screen replaces the nagging. Verified on the phone. |
 | 9 | ~~"After that" can repeat the task shown in NEXT~~ | **Done, 21 Aug 2026** (`37de632`). Verified on the phone. |
@@ -569,6 +574,25 @@ Confirmed from the plugin's own store, not from `dumpsys` (issue 12). Still
 `inexactAllowWhileIdle`, so they land near those times rather than on them
 until you grant the alarm permission from the banner.
 
+### Seventh run, ~03:40, the schema migration
+
+The whole point of this run was that the phone was holding a v1 database with
+58 real events, and the migration had to be right.
+
+- **First attempt:** column added, 18 rows backfilled, 0 disagreeing with their
+  payload, no rows lost — and **no index**. See 5d.
+- **After v3:** `user_version` 3, `idx_events_session` present, 59 events, and
+  `EXPLAIN QUERY PLAN` reports a `SEARCH ... USING INDEX` rather than a scan.
+
+**Not verified, and cannot be here:** the legacy launcher PNGs. The S25 is API
+36, so it draws the adaptive icon and will never load them. They were confirmed
+by rendering and reading the output, and there is a test that decodes each one
+and checks the corner pixel is the brand green rather than Flutter's white.
+
+**Unchanged from the sixth run: six notifications, two ladders**, at 09:00,
+09:10, 09:25 ("Alarm wiring check") and 09:30, 09:40, 09:55 ("Negotiate wiring
+check"). Both survived tonight's four reinstalls.
+
 ---
 
 ## 5c. The cancel that never worked
@@ -606,6 +630,47 @@ across processes here, which the derived ids depend on.
 
 ---
 
+## 5d. The migration, and the half of it I got wrong
+
+Worth reading before writing the next one, because the mistake was invisible
+in the tests and obvious on the device.
+
+**What v2 does.** Lifts `sessionId` out of the JSON payload into a nullable
+indexed column, so reading one session's history stops meaning "load the whole
+log and filter it in Dart". A denormalisation, and the only one in the schema.
+It does not weaken the append-only rule: the payload is still the record, the
+column is a copy of one field taken at write time and never edited.
+
+**Two things that would have broken it on your phone:**
+
+1. **`json_extract` raises on malformed JSON**, and that aborts the entire
+   `UPDATE` — so a single unparseable payload anywhere in the log would have
+   failed the migration and left the app unable to open. `eventFromRow` has
+   always tolerated an unparseable payload, so such a row is possible by
+   construction. Guarded with `json_valid`, and tested.
+2. **`addColumn` does not create the indexes declared on a table.** Only
+   `createAll` does, and an upgrade never calls it. So v2 gave upgraded
+   databases the column and *no index* — the one thing the change was for.
+   Fresh installs were fine, which is exactly why the tests passed.
+
+That second one is why **schema v3 exists as a separate step**. A device that
+already ran v2 will never run it again, and that device is yours: my own
+verification put it in that state. v3 is `CREATE INDEX IF NOT EXISTS`, safe
+from v1 in one hop or from an already-migrated v2, and both paths are tested.
+
+**The lesson for next time:** a migration test that only asserts query
+*results* will pass on a database with no indexes at all. Assert the schema.
+
+**Verified on hardware**, which is the only reason any of this is known:
+`user_version` 3, `idx_events_session` present, 59 events intact, and
+
+```
+EXPLAIN QUERY PLAN SELECT * FROM events WHERE session_id = ?
+-> SEARCH events USING INDEX idx_events_session (session_id=?)
+```
+
+---
+
 ## 6. Product decisions on record
 
 - **Name:** Van. **Mark:** a tree, as adaptive-icon vector drawables.
@@ -633,18 +698,17 @@ across processes here, which the derived ids depend on.
 
 1. **Grant Van "Alarms & reminders"** - tap the banner on the Now screen.
 2. **Watch a nudge arrive and press START.** Six are armed across two blocks.
-   This closes the last gap in issue 3 and exercises the cancel fix in 5c:
-   pressing START should stop that block's later rungs.
+   This closes the last gap in issue 3.
 3. **Ignore the 09:00 block on purpose, then open Chat.** One minute, and it
-   is the only part of the negotiation loop I could not reach on hardware.
-4. **Use it for a week.** Every piece is now built and connected: capture,
-   planning, nudging, backing off, sweeping, and renegotiating. Everything
-   after this should be driven by what actually annoys or fails. Three dials
-   worth watching, all one number each: the sweep's five-minute replacement
-   lead, `SuppressionPolicy.dismissalLimit`, and whether halving a block is
-   the right first concession.
-5. Then WP-6 (on-device Gemma 4), or issue 11, or nothing. The loop is
-   complete; the next real signal should come from using it.
+   is the only part of the negotiation loop never reached on hardware.
+4. **Use it for a week.** Everything in the loop is built, connected and
+   verified except the three checks above. The remaining open issues are all
+   small or accepted; there is no obvious next feature, and that is the point.
+   Let real annoyance pick it. Three dials worth watching, one number each:
+   the sweep's five-minute replacement lead, `SuppressionPolicy.dismissalLimit`,
+   and whether halving a block is the right first concession.
+5. Then WP-6 (on-device Gemma 4) if nudge quality turns out to be the problem,
+   or issue 11 if it does not. Both are optional.
 
 ---
 
@@ -652,6 +716,43 @@ across processes here, which the derived ids depend on.
 
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
+
+### 21 August 2026, overnight — the two chores, and a migration lesson
+
+**Finished.** OVERNIGHT work queue item 4: STATUS issues 4 and 6, both closed.
+
+*Issue 4* (`890d8a7`, `da1209c`): `EventRepo.forSession` loaded every row in the
+log and filtered in Dart. `sessionId` is now a nullable indexed column,
+backfilled from the payload by a migration. Section 5d is the part worth
+reading — I got the migration wrong twice, and both mistakes were the kind that
+pass every test and fail on the phone.
+
+*Issue 6* (`d2abb52`): the legacy launcher PNGs were still Flutter's logo,
+untouched since the project was scaffolded. `tool/generate_launcher_icons.py`
+renders them from the vector drawable, so the mark has one source of truth.
+
+412 to 425 tests.
+
+**The lesson, because it will apply again.** My migration test asserted that
+`forSession` returned the right events after upgrading. It passed. It would
+also have passed on a database with no indexes at all — which is exactly what
+the migration produced, because `addColumn` does not create declared indexes.
+The device found it in thirty seconds via `EXPLAIN QUERY PLAN`. **A migration
+test that only asserts query results is not testing the migration.** Assert the
+schema.
+
+The first mistake was worse and caught earlier: `json_extract` raises on
+malformed JSON and aborts the whole `UPDATE`, so one bad payload anywhere would
+have failed the migration and left the app unable to open. The test I wrote
+for it failed on the first run, which is the only reason it is not shipping.
+
+**What I could not verify.** The launcher PNGs: the S25 is API 36 and draws the
+adaptive icon, so it will never load them. Rendered and read the output
+instead, and there is a test that decodes each PNG and checks the corner pixel.
+
+**What I need from you.** Nothing blocking, and nothing obvious left to build.
+Every open issue is now small or deliberately accepted. Next-step 4 is the real
+one: use it.
 
 ### 21 August 2026, overnight — the conversation, finally
 
