@@ -620,6 +620,76 @@ class VanService {
     return SweepReport(moved: moved, dropped: dropped);
   }
 
+  /// Marks [taskId] done from the task list, standing its blocks down.
+  ///
+  /// The list is flat and the gesture is a swipe, so this has to be safe to
+  /// invoke on a task with blocks still planned - which is the common case,
+  /// because work usually finishes somewhere other than where it was
+  /// scheduled. Those blocks are marked skipped rather than completed: they
+  /// genuinely never ran, and pretending otherwise would corrupt the record of
+  /// what this person actually does.
+  ///
+  /// Any nudge that had already fired is settled as engagement. Finishing the
+  /// work is the opposite of ignoring the ask, and letting those rungs rot
+  /// unanswered would build fatigue against someone who did exactly what Van
+  /// wanted.
+  Future<Task?> completeTask(String taskId) async {
+    final task = await _tasks.byId(taskId);
+    if (task == null) return null;
+
+    final open = (await _sessions.forTask(
+      taskId,
+    )).where((s) => !s.isResolved).toList();
+
+    for (final session in open) {
+      await _settleLadder(session.id, ResponseType.started);
+      await _notifications.cancelForSession(session.id);
+      await _sessions.save(session.skip());
+    }
+
+    final done = task.copyWith(status: TaskStatus.done);
+    await _tasks.save(done);
+    await _events.append(EventType.taskUpdated, {
+      'taskId': taskId,
+      'status': TaskStatus.done.name,
+      'source': 'task_list',
+      'blocksStoodDown': open.length,
+    });
+    return done;
+  }
+
+  /// Undoes a capture: removes the task, its blocks and its armed nudges.
+  ///
+  /// Deliberately a delete rather than `TaskStatus.abandoned`. Abandoned means
+  /// *the user gave up on this work*, and that distinction is there to learn
+  /// what they follow through on. A capture the user rejects seconds after
+  /// making it is Van having misread a sentence, not a person quitting, and
+  /// recording it as the latter would poison the only signal that status
+  /// exists to carry.
+  ///
+  /// Nothing is truly lost: the `taskCreated` and `sessionPlanned` events stay
+  /// in the append-only log, joined now by the undo itself.
+  Future<bool> undoCapture(String taskId) async {
+    final task = await _tasks.byId(taskId);
+    if (task == null) return false;
+
+    final sessions = await _sessions.forTask(taskId);
+    for (final session in sessions) {
+      await _notifications.cancelForSession(session.id);
+      await _nudges.deleteForSession(session.id);
+      await _sessions.delete(session.id);
+    }
+    await _tasks.delete(taskId);
+
+    await _events.append(EventType.taskUpdated, {
+      'taskId': taskId,
+      'title': task.title,
+      'status': 'undone',
+      'blocksRemoved': sessions.length,
+    });
+    return true;
+  }
+
   /// Marks the task done once no unresolved sessions remain.
   Future<void> _maybeFinishTask(String taskId) async {
     final remaining = (await _sessions.forTask(

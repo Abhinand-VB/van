@@ -423,6 +423,111 @@ void main() {
     });
   });
 
+  group('finishing and undoing a task', () {
+    test('completing from the list closes the task and its blocks', () async {
+      final result = await service.capture('write the report 3 hours');
+      expect(result.sessions.length, greaterThan(1));
+
+      final done = await service.completeTask(result.task.id);
+
+      expect(done!.status, TaskStatus.done);
+      expect(await service.openTasks(), isEmpty);
+      for (final session in await sessions.forTask(result.task.id)) {
+        expect(
+          session.status,
+          SessionStatus.skipped,
+          reason: 'a block that never ran must not be recorded as completed',
+        );
+      }
+    });
+
+    test('completing stands down every armed nudge', () async {
+      final result = await service.capture('write the report 3 hours');
+      expect(notifications.scheduled, isNotEmpty);
+
+      await service.completeTask(result.task.id);
+
+      expect(
+        notifications.scheduled,
+        isEmpty,
+        reason: 'Van must not nudge about work already finished',
+      );
+    });
+
+    test('completing counts as engagement, not as an ignored nudge', () async {
+      // The trap: finish the work late, from the list, after the ladder has
+      // already fired. Leaving those rungs unanswered would build fatigue
+      // against someone who did exactly what Van asked.
+      final result = await service.capture('write the report 45 minutes');
+      final session = result.sessions.first;
+      clock.advanceTo(session.plannedStart.add(const Duration(minutes: 30)));
+
+      await service.completeTask(result.task.id);
+
+      final fired = (await nudges.forSession(
+        session.id,
+      )).where((n) => n.wasDelivered).toList();
+      expect(fired, isNotEmpty);
+      final replies = await nudges.responsesFor(fired.last.id);
+      expect(replies.single.response, ResponseType.started);
+      expect(
+        await nudges.consecutiveDismissals(
+          NudgeType.sessionMissed,
+          DateTime.utc(2026, 8, 19),
+        ),
+        0,
+      );
+    });
+
+    test('completing a task that does not exist is harmless', () async {
+      expect(await service.completeTask('nope'), isNull);
+    });
+
+    test('undo removes the task, its blocks and its nudges', () async {
+      final result = await service.capture('call the bank 30 minutes');
+      final session = result.sessions.first;
+      expect(await nudges.forSession(session.id), isNotEmpty);
+
+      expect(await service.undoCapture(result.task.id), isTrue);
+
+      expect(await service.openTasks(), isEmpty);
+      expect(await sessions.forTask(result.task.id), isEmpty);
+      expect(await sessions.byId(session.id), isNull);
+      expect(await nudges.forSession(session.id), isEmpty);
+      expect(notifications.scheduled, isEmpty);
+    });
+
+    test('undo does not record the work as abandoned', () async {
+      // `abandoned` means the user gave up on something. Undoing a capture is
+      // Van having misread a sentence, and conflating the two would poison the
+      // only signal that status exists to carry.
+      final result = await service.capture('call the bank 30 minutes');
+      await service.undoCapture(result.task.id);
+
+      final statuses = (await events.ofType(
+        EventType.taskUpdated,
+      )).map((e) => e.field<String>('status')).toList();
+      expect(statuses, contains('undone'));
+      expect(statuses, isNot(contains(TaskStatus.abandoned.name)));
+    });
+
+    test('undo leaves the capture itself on the record', () async {
+      final result = await service.capture('call the bank 30 minutes');
+      await service.undoCapture(result.task.id);
+
+      // The task table forgets. The append-only log does not.
+      final types = await eventTypes();
+      expect(types, contains('taskCreated'));
+      expect(types, contains('sessionPlanned'));
+    });
+
+    test('undoing twice is harmless', () async {
+      final result = await service.capture('call the bank 30 minutes');
+      expect(await service.undoCapture(result.task.id), isTrue);
+      expect(await service.undoCapture(result.task.id), isFalse);
+    });
+  });
+
   group('the stale-session sweep', () {
     /// Captures a task and walks the clock past the point where the nudge
     /// engine has given up on the resulting block.

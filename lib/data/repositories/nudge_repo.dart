@@ -69,6 +69,30 @@ class NudgeRepo {
           .map(nudgeFromRow)
           .get();
 
+  /// Removes every nudge about [sessionId], and any replies to them.
+  ///
+  /// Only for work that is being erased rather than resolved - an undone
+  /// capture. A nudge about a session that no longer exists describes an
+  /// interruption that will never happen, and leaving it behind would make
+  /// `forSession` lie. Replies go first because they reference the nudge.
+  ///
+  /// Note this is not a hole in the append-only rule: that rule governs the
+  /// `events` table, which keeps the whole history regardless.
+  Future<void> deleteForSession(String sessionId) => _db.transaction(() async {
+    final ids = (await (_db.select(
+      _db.nudges,
+    )..where((n) => n.sessionId.equals(sessionId))).get()).map((n) => n.id);
+
+    for (final id in ids) {
+      await (_db.delete(
+        _db.nudgeResponses,
+      )..where((r) => r.nudgeId.equals(id))).go();
+    }
+    await (_db.delete(
+      _db.nudges,
+    )..where((n) => n.sessionId.equals(sessionId))).go();
+  });
+
   /// Replies to [nudgeId], oldest first.
   Future<List<NudgeResponse>> responsesFor(String nudgeId) =>
       (_db.select(_db.nudgeResponses)
