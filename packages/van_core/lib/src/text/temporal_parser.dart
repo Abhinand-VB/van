@@ -156,6 +156,12 @@ class TemporalParser {
   // --- deadline -------------------------------------------------------------
 
   static final _inDays = RegExp(r'\bin\s+(\d+)\s*days?\b');
+  static final _inWeeks = RegExp(r'\bin\s+(\d+)\s*weeks?\b');
+  // "by next week" and "next week" both, so the preposition is consumed with
+  // the phrase rather than stranded in the title.
+  static final _weekOffset = RegExp(
+    r'\b(?:by|before|within)?\s*(next|this)\s+week\b',
+  );
   static final _inHours = RegExp(r'\bin\s+(\d+)\s*(?:hours?|hrs?)\b');
   static final _tonight = RegExp(r'\b(tonight|this evening)\b');
   static final _thisMorning = RegExp(r'\bthis morning\b');
@@ -178,6 +184,13 @@ class TemporalParser {
     if (inHours != null) {
       consumed.add(_Span(inHours.start, inHours.end));
       return now.add(Duration(hours: int.parse(inHours.group(1)!)));
+    }
+
+    final inWeeks = _inWeeks.firstMatch(lower);
+    if (inWeeks != null) {
+      consumed.add(_Span(inWeeks.start, inWeeks.end));
+      final weeks = int.parse(inWeeks.group(1)!);
+      return _atHour(wall.add(Duration(days: weeks * 7)), _endOfDay);
     }
 
     final inDays = _inDays.firstMatch(lower);
@@ -210,6 +223,19 @@ class TemporalParser {
     if (afternoon != null) {
       consumed.add(_Span(afternoon.start, afternoon.end));
       return _atHour(wall, _afternoon);
+    }
+
+    // "next week" is seven days out, not "the end of the coming week". Van
+    // schedules against a deadline, and the later, vaguer reading would let
+    // work sit untouched for nine days without being late.
+    //
+    // "this week" is deliberately the same. It is said when someone means
+    // soon-but-not-today, and resolving it to Friday would make a Monday
+    // "this week" four days looser than a Thursday one.
+    final weekOffset = _weekOffset.firstMatch(lower);
+    if (weekOffset != null) {
+      consumed.add(_Span(weekOffset.start, weekOffset.end));
+      return _atHour(wall.add(const Duration(days: 7)), _endOfDay);
     }
 
     final weekday = _weekdayPattern.firstMatch(lower);

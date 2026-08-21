@@ -16,10 +16,10 @@
     "how a model gets measured before anything is routed to it. The WP-6 gate",
     "is 80%: below that, the model is worse than the parser it would replace.",
     "",
-    "Some cases fail today, on purpose. A set trimmed to only what already",
-    "passes is a change detector, not a measurement - and the gate is a pass",
-    "rate precisely because 100% was never the bar. A failing case here is a",
-    "description of a real gap; see STATUS issue 13."
+    "Cases may fail on purpose. A set trimmed to only what already passes is",
+    "a change detector, not a measurement - and the gate is a pass rate",
+    "precisely because 100% was never the bar. A failing case is a description",
+    "of a real gap, not something to make pass by editing the expectation."
   ],
   "capability": "extract_task",
   "now": "2026-08-19T09:00:00Z",
@@ -87,8 +87,13 @@
       "expect": { "title": "Renew the passport" }
     },
     {
-      "name": "leading capital is normalised",
+      "name": "shouting is preserved, because acronyms are indistinguishable",
       "input": "TIDY THE DESK",
+      "expect": { "title": "TIDY THE DESK" }
+    },
+    {
+      "name": "a lowercase sentence gets its leading capital",
+      "input": "tidy the desk",
       "expect": { "title": "Tidy the desk" }
     },
     {

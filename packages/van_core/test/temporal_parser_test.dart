@@ -93,6 +93,66 @@ void main() {
     test('in N hours is relative to the instant, not the day', () {
       expect(parse('reply in 5 hours').deadline, DateTime.utc(2026, 8, 19, 14));
     });
+
+    test('in N weeks', () {
+      expect(
+        parse('review in 2 weeks').deadline,
+        DateTime.utc(2026, 9, 2, 23, 59),
+      );
+    });
+  });
+
+  group('capitalisation', () {
+    test('a lowercase sentence gets a leading capital', () {
+      expect(parse('tidy the desk').title, 'Tidy the desk');
+    });
+
+    test('what the user typed is otherwise left alone', () {
+      // Deliberate, and the alternative is worse. Van cannot tell shouting
+      // from acronyms: downcasing "TIDY THE DESK" also turns "FIX API DOCS"
+      // into "Fix api docs", which is lossy where the first is merely loud.
+      // Showing back what was typed also matches how the rest of Van behaves.
+      expect(parse('TIDY THE DESK').title, 'TIDY THE DESK');
+      expect(parse('call HMRC').title, 'Call HMRC');
+      expect(parse('fix the API docs').title, 'Fix the API docs');
+    });
+  });
+
+  group('week offsets', () {
+    test('next week is seven days out, not the end of the coming week', () {
+      // Van schedules against a deadline. The later, vaguer reading would let
+      // work sit untouched for nine days without ever being late.
+      expect(
+        parse('plan the trip by next week').deadline,
+        DateTime.utc(2026, 8, 26, 23, 59),
+      );
+    });
+
+    test('this week is the same, deliberately', () {
+      // Said when someone means soon-but-not-today. Resolving it to Friday
+      // would make a Monday "this week" four days looser than a Thursday one.
+      expect(
+        parse('sort the files this week').deadline,
+        DateTime.utc(2026, 8, 26, 23, 59),
+      );
+    });
+
+    test('the phrase does not leak into the title', () {
+      expect(parse('plan the trip by next week').title, 'Plan the trip');
+      expect(parse('sort the files this week').title, 'Sort the files');
+    });
+
+    test('a weekday still beats a bare week offset', () {
+      // "next friday" must stay a Friday rather than becoming seven days out.
+      expect(
+        parse('submit by next friday').deadline,
+        DateTime.utc(2026, 8, 21, 23, 59),
+      );
+    });
+
+    test('the word week alone is not a deadline', () {
+      expect(parse('plan the week ahead').deadline, isNull);
+    });
   });
 
   group('weekdays', () {
