@@ -275,6 +275,43 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — a bug I half-invented, next to one I had not
+
+**Finished.** Issue 17, which I had opened an iteration earlier and described
+as "\"I'm stuck\" overwrites the partial it just recorded". Before fixing it I
+checked who actually reads `SessionStatus.partial`.
+
+**Nobody does.** Every behavioural decision in the codebase reads `hasStarted`
+or `isResolved`; `partial` appears only inside the model. And `hasStarted` is
+`actualStart != null`, which survives `markRescheduled` — so the claim in my
+own issue text, that the row stopped saying they got started, was wrong. It
+never stopped saying that.
+
+That would have been a quiet non-event, except that reading the two methods
+properly turned up something real sitting next to it. **With Van killed,
+nothing cancels a notification until an action is processed** — so two rungs of
+the same ladder can both be in the shade, and pressing Snooze on each moved the
+work twice and left two replacement blocks for it. `notToday` had the same
+shape, and `snooze` could resurrect a session that had already been completed.
+
+The guard was not addable before, and that is the interesting part: "I'm stuck"
+called `stopEarly` and then `snooze`, deliberately snoozing a block it had just
+closed. Adding the obvious guard to `snooze` would have silently broken the
+focus screen. The two had to be fixed together, which is what issue 17's second
+half was really about. "I'm stuck" is one `VanService.stuck` call now.
+
+**The lesson, and it is nearly the opposite of the last few nights.** The
+review passes worked by asking what a comment claimed against what the line
+did. This one worked by asking *who reads this field* — and the answer
+demolished the bug I was going to fix while exposing one I had not seen. A
+suspected defect is a hypothesis; grep is cheaper than a refactor.
+
+**Device work ended here.** The phone locked at about 06:15 —
+`isKeyguardShowing=true`, wakefulness `Dozing`. `OVERNIGHT.md` 3a says not to
+try to get past that, so I did not. The build, install, launch and
+notification checks for this change all completed before it happened; nothing
+after that point was verified on hardware.
+
 ### 21 August 2026, overnight — the screen nobody had tested
 
 **Finished.** The two remaining issues an agent could act on (1a and 15) share

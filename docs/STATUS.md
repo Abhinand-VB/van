@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **521 tests, all green,
+Van is finished as far as an agent can take it alone. **523 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -51,7 +51,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **521 tests passing** — 238 in `packages/van_core` (pure Dart), 283 in the app.
+- **523 tests passing** — 238 in `packages/van_core` (pure Dart), 285 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -86,7 +86,7 @@ working configuration, not a degraded one.
 | App: negotiation guards (review) | 5 |
 | App: fatigue window | 2 |
 | App: notification actions | 11 |
-| App: focus screen | 9 |
+| App: focus screen | 13 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -110,6 +110,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+87fe6f3  Refuse an action arriving twice for the same block
 ff7c20d  Resuming a block is not starting it again
 59e063d  Make every nudge button open the app, reversing last night's call
 d104b1a  Collect the notification action that launched the app
@@ -555,6 +556,31 @@ together.
 
 ---
 
+## 3j. One action, arriving twice
+
+With Van killed, **nothing cancels a notification until an action is actually
+processed.** So the 09:00 and 09:10 rungs of one ladder can both be sitting in
+the shade at 09:15, and pressing the same button on each delivers it twice.
+
+Until 21 Aug that moved the work twice and left two replacement blocks for one
+piece of work. `snooze` and `notToday` now refuse a session that is already
+resolved, and there are tests for both.
+
+That guard could not exist earlier, and the reason is worth knowing before
+touching either method: **`FocusScreen`'s "I'm stuck" used to call `stopEarly`
+and then `snooze`** — deliberately snoozing a block it had just closed. Adding
+the obvious guard to `snooze` would have silently broken it. The two had to be
+fixed together, which is why "I'm stuck" is now a single `VanService.stuck`
+call that says what it means.
+
+**On `SessionStatus` after "I'm stuck":** the block keeps `partial` rather than
+`rescheduled`. Nothing reads the status to decide behaviour — `hasStarted` and
+`isResolved` do that everywhere in the codebase — so this is purely a choice
+about which fact the row tells, and "they got started" is the more useful one.
+The replacement records the link through `parentSessionId` either way.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -578,7 +604,7 @@ than this file.**
 | 13 | ~~Two parser gaps the golden set found~~ | **Done, 21 Aug 2026** (`61e3e72`), and the two halves needed opposite treatment. *"next week"* was simply unparsed and is now handled, along with `this week` and `in N weeks`. The **all-caps case is closed as deliberate**: Van cannot tell shouting from acronyms, so any rule turning `TIDY THE DESK` into `Tidy the desk` also turns `FIX API DOCS` into `Fix api docs` — loud versus lossy. The golden now specifies preservation. `extract_task` scores 29/29. |
 | 14 | **`GemmaBackend` cannot be measured off-device** | It needs the platform channel and a model file, so `tool/run_goldens.dart` deliberately has no flag for it. Measuring a candidate model means running the golden set on the phone, which needs a small debug screen or an integration test. Nothing built yet; the WP-6 gate cannot be evaluated until it is. |
 | 15 | **Snooze and Not today need the app to open** | Fixed the cheap way on 21 Aug (`59e063d`): all three actions are now `showsUserInterface`, so Android launches Van and the response arrives through `consumeLaunchAction`. That works, and it is intrusive — pressing "Not today" opens the app to dismiss something. The real fix is handling actions in the background isolate, which needs its own database connection; until then this is honest rather than silent. **Notifications armed before the fix keep the old flags**, so the six pending for this morning still lose Snooze and Not today. |
-| 17 | **"I'm stuck" overwrites the partial it just recorded** | `FocusScreen._stuck` calls `stopEarly` (status `partial`) and then `snooze`, and the second call's `markRescheduled()` overwrites the first one's status. Nothing is truly lost — `actualStart` survives and the `sessionPartial` event is in the append-only log — but the session row alone no longer says they got started. The fix is a single service method expressing "stopped early, try again in twenty minutes" rather than composing two calls, which would also let `snooze` grow a resolved-session guard it currently cannot have: `_stuck` depends on snoozing a `partial` block. Fragile coupling, worth untangling together. |
+| 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 
 ---
@@ -594,6 +620,12 @@ comes out half a day wrong.
 This is a **flagship**, so it is the best case for on-device model work, not a
 representative one. Any WP-6 benchmark taken here must carry that caveat; test
 on a mid-range phone before trusting the numbers.
+
+**The phone locked at ~06:15 on 21 August.** `isKeyguardShowing=true`,
+wakefulness `Dozing`. Per `OVERNIGHT.md` 3a that ends device work for the
+session rather than being something to get past — everything below was
+verified before it happened. Iterations less than 30 minutes apart keep the
+keyguard away; this one ran long.
 
 **Two things that will waste time if forgotten:**
 
