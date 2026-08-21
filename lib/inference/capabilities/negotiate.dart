@@ -1,0 +1,273 @@
+import 'package:meta/meta.dart';
+import 'package:van/inference/backend.dart';
+import 'package:van/inference/capabilities/compose_nudge.dart';
+import 'package:van/inference/capability.dart';
+import 'package:van/inference/parsing.dart';
+import 'package:van_core/van_core.dart';
+
+/// A prompt loaded from `assets/prompts/`, split into its two halves.
+///
+/// Prompts are assets rather than string literals so they can be versioned,
+/// diffed and swapped without a rebuild - a prompt change is a content change,
+/// and reviewing one inside a Dart file is miserable.
+@immutable
+class PromptTemplate {
+  /// Creates a template.
+  const PromptTemplate({required this.system, required this.prompt});
+
+  /// Parses the `SYSTEM` / `PROMPT` format used under `assets/prompts/`.
+  factory PromptTemplate.parse(String source) {
+    const systemMarker = 'SYSTEM\n';
+    const promptMarker = '\nPROMPT\n';
+
+    final split = source.indexOf(promptMarker);
+    if (split < 0 || !source.startsWith(systemMarker)) {
+      // A malformed asset must not be a crash on a background thread. The
+      // whole file becomes the prompt, which is degraded but works.
+      return PromptTemplate(system: '', prompt: source.trim());
+    }
+    return PromptTemplate(
+      system: source.substring(systemMarker.length, split).trim(),
+      prompt: source.substring(split + promptMarker.length).trim(),
+    );
+  }
+
+  /// Instructions that frame the task.
+  final String system;
+
+  /// The body, with `{placeholders}` still in it.
+  final String prompt;
+
+  /// Substitutes `{key}` for each entry in [values].
+  String fill(Map<String, String> values) {
+    var filled = prompt;
+    for (final entry in values.entries) {
+      filled = filled.replaceAll('{${entry.key}}', entry.value);
+    }
+    return filled;
+  }
+}
+
+/// Everything Van knows about a block that is not starting.
+@immutable
+class NegotiationRequest {
+  /// Creates a request.
+  const NegotiationRequest({
+    required this.taskTitle,
+    required this.minutes,
+    this.minutesLate = 0,
+    this.moves = 0,
+    this.hoursToDeadline,
+    this.priorResponses = const [],
+    this.userGaveReason = false,
+    this.reasonText,
+    this.userRefused = false,
+  });
+
+  /// What the work is called.
+  final String taskTitle;
+
+  /// How long the block is now.
+  final int minutes;
+
+  /// Minutes past the planned start with no start recorded.
+  final int minutesLate;
+
+  /// How many times this work has already been moved.
+  final int moves;
+
+  /// Hours until the task is due, if it has a deadline.
+  final double? hoursToDeadline;
+
+  /// How the user answered earlier nudges about this block, oldest first.
+  final List<ResponseType> priorResponses;
+
+  /// Whether they explained themselves rather than just ignoring it.
+  final bool userGaveReason;
+
+  /// What they said, when they said anything.
+  final String? reasonText;
+
+  /// Whether they have said no outright.
+  final bool userRefused;
+
+  /// The facts the ladder needs to pick a level.
+  InterventionContext get interventionContext => InterventionContext(
+    minutesLate: minutesLate,
+    rescheduleCount: moves,
+    hoursToDeadline: hoursToDeadline,
+    priorResponses: priorResponses,
+    userGaveReason: userGaveReason,
+    userRefused: userRefused,
+  );
+}
+
+/// Proposes a way out of a stalled block, and writes the line for it.
+///
+/// The one capability whose output is an *action* rather than text, which is
+/// why it is the one that most needs the rule in AGENTS.md: the model never
+/// mutates state. It returns a [NegotiationProposal], and `NegotiationRules`
+/// in the domain decides whether Van is allowed to act on it.
+///
+/// The level is never the model's to choose. `InterventionPolicy` picks it
+/// before the prompt is built, and the prompt is told which actions that level
+/// permits. A model that proposes outside them is refused and the deterministic
+/// fallback runs instead - so the worst a bad model can do here is be useless,
+/// never destructive.
+class Negotiate extends Capability<NegotiationRequest, NegotiationProposal> {
+  /// Creates the capability over a prompt asset and a template bank.
+  const Negotiate({
+    required PromptTemplate prompt,
+    required NudgeTemplates templates,
+    InterventionPolicy policy = const InterventionPolicy(),
+    NegotiationRules rules = const NegotiationRules(),
+  }) : _prompt = prompt,
+       _templates = templates,
+       _policy = policy,
+       _rules = rules;
+
+  final PromptTemplate _prompt;
+  final NudgeTemplates _templates;
+  final InterventionPolicy _policy;
+  final NegotiationRules _rules;
+
+  @override
+  String get id => 'negotiate';
+
+  @override
+  Map<String, Object?> get outputSchema => const {
+    'type': 'object',
+    'properties': {
+      'action': {
+        'type': 'string',
+        'enum': ['hold', 'shrink', 'defer', 'release'],
+      },
+      'shrinkToMinutes': {
+        'type': ['integer', 'null'],
+      },
+      'deferByMinutes': {
+        'type': ['integer', 'null'],
+      },
+      'message': {'type': 'string', 'maxLength': 140},
+    },
+    'required': ['action', 'message'],
+  };
+
+  /// The level the ladder picks for [input]. Deterministic, always.
+  InterventionLevel levelFor(NegotiationRequest input) =>
+      _policy.select(input.interventionContext);
+
+  /// The facts a proposal for [input] must be judged against.
+  NegotiationContext contextFor(NegotiationRequest input) => NegotiationContext(
+    level: levelFor(input),
+    currentMinutes: input.minutes,
+    hoursToDeadline: input.hoursToDeadline,
+  );
+
+  @override
+  LlmRequest buildRequest(NegotiationRequest input, BackendCapabilities caps) {
+    final level = levelFor(input);
+    final allowed = _rules.allowedAt(level).map((a) => a.name).join(', ');
+
+    return LlmRequest(
+      system: _prompt.system,
+      prompt: _prompt.fill({
+        'task': input.taskTitle,
+        'minutes': '${input.minutes}',
+        'late': '${input.minutesLate}',
+        'moves': '${input.moves}',
+        'deadline': input.hoursToDeadline == null
+            ? 'none'
+            : input.hoursToDeadline!.toStringAsFixed(1),
+        'level': level.name,
+        'allowed': allowed,
+        'reason': input.reasonText ?? 'nothing',
+      }),
+      jsonSchema: caps.supportsNativeStructuredOutput ? outputSchema : null,
+      maxOutputTokens: 160,
+      temperature: 0.6,
+    );
+  }
+
+  @override
+  NegotiationProposal? parse(String raw) {
+    final json = JsonSalvage.extractObject(raw);
+    if (json == null) return null;
+
+    final message = JsonSalvage.readString(json, 'message');
+    if (message == null || message.trim().isEmpty) return null;
+
+    final action = _actionFrom(JsonSalvage.readString(json, 'action'));
+    if (action == null) return null;
+
+    return NegotiationProposal(
+      action: action,
+      message: message.trim(),
+      shrinkToMinutes: JsonSalvage.readInt(json, 'shrinkToMinutes'),
+      deferByMinutes: JsonSalvage.readInt(json, 'deferByMinutes'),
+    );
+  }
+
+  static NegotiationAction? _actionFrom(String? name) {
+    for (final action in NegotiationAction.values) {
+      if (action.name == name) return action;
+    }
+    return null;
+  }
+
+  /// The ladder's own answer: the level it picked, and a template for it.
+  ///
+  /// Deliberately conservative. With no model, Van proposes the smallest thing
+  /// the level allows rather than the largest - a wrong `hold` costs one more
+  /// notification, a wrong `release` loses the work.
+  @override
+  NegotiationProposal fallback(NegotiationRequest input) {
+    final level = levelFor(input);
+    final copy = _templates.pick(
+      NudgeCopyRequest(
+        type: input.minutesLate == 0
+            ? NudgeType.sessionStart
+            : NudgeType.sessionMissed,
+        level: level,
+        taskTitle: input.taskTitle,
+        minutes: input.minutes,
+        minutesLate: input.minutesLate,
+        moves: input.moves,
+      ),
+    );
+
+    final action = _fallbackAction(input, level);
+    return NegotiationProposal(
+      action: action,
+      message: copy.text,
+      shrinkToMinutes: action == NegotiationAction.shrink
+          ? _halved(input.minutes)
+          : null,
+      templateId: copy.templateId,
+    );
+  }
+
+  NegotiationAction _fallbackAction(
+    NegotiationRequest input,
+    InterventionLevel level,
+  ) {
+    // Conceding is only right when the block can no longer be salvaged by
+    // making it smaller. Halving a 20-minute block lands under the floor.
+    if (InterventionPolicy.concedes(level)) {
+      return _halved(input.minutes) == null
+          ? NegotiationAction.release
+          : NegotiationAction.shrink;
+    }
+    if (InterventionPolicy.offersShrink(level) &&
+        _halved(input.minutes) != null) {
+      return NegotiationAction.shrink;
+    }
+    return NegotiationAction.hold;
+  }
+
+  /// Half of [minutes], or null when that would be too small to be work.
+  int? _halved(int minutes) {
+    final half = minutes ~/ 2;
+    return half >= _rules.minimumBlockMinutes ? half : null;
+  }
+}

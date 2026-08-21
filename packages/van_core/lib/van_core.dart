@@ -16,6 +16,7 @@ export 'src/nudge/importance_scorer.dart';
 export 'src/nudge/nudge_engine.dart';
 export 'src/nudge/suppression_policy.dart';
 export 'src/policy/intervention_policy.dart';
+export 'src/policy/negotiation.dart';
 export 'src/result.dart';
 export 'src/scheduling/free_slot_finder.dart';
 export 'src/scheduling/rescheduler.dart';
