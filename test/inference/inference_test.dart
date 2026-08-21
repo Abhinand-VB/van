@@ -104,6 +104,95 @@ void main() {
     });
   });
 
+  group('every level keeps its own tone', () {
+    /// The level segment of the key a pick actually used.
+    String levelOf(NudgeCopy copy) =>
+        copy.templateId!.split('#').first.split('_').last;
+
+    test('no combination silently answers as l0Gentle', () {
+      // The bank has one sessionStart key and six sessionMissed keys, so five
+      // of the twelve combinations have no entry of their own. They used to
+      // fall straight back to sessionMissed_l0Gentle, which meant Van could
+      // propose shrinking or conceding a block while saying a gentle "not
+      // started yet?" - the words disagreeing with the action.
+      final templates = loadTemplates();
+
+      for (final type in NudgeType.values) {
+        for (final level in InterventionLevel.values) {
+          final copy = templates.pick(
+            NudgeCopyRequest(
+              type: type,
+              level: level,
+              taskTitle: 'Write the report',
+              minutes: 30,
+            ),
+          );
+
+          expect(
+            levelOf(copy),
+            level.name,
+            reason: '$type at $level answered with ${copy.templateId}',
+          );
+        }
+      }
+    });
+
+    test('the id names the line that was actually used', () {
+      // It used to report the key that was *asked for*, whether or not that
+      // key existed - so every fallback was mislabelled in the event log, and
+      // the recent-list counted indices against a list they did not come
+      // from. A templateId nobody can trust is worse than none.
+      final templates = loadTemplates();
+
+      final copy = templates.pick(
+        const NudgeCopyRequest(
+          type: NudgeType.sessionStart,
+          level: InterventionLevel.l5Concede,
+          taskTitle: 'Write the report',
+          minutes: 30,
+        ),
+      );
+
+      expect(copy.templateId, startsWith('sessionMissed_l5Concede#'));
+      expect(
+        copy.templateId,
+        isNot(startsWith('sessionStart_')),
+        reason: 'there is no sessionStart_l5Concede to have come from',
+      );
+    });
+
+    test('a real entry is still preferred over the fallback', () {
+      final templates = loadTemplates();
+
+      final copy = templates.pick(
+        const NudgeCopyRequest(
+          type: NudgeType.sessionStart,
+          level: InterventionLevel.l0Gentle,
+          taskTitle: 'Write the report',
+          minutes: 30,
+        ),
+      );
+
+      expect(copy.templateId, startsWith('sessionStart_l0Gentle#'));
+    });
+
+    test('the last resort still answers when the bank is empty', () {
+      final templates = NudgeTemplates(const {}, random: Random(1));
+
+      final copy = templates.pick(
+        const NudgeCopyRequest(
+          type: NudgeType.sessionStart,
+          level: InterventionLevel.l5Concede,
+          taskTitle: 'Write the report',
+          minutes: 30,
+        ),
+      );
+
+      expect(copy.templateId, 'builtin_bare');
+      expect(copy.text, isNotEmpty);
+    });
+  });
+
   group('NudgeTemplates', () {
     test('every level has at least eight variants', () {
       final templates = loadTemplates();

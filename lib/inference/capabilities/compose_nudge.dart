@@ -90,13 +90,34 @@ class NudgeTemplates {
 
   /// Picks a line for [request], avoiding the two most recent for that key.
   NudgeCopy pick(NudgeCopyRequest request) {
+    // The bank has a line for every level of sessionMissed and only l0Gentle
+    // for sessionStart, so five of the twelve combinations have no entry -
+    // and Negotiate asks for one of them whenever it proposes at l3 or above
+    // for a block that is not yet a whole minute late.
+    //
+    // Falling straight back to `sessionMissed_l0Gentle` answered those with a
+    // gentle "not started yet?" while Van was shrinking or conceding the
+    // block: the words and the action disagreeing, which is the one thing the
+    // copy must never do. Dropping the *type* keeps the level, and the level
+    // is what carries the tone.
     final key = request.templateKey;
-    final options = _byKey[key] ?? _byKey['sessionMissed_l0Gentle'] ?? const [];
+    final sameLevel = '${NudgeType.sessionMissed.name}_${request.level.name}';
+    final usedKey = _byKey.containsKey(key)
+        ? key
+        : _byKey.containsKey(sameLevel)
+        ? sameLevel
+        : 'sessionMissed_l0Gentle';
+
+    final options = _byKey[usedKey] ?? const <String>[];
     if (options.isEmpty) {
       return NudgeCopy('${request.taskTitle}.', templateId: 'builtin_bare');
     }
 
-    final recent = _recent[key] ?? <int>[];
+    // Both the id and the recent-list are keyed on what was *used*, not what
+    // was asked for. Reporting the requested key made `templateId` lie in the
+    // event log every time a fallback ran, and tracking recency under it meant
+    // the indices were counted against a list they did not come from.
+    final recent = _recent[usedKey] ?? <int>[];
     final eligible = <int>[
       for (var i = 0; i < options.length; i++)
         if (!recent.contains(i)) i,
@@ -106,14 +127,14 @@ class NudgeTemplates {
         : eligible;
 
     final index = pool[_random.nextInt(pool.length)];
-    _recent[key] = [
+    _recent[usedKey] = [
       ...recent,
       index,
     ].reversed.take(2).toList().reversed.toList();
 
     return NudgeCopy(
       _fill(options[index], request),
-      templateId: '$key#$index',
+      templateId: '$usedKey#$index',
     );
   }
 
