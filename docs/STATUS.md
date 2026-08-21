@@ -17,9 +17,21 @@ Van is finished as far as an agent can take it alone. **562 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
-   tap. Until then nudges land within the hour rather than on the minute.
-2. **Wait for a nudge and press START — the live ones are at 09:30, 09:40 and
-   09:55.** I pulled the database at 09:07 and checked, rather than repeating
+   tap, and it is the first thing to do — **there is now evidence it matters.**
+   At 09:31 I checked Android's notification service directly and Van had
+   nothing posted, a minute after a rung was due at 09:30. Van's channels are
+   healthy (importance 4 and 5, app-level notifications not blocked), and
+   `SCHEDULE_EXACT_ALARM` has never been explicitly granted or denied on this
+   phone — it is sitting at the platform default. An ungranted exact-alarm
+   permission means `schedule()` fell back to an inexact alarm, which Android
+   may defer by up to an hour. That fits what I saw, but I did not confirm the
+   grant state itself: the obvious command for it is `dumpsys alarm`, and issue
+   12 is a standing record of that output being misread. **So: likely, not
+   proven.** Granting it removes the doubt entirely.
+2. **Wait for a nudge and press START — the live ones are due at 09:30, 09:40
+   and 09:55, and may arrive late.** See item 1: as of 09:31 nothing had
+   appeared, which is consistent with an inexact alarm rather than with
+   anything broken. I pulled the database at 09:07 and checked, rather than repeating
    what an earlier note here claimed. **That note said "six armed, 09:00–09:55"
    and it was wrong**; the truth is narrower:
 
@@ -946,6 +958,45 @@ table.
 
 ---
 
+## 3r. What the phone would and would not tell me
+
+Three read-only checks at 09:31, none of which touched the UI or the lock
+screen, and one conclusion I stopped short of.
+
+**The database says nothing about delivery, by design.** It was byte-identical
+to the pull three minutes earlier. That is not evidence the nudge failed:
+`nudgeDelivered` is only written when a rung is *answered* (section 3p), so a
+notification that appears and is ignored leaves no trace at all. The database
+is the wrong instrument for this question and will always be.
+
+**Android's notification service says nothing is posted.** Scoped to
+`dev.van.app` so nothing of the owner's was read. Three lines came back, all
+configuration: the app is at `importance=DEFAULT` with `userSet=true`, so
+notifications are not blocked, and both channels exist — `van_nudges_v2` at
+importance 4 and `van_nudges_urgent_v2` at 5, each with its own sound. So the
+plumbing is intact and nothing was showing a minute after a rung was due.
+
+**The permission check is inconclusive, and I left it there.**
+`cmd appops get dev.van.app SCHEDULE_EXACT_ALARM` returns "No operations,
+default mode: default" — never explicitly granted, never explicitly denied.
+That is consistent with an inexact alarm, which Android may defer by up to an
+hour, and it fits the observation. It does not prove it.
+
+The command that looks like it would settle the question is `dumpsys alarm`,
+and **issue 12 exists precisely because that output was misread once already**,
+costing an hour and a commit message that had to be amended. Reading it again
+under time pressure, hoping for a particular answer, is how that mistake
+repeats. The honest report is: *likely inexact, not proven, and one tap makes
+the question disappear.*
+
+**The general point.** Every instrument here has a domain where it is silent
+rather than negative, and the failure is to read silence as a fact. The
+database is silent about delivery. `dumpsys alarm` is silent about pending
+alarms while looking talkative. Knowing which is which is most of what device
+debugging is.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -956,7 +1007,7 @@ than this file.**
 | 1 | ~~Stale sessions need a reschedule sweep~~ | **Done, 21 Aug 2026** (`74cb226`). See section 3a. One caveat left below. |
 | 1a | The sweep only runs when the app is open | There is no background isolate, so work abandoned while Van is closed is not moved until you next open the app. In practice that means the replacement block's notification cannot fire before you have opened Van at least once since the original went stale. Acceptable for now — the alternative is the headless-isolate design WP-4 deliberately rejected — but it is the first thing to revisit if the sweep feels late in real use. |
 | 2 | **Drum sound: needs a listen** | Done and wired, but never heard by a human. `tool/generate_drum.py` synthesises both sounds; re-run it with different parameters if the tone is wrong. Note that Android caches channel settings, so **changing the sound requires bumping the channel id** in `notifications.dart` (currently `_v2`) or it will silently not apply. |
-| 3 | **Device verification: mostly done, one gap** | Confirmed on the S25 on 21 Aug: capture through the UI lands in the database, the sweep runs on real persisted data, and the ladder now registers real `RTC_WAKEUP` alarms (the runs are in `docs/NIGHT_LOG.md`). **Still unconfirmed:** a nudge actually being delivered at its time, the START action round-trip into `sessionStarted`, and Doze behaviour after 30+ minutes idle. **Checked against a database pull at 09:07 on 21 Aug**, which corrected an earlier claim here: three live rungs at 09:30/09:40/09:55, all for one block, plus three stood-down rows. Still nothing started — `sessionStarted` count is zero. |
+| 3 | **Device verification: mostly done, one gap** | Confirmed on the S25 on 21 Aug: capture through the UI lands in the database, the sweep runs on real persisted data, and the ladder now registers real `RTC_WAKEUP` alarms (the runs are in `docs/NIGHT_LOG.md`). **Still unconfirmed:** a nudge actually being delivered at its time, the START action round-trip into `sessionStarted`, and Doze behaviour after 30+ minutes idle. **Checked against a database pull at 09:07 on 21 Aug**, which corrected an earlier claim here: three live rungs at 09:30/09:40/09:55, all for one block, plus three stood-down rows. Still nothing started — `sessionStarted` count is zero. **At 09:31, one minute after a rung was due, Android had no Van notification posted** (checked package-scoped against `dumpsys notification`; channels healthy, app not blocked). Consistent with the exact-alarm permission never having been granted, which makes the alarm inexact and deferrable by up to an hour. Not proven — see section 3r. |
 | 4 | ~~`EventRepo.forSession` is a table scan~~ | **Done, 21 Aug 2026** (`890d8a7`, `da1209c`). `sessionId` is a nullable indexed column now. See section 5d — the migration needed two attempts and the second was found on the phone. |
 | 5 | Inference logging is fire-and-forget | `EventLogInferenceObserver` uses `unawaited` so a slow write never delays the call it describes. A crash can therefore lose the last few inference events. Accepted; the alternative is making every model call wait on a database write. Tests must `flushLog()` before asserting. |
 | 6 | ~~Legacy launcher icons are Flutter's default~~ | **Done, 21 Aug 2026** (`d2abb52`). Generated from the vector by `tool/generate_launcher_icons.py`. Not verifiable on the S25, which is API 36 and draws the adaptive icon. |
