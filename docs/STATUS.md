@@ -716,6 +716,10 @@ Snapdragon 8 Elite, ~10.9 GB RAM. Serial `<device-serial>`. **Timezone
 Convert `planned_start_utc` with that offset or every hand-read of the schedule
 comes out half a day wrong.
 
+**`adb` is not on `PATH`** in the shell these sessions run in. It lives at
+`C:/Users/<user>/AppData/Local/Android/Sdk/platform-tools/adb.exe`; use the full
+path rather than assuming a bare `adb` will resolve.
+
 This is a **flagship**, so it is the best case for on-device model work, not a
 representative one. Any WP-6 benchmark taken here must carry that caveat; test
 on a mid-range phone before trusting the numbers.
