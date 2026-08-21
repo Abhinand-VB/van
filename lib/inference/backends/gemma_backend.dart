@@ -76,7 +76,11 @@ class GemmaBackend implements LlmBackend {
     } on TimeoutException {
       // The generation is still running on the device thread and will hold the
       // engine until it finishes, so tell it to stop before giving up.
-      unawaited(_llm.cancel());
+      // Cancelling is exactly the call most likely to throw - the engine is
+      // being abandoned mid-generation, which is why we are here - and
+      // `unawaited` does not catch, so without this the failure would surface
+      // as an unhandled async error long after the timeout was handled.
+      unawaited(_llm.cancel().catchError((Object _, StackTrace _) {}));
       return LlmFailure(
         LlmFailureKind.timeout,
         'no answer within ${request.timeout.inMilliseconds}ms',

@@ -115,20 +115,36 @@ class EventLogInferenceObserver implements InferenceObserver {
     // Fire and forget: the observer interface is synchronous because callers
     // must not be made to wait on logging, and a failed log must never fail
     // the inference it was describing.
+    //
+    // `unawaited` alone does not deliver that second half. It silences the
+    // analyzer and catches nothing, so a failed append became an unhandled
+    // asynchronous error in whichever zone the inference happened to run in -
+    // reaching Flutter's error handler, or failing an unrelated test. The
+    // promise above needs the catch to be true.
     unawaited(
-      _events.append(
-        outcome == InferenceOutcome.model
-            ? EventType.inferenceOk
-            : EventType.inferenceFallback,
-        {
-          'capability': capabilityId,
-          'backend': backendId,
-          'reason': ?failureReason,
-          'latencyMs': ?latencyMs,
-        },
-      ),
+      _events
+          .append(
+            outcome == InferenceOutcome.model
+                ? EventType.inferenceOk
+                : EventType.inferenceFallback,
+            {
+              'capability': capabilityId,
+              'backend': backendId,
+              'reason': ?failureReason,
+              'latencyMs': ?latencyMs,
+            },
+          )
+          .then<void>((_) {}, onError: _dropped),
     );
   }
+
+  /// Swallows a failed log write, deliberately and with nowhere else to go.
+  ///
+  /// This is the logging path: a logging failure has no log to be reported to,
+  /// and re-throwing it would take down the call it was only ever describing.
+  /// Open issue 5 already accepts that a crash can lose the last few inference
+  /// events; this makes losing them quiet rather than destructive.
+  static void _dropped(Object error, StackTrace stack) {}
 }
 
 /// The one place where capture, planning, persistence, notification and the
