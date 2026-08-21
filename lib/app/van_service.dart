@@ -439,17 +439,47 @@ class VanService {
         continue;
       }
 
-      await _notifications.schedule(
-        PendingNudge(
-          id: notificationId(session.id, i),
-          sessionId: session.id,
-          at: at,
-          title: 'Van',
-          body: copy.text,
-          level: level,
-          urgent: (task.hoursUntilDeadline(at) ?? 999) < 6,
-        ),
-      );
+      // `Notifications.schedule` already absorbs the one refusal that is
+      // expected - the exact-alarm permission - by dropping to an inexact
+      // alarm. Anything else it rethrows, and by this point the task, the
+      // block and their events are all committed. Letting that exception out
+      // would abandon a capture the user has already been told about, and
+      // lose the sentence they typed, over a reminder. A block with one
+      // fewer rung is a far smaller harm, so the failure is recorded and the
+      // ladder carries on.
+      //
+      // The nudge row above still says `wasSuppressed: false`, and that is
+      // correct rather than sloppy: Van did decide to send this one. That it
+      // never reached the platform is a different fact, and it lives here.
+      String? scheduleError;
+      try {
+        await _notifications.schedule(
+          PendingNudge(
+            id: notificationId(session.id, i),
+            sessionId: session.id,
+            at: at,
+            title: 'Van',
+            body: copy.text,
+            level: level,
+            urgent: (task.hoursUntilDeadline(at) ?? 999) < 6,
+          ),
+        );
+      } on Object catch (e) {
+        scheduleError = e.toString();
+      }
+
+      if (scheduleError != null) {
+        // Not counted as armed: nothing went out, so the next rung must be
+        // spaced against the last nudge that really did.
+        await _events.append(EventType.nudgeScheduleFailed, {
+          'sessionId': session.id,
+          'level': level.name,
+          'at': at.toIso8601String(),
+          'error': scheduleError,
+        });
+        continue;
+      }
+
       lastArmedOffset = offset;
 
       await _events.append(EventType.nudgeScheduled, {

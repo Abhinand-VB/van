@@ -154,9 +154,33 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _input.clear();
     _toBottom();
 
-    final entry = answering == null
-        ? PlanCard(await widget.service.capture(text))
-        : await _proposalFor(answering, text);
+    final ChatEntry entry;
+    try {
+      entry = answering == null
+          ? PlanCard(await widget.service.capture(text))
+          : await _proposalFor(answering, text);
+    } on Object {
+      // The composer was cleared and `_busy` set before the await, so an
+      // exception escaping here used to take the typed sentence with it and
+      // leave the box disabled for good - the worst shape a failure can have
+      // in an app whose promise is that telling it something is enough.
+      //
+      // Put the words back where the user can see them and let them try
+      // again. The transcript line comes out too, so the same sentence is
+      // never showing in two places at once.
+      if (!mounted) return;
+      setState(() {
+        _entries.removeLast();
+        _busy = false;
+      });
+      _input.text = text;
+      ScaffoldMessenger.of(context)
+        ..clearSnackBars()
+        ..showSnackBar(
+          const SnackBar(content: Text('That did not go through - try again')),
+        );
+      return;
+    }
     if (!mounted) return;
 
     setState(() {

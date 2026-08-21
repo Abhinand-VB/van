@@ -56,8 +56,20 @@ class FakeNotifications implements Notifications {
     return canPost;
   }
 
+  /// When true, [schedule] throws.
+  ///
+  /// Stands in for Android refusing an alarm for a reason that is *not* the
+  /// exact-alarm permission - the real `Notifications.schedule` absorbs that
+  /// one itself by dropping to an inexact alarm, and rethrows everything else.
+  bool failScheduling = false;
+
   @override
-  Future<void> schedule(PendingNudge nudge) async => scheduled.add(nudge);
+  Future<void> schedule(PendingNudge nudge) async {
+    if (failScheduling) {
+      throw Exception('the platform refused this alarm');
+    }
+    scheduled.add(nudge);
+  }
 
   @override
   Future<void> showNow(PendingNudge nudge) async => scheduled.add(nudge);

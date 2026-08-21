@@ -33,6 +33,13 @@ enum EventType {
   /// A nudge was blocked before delivery. Records the reason.
   nudgeSuppressed,
 
+  /// A nudge Van decided to send could not be handed to the platform.
+  ///
+  /// Distinct from [nudgeSuppressed], which is Van choosing silence. This is
+  /// Android refusing, and the two must never be conflated: the whole value of
+  /// the suppression record is telling a quiet day from a broken scheduler.
+  nudgeScheduleFailed,
+
   /// A nudge reached the user.
   nudgeDelivered,
 

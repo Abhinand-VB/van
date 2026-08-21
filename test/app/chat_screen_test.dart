@@ -18,10 +18,36 @@ import 'package:van_core/van_core.dart';
 import '../support/fake_notifications.dart';
 import '../support/prompts.dart';
 
+/// A service whose [capture] always fails.
+///
+/// Closing the database would also do it, but that additionally makes the
+/// fire-and-forget inference observer throw into the void (open issue 5), and
+/// the screen's behaviour is what is under test - not the cause.
+class _FailingCapture extends VanService {
+  _FailingCapture({
+    required super.tasks,
+    required super.sessions,
+    required super.events,
+    required super.nudges,
+    required super.router,
+    required super.notifications,
+    required super.templates,
+    required super.prompts,
+    required super.clock,
+    required super.ids,
+    super.waking,
+  });
+
+  @override
+  Future<CaptureResult> capture(String text) async =>
+      throw Exception('the write failed');
+}
+
 void main() {
   late VanDatabase db;
   late FakeNotifications notifications;
   late VanService service;
+  late VanService failing;
   late FakeClock clock;
 
   /// Wednesday 19 August 2026, 09:00 UTC.
@@ -32,6 +58,21 @@ void main() {
     clock = FakeClock(start);
     notifications = FakeNotifications();
     final events = EventRepo(db, clock);
+    failing = _FailingCapture(
+      tasks: TaskRepo(db),
+      sessions: SessionRepo(db),
+      events: events,
+      nudges: NudgeRepo(db),
+      router: InferenceRouter(defaultBackend: const NullBackend()),
+      notifications: notifications,
+      templates: NudgeTemplates.fromJson(
+        File('assets/nudge_templates/templates.json').readAsStringSync(),
+      ),
+      prompts: testPrompts(),
+      clock: clock,
+      ids: SequentialIds('f'),
+      waking: const WakingHours(utcOffset: Duration.zero),
+    );
 
     service = VanService(
       tasks: TaskRepo(db),
@@ -55,10 +96,10 @@ void main() {
 
   tearDown(() async => db.close());
 
-  Future<void> showChat(WidgetTester tester) async {
+  Future<void> showChat(WidgetTester tester, {VanService? using}) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: ChatScreen(service: service, clock: clock),
+        home: ChatScreen(service: using ?? service, clock: clock),
       ),
     );
     await tester.pumpAndSettle();
@@ -88,6 +129,39 @@ void main() {
 
       final open = await service.openTasks();
       expect(open.single.title, 'Write the report');
+    });
+
+    testWidgets('a failed send gives the words back', (tester) async {
+      await showChat(tester, using: failing);
+      await send(tester, 'write the report 45 minutes');
+
+      expect(
+        find.widgetWithText(TextField, 'write the report 45 minutes'),
+        findsOneWidget,
+        reason: 'the sentence goes back in the box, not into the void',
+      );
+      expect(
+        find.text('write the report 45 minutes'),
+        findsOneWidget,
+        reason: 'and is not also left sitting in the transcript',
+      );
+      expect(find.textContaining('did not go through'), findsOneWidget);
+    });
+
+    testWidgets('and the next send still works', (tester) async {
+      // _busy used to stay true forever after a failure, disabling the
+      // composer for the rest of the session - worse than the failed send.
+      await showChat(tester, using: failing);
+      await send(tester, 'first go');
+
+      expect(find.textContaining('did not go through'), findsOneWidget);
+      await send(tester, 'second go');
+
+      expect(
+        find.widgetWithText(TextField, 'second go'),
+        findsOneWidget,
+        reason: 'a second attempt was accepted and failed the same way',
+      );
     });
 
     testWidgets('the card shows every block it scheduled', (tester) async {

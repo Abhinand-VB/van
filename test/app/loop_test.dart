@@ -616,6 +616,74 @@ void main() {
     });
   });
 
+  group('when the platform refuses an alarm', () {
+    test('the capture survives it', () async {
+      // A failed alarm used to escape _armLadder, through _planFor, and out
+      // of capture() - abandoning a task and block that were already
+      // committed, and taking the user's typed sentence with them.
+      notifications.failScheduling = true;
+
+      final result = await service.capture('write the report 45 minutes');
+
+      expect(result.sessions, isNotEmpty, reason: 'the plan still stands');
+      expect(await sessions.byId(result.sessions.first.id), isNotNull);
+      expect(notifications.scheduled, isEmpty);
+    });
+
+    test('and says so, without calling it suppression', () async {
+      notifications.failScheduling = true;
+
+      final result = await service.capture('write the report 45 minutes');
+      final session = result.sessions.first;
+
+      final failures = await events.ofType(EventType.nudgeScheduleFailed);
+      expect(failures, isNotEmpty);
+      expect(failures.first.payload['sessionId'], session.id);
+      expect(failures.first.payload['error'], isNotNull);
+
+      expect(
+        await events.ofType(EventType.nudgeScheduled),
+        isEmpty,
+        reason: 'nothing was handed over, so nothing may claim it was',
+      );
+      expect(
+        await events.ofType(EventType.nudgeSuppressed),
+        isEmpty,
+        reason: 'Van chose to send these - suppression means the opposite',
+      );
+    });
+
+    test('the nudge is still on the record as intended', () async {
+      notifications.failScheduling = true;
+
+      final result = await service.capture('write the report 45 minutes');
+      final recorded = await nudges.forSession(result.sessions.first.id);
+
+      expect(recorded, isNotEmpty);
+      expect(
+        recorded.every((n) => !n.wasSuppressed),
+        isTrue,
+        reason: 'wasSuppressed records Van deciding, not Android accepting',
+      );
+    });
+
+    test(
+      'a later rung is still attempted after an earlier one fails',
+      () async {
+        notifications.failScheduling = true;
+        final result = await service.capture('write the report 45 minutes');
+        final failures = await events.ofType(EventType.nudgeScheduleFailed);
+
+        expect(
+          failures.length,
+          greaterThan(1),
+          reason: 'one bad rung must not stand the rest of the ladder down',
+        );
+        expect(result.sessions, isNotEmpty);
+      },
+    );
+  });
+
   group('the rule set reaches every part of the negotiation', () {
     /// A service whose negotiation floor is 30 minutes rather than the
     /// default 15.
