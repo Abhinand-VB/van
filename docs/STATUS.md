@@ -13,8 +13,8 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **492 → 499 tests, all
-green, on a phone that runs.** Four things need you, and they are small:
+Van is finished as far as an agent can take it alone. **501 tests, all green,
+on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
    tap. Until then nudges land within the hour rather than on the minute.
@@ -44,7 +44,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **499 tests passing** — 238 in `packages/van_core` (pure Dart), 261 in the app.
+- **501 tests passing** — 238 in `packages/van_core` (pure Dart), 263 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -77,6 +77,7 @@ working configuration, not a degraded one.
 | App: inference config | 13 |
 | App: prompt assets | 9 |
 | App: negotiation guards (review) | 5 |
+| App: fatigue window | 2 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -100,6 +101,8 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+73505a8  Do not build the model just to throw it away
+e32ce8a  Fatigue is measured over the day the rung fires, not the day it is armed
 d9eb37c  Three defects found by reading tonight's code back
 86ce1ec  Move the last two prompts out of Dart and into assets
 61e3e72  Close both parser gaps the golden set found
@@ -437,6 +440,34 @@ Two rules the tests also hold:
 `test/support/prompts.dart` reads the real assets rather than stub text. A test
 exercising different prompts than production would stop noticing exactly the
 drift the suite exists to catch.
+
+---
+
+## 3g. Five defects that all had the same shape
+
+Two review passes over the night's work turned up five bugs, and it is worth
+naming what they had in common, because the next one will look the same.
+
+**Every one was a guard that was correct about one case and silent about its
+twin.**
+
+| The guard | What it missed |
+|---|---|
+| `applyNegotiation` checked `isResolved` | a *started* block is not resolved — a shrink would have cancelled work in progress |
+| `applyNegotiation` returned null on refusal | it also returned null on a successful `release`, so chat reported a change it had failed to make |
+| `_settleLadder`'s doc said the delivery inference lived in one place | splitting it had made two copies |
+| spacing was measured to the instant a rung fires | fatigue, four lines away, was still measured from the instant it was armed |
+| `detach()` released the engine | a plain `by lazy` meant it *built* one first, purely to throw away |
+
+None was found by a failing test. Four were found by reading the code back and
+asking what the comment claimed versus what the line did; the fifth was found
+by a test written for something else, which started failing for a reason I had
+not predicted.
+
+**The practical lesson:** when a fix is applied to one input, check its
+neighbours in the same function before moving on. The fatigue bug survived a
+fix to the identical mistake four lines above it, in the same commit, because I
+fixed the case I was looking at rather than the class of case.
 
 ---
 

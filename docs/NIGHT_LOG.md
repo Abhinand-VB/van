@@ -275,6 +275,42 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — a second review pass, and two more
+
+**Finished.** Last night's iteration concluded "next: nothing". That judgement
+followed a review that had just found three defects in half an hour, which is
+the opposite of evidence that the code is clean — so this was another pass over
+the parts I had not read back yet: the sweep, the arming path, and the Kotlin.
+
+Two more turned up.
+
+**Fatigue was measured over the wrong day** (`e32ce8a`). `_armLadder` read the
+dismissal streak from midnight *today* and applied it to rungs that may fire
+tomorrow — so ignoring three nudges tonight would have suppressed a block
+scheduled for tomorrow morning before it had any chance to fire.
+
+This is the part worth remembering: the spacing rule four lines below had
+*exactly* this bug, I fixed it last night, and its comment reads "arming a
+ladder for tomorrow morning seconds after being nudged must not silence
+tomorrow morning". The sentence was right. I applied it to one of the two
+inputs and moved on. Section 3g in STATUS now collects all five defects the
+review passes found, because they turned out to share a shape.
+
+**The Kotlin built a model just to destroy it** (`73505a8`). `detach()`
+released the engine unconditionally, and a plain `by lazy` meant an activity
+that never asked a question would construct one on its way out. Harmless with
+`MissingEngine`; exactly wrong once that file does its job, which is why it was
+worth fixing in the seam rather than leaving for whoever wires LiteRT.
+
+**A note on method.** I checked the fatigue test fails against the old line
+rather than assuming it would, and I wrote both halves — today's swipes must
+still silence today. The obvious over-correction for "fatigue is too eager" is
+turning fatigue off.
+
+**What I would do next.** Genuinely nothing new. Two passes have now found
+five defects and the second pass found fewer than the first, which is the shape
+you want. Everything else on the board needs you or needs a week of use.
+
 ### 21 August 2026, overnight — reading it back, and shrinking the handover
 
 **Finished.** Nothing was left on the board that an agent could close alone, so
