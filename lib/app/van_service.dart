@@ -6,6 +6,7 @@ import 'package:van/data/repositories/session_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/capabilities/extract_task.dart';
+import 'package:van/inference/capabilities/negotiate.dart';
 import 'package:van/inference/router.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van_core/van_core.dart';
@@ -52,6 +53,44 @@ class SweepReport {
   @override
   String toString() =>
       'SweepReport(moved=${moved.length}, dropped=${dropped.length})';
+}
+
+/// What Van proposes doing about a block that has stalled.
+///
+/// Carries the proposal *and* whether the domain would let Van act on it, so
+/// the UI can offer the button or explain the refusal rather than silently
+/// swallowing a model that overreached.
+class NegotiationOutcome {
+  /// Creates an outcome.
+  const NegotiationOutcome({
+    required this.session,
+    required this.task,
+    required this.proposal,
+    required this.level,
+    this.modelWasRefused,
+  });
+
+  /// The block being renegotiated.
+  final WorkSession session;
+
+  /// The work it belongs to.
+  final Task task;
+
+  /// What Van proposes. Always something the rules accept: a model proposal
+  /// that fails validation is replaced by the deterministic fallback.
+  final NegotiationProposal proposal;
+
+  /// How hard Van is pushing. Chosen by the ladder, never by a model.
+  final InterventionLevel level;
+
+  /// Why a model proposal was thrown away, or null when none was.
+  final NegotiationRejection? modelWasRefused;
+
+  /// Whether the words came from a model rather than a template.
+  bool get fromModel => proposal.fromModel;
+
+  /// Whether this changes anything if applied.
+  bool get changesThePlan => proposal.action != NegotiationAction.hold;
 }
 
 /// Appends inference outcomes to the event log.
@@ -107,6 +146,7 @@ class VanService {
     required InferenceRouter router,
     required Notifications notifications,
     required NudgeTemplates templates,
+    required PromptTemplate negotiatePrompt,
     required Clock clock,
     required IdGenerator ids,
     WakingHours waking = const WakingHours(),
@@ -123,6 +163,11 @@ class VanService {
        _suppression = suppression ?? SuppressionPolicy(waking: waking),
        _notifications = notifications,
        _templates = templates,
+       _negotiate = Negotiate(
+         prompt: negotiatePrompt,
+         templates: templates,
+         policy: policy,
+       ),
        _clock = clock,
        _ids = ids,
        _waking = waking,
@@ -141,11 +186,17 @@ class VanService {
   final SuppressionPolicy _suppression;
   final Notifications _notifications;
   final NudgeTemplates _templates;
+  final Negotiate _negotiate;
   final Clock _clock;
   final IdGenerator _ids;
   final WakingHours _waking;
   final InterventionPolicy _policy;
   final StaleSessionSweep _sweep;
+  static const _rules = NegotiationRules();
+
+  /// A renegotiated block never lands closer than this to now, so accepting
+  /// a proposal does not fire a nudge in the same breath.
+  static const _negotiatedLeadMinutes = 5;
 
   /// Captures [text], plans it, stores it and arms the notifications.
   Future<CaptureResult> capture(String text) async {
@@ -384,6 +435,60 @@ class VanService {
   DateTime _startOfToday() {
     final wall = _waking.toLocalWall(_clock.now());
     return _waking.toUtcInstant(DateTime.utc(wall.year, wall.month, wall.day));
+  }
+
+  /// Records what the user said about the rung that most recently fired.
+  ///
+  /// The half of settling that does not stand anything down. A `hold` means
+  /// the conversation continues and the remaining rungs must still fire, so it
+  /// needs this without the rest.
+  ///
+  /// Marks fired rungs delivered on the way past, since delivery is inferred
+  /// rather than observed - see [_settleLadder].
+  Future<Nudge?> _recordAnswer(
+    String sessionId,
+    ResponseType response, {
+    String? reasonText,
+  }) async {
+    final now = _clock.now();
+    Nudge? answered;
+
+    for (final nudge in await _nudges.forSession(sessionId)) {
+      if (nudge.wasSuppressed || nudge.deliveredAt != null) continue;
+      if (nudge.scheduledAt.isAfter(now)) continue;
+
+      final delivered = nudge.deliver(nudge.scheduledAt);
+      await _nudges.save(delivered);
+      await _events.append(EventType.nudgeDelivered, {
+        'sessionId': sessionId,
+        'nudgeId': nudge.id,
+        'level': nudge.level.name,
+        'at': nudge.scheduledAt.toIso8601String(),
+      });
+      answered = delivered;
+    }
+
+    // Nothing fired, so there is nothing to have responded to. An event would
+    // be a lie and a fatigue tick would be unearned.
+    if (answered == null) return null;
+
+    await _nudges.saveResponse(
+      NudgeResponse(
+        id: _ids.next(),
+        nudgeId: answered.id,
+        response: response,
+        respondedAt: now,
+        latencySeconds: now.difference(answered.deliveredAt!).inSeconds,
+        reasonText: reasonText,
+      ),
+    );
+    await _events.append(EventType.nudgeResponded, {
+      'sessionId': sessionId,
+      'nudgeId': answered.id,
+      'response': response.name,
+      'level': answered.level.name,
+    });
+    return answered;
   }
 
   /// Closes the books on [sessionId]'s ladder and records [response].
@@ -692,6 +797,204 @@ class VanService {
       'blocksRemoved': sessions.length,
     });
     return true;
+  }
+
+  /// Asks what to do about a stalled block, optionally given [reason].
+  ///
+  /// This is the conversation Van was designed around: not "you did not
+  /// start", but "you did not start - what would work instead". The reply is
+  /// a *proposal*. Nothing changes until [applyNegotiation] is called, which
+  /// is what keeps a language model on the right side of AGENTS.md rule 3.
+  ///
+  /// The returned proposal is always one the domain accepts. If a model
+  /// proposes something the ladder does not permit at this level, it is
+  /// discarded and the deterministic fallback answers instead - so a bad model
+  /// degrades the wording, never the behaviour.
+  Future<NegotiationOutcome?> negotiate(
+    String sessionId, {
+    String? reason,
+  }) async {
+    final session = await _sessions.byId(sessionId);
+    if (session == null) return null;
+    final task = await _tasks.byId(session.taskId);
+    if (task == null) return null;
+
+    final now = _clock.now();
+    final priors = await _priorResponses(sessionId);
+    final explained = reason != null && reason.trim().isNotEmpty;
+
+    final input = NegotiationRequest(
+      taskTitle: task.title,
+      minutes: session.plannedMinutes,
+      minutesLate: session.minutesLate(now),
+      moves: session.rescheduleCount,
+      hoursToDeadline: task.hoursUntilDeadline(now),
+      priorResponses: priors,
+      userGaveReason: explained,
+      reasonText: explained ? reason.trim() : null,
+      userRefused: priors.contains(ResponseType.dismissed),
+    );
+
+    final level = _negotiate.levelFor(input);
+    var proposal = await _router.run(_negotiate, input);
+
+    // The gate. A model may propose; only the domain decides.
+    final refused = _rules.reject(proposal, _negotiate.contextFor(input));
+    if (refused != null) proposal = _negotiate.fallback(input);
+
+    await _events.append(EventType.interventionSelected, {
+      'sessionId': sessionId,
+      'level': level.name,
+      'action': proposal.action.name,
+      'source': proposal.fromModel ? 'model' : 'fallback',
+      'refused': ?refused?.name,
+      'gaveReason': explained,
+    });
+
+    return NegotiationOutcome(
+      session: session,
+      task: task,
+      proposal: proposal,
+      level: level,
+      modelWasRefused: refused,
+    );
+  }
+
+  /// Carries out a proposal the user accepted.
+  ///
+  /// Re-validates rather than trusting the caller. The proposal may have been
+  /// sitting on screen for a while, and a block that has since been started or
+  /// moved must not be renegotiated out from under itself.
+  ///
+  /// [reason] must be whatever was passed to [negotiate], because the level -
+  /// and therefore what is permitted - depends on it. Someone who explained
+  /// themselves has earned a smaller ask; the same proposal without that
+  /// context is above what the ladder allows. Forgetting it here made Van
+  /// refuse its own proposal.
+  ///
+  /// That is not a hole in the gate: the reason is the *user's* own words, and
+  /// the thing being guarded against is a model proposing something drastic,
+  /// which is still checked against the level either way.
+  Future<WorkSession?> applyNegotiation(
+    String sessionId,
+    NegotiationProposal proposal, {
+    String? reason,
+  }) async {
+    final session = await _sessions.byId(sessionId);
+    if (session == null || session.isResolved) return null;
+    final task = await _tasks.byId(session.taskId);
+    if (task == null) return null;
+
+    final now = _clock.now();
+    final priors = await _priorResponses(sessionId);
+    final explained = reason != null && reason.trim().isNotEmpty;
+    final input = NegotiationRequest(
+      taskTitle: task.title,
+      minutes: session.plannedMinutes,
+      minutesLate: session.minutesLate(now),
+      moves: session.rescheduleCount,
+      hoursToDeadline: task.hoursUntilDeadline(now),
+      priorResponses: priors,
+      userGaveReason: explained,
+      reasonText: explained ? reason.trim() : null,
+      userRefused: priors.contains(ResponseType.dismissed),
+    );
+    if (_rules.reject(proposal, _negotiate.contextFor(input)) != null) {
+      return null;
+    }
+
+    switch (proposal.action) {
+      case NegotiationAction.hold:
+        // The deal on the table is still the deal, so the remaining rungs must
+        // still fire - _settleLadder would stand them down, which is the
+        // opposite of holding. Only the answer is recorded, and only when the
+        // user actually said something: a bare acknowledgement with no words
+        // has no honest ResponseType, and inventing one would put Van's own
+        // sentence in the log as if the user had written it.
+        if (explained) {
+          await _recordAnswer(
+            sessionId,
+            ResponseType.reason,
+            reasonText: reason.trim(),
+          );
+        }
+        return session;
+
+      case NegotiationAction.release:
+        await _settleLadder(sessionId, ResponseType.dismissed);
+        await _notifications.cancelForSession(sessionId);
+        await _sessions.save(session.skip());
+        await _events.append(EventType.sessionMissed, {
+          'sessionId': sessionId,
+          'reason': 'negotiated_release',
+        });
+        return null;
+
+      case NegotiationAction.shrink:
+      case NegotiationAction.defer:
+        final start = proposal.action == NegotiationAction.defer
+            ? now.add(Duration(minutes: proposal.deferByMinutes!))
+            : _noEarlierThanNow(session.plannedStart, now);
+        return _replaceWith(
+          session: session,
+          task: task,
+          newStart: start,
+          newMinutes: proposal.shrinkToMinutes,
+          reason: proposal.action.name,
+          // Renegotiating time without explaining is materially a snooze.
+          answer: explained ? ResponseType.reason : ResponseType.snoozed,
+          answerText: explained ? reason.trim() : null,
+        );
+    }
+  }
+
+  /// A shrunken block keeps its slot unless that slot has already gone.
+  DateTime _noEarlierThanNow(DateTime plannedStart, DateTime now) {
+    final earliest = now.add(const Duration(minutes: _negotiatedLeadMinutes));
+    return plannedStart.isAfter(earliest) ? plannedStart : earliest;
+  }
+
+  /// Retires [session] and arms a replacement. The shape snooze, the sweep and
+  /// negotiation all share.
+  Future<WorkSession> _replaceWith({
+    required WorkSession session,
+    required Task task,
+    required DateTime newStart,
+    required String reason,
+    required ResponseType answer,
+    String? answerText,
+    int? newMinutes,
+  }) async {
+    await _settleLadder(session.id, answer, reasonText: answerText);
+    await _notifications.cancelForSession(session.id);
+    await _sessions.save(session.markRescheduled());
+
+    final next = session.replacement(
+      newId: _ids.next(),
+      newStart: newStart,
+      newMinutes: newMinutes,
+    );
+    await _sessions.save(next);
+    await _events.append(EventType.rescheduleApplied, {
+      'from': session.id,
+      'to': next.id,
+      'moves': next.rescheduleCount,
+      'minutes': next.plannedMinutes,
+      'start': next.plannedStart.toIso8601String(),
+      'reason': reason,
+    });
+    await _armLadder(next, task);
+    return next;
+  }
+
+  /// How the user has answered nudges about [sessionId], oldest first.
+  Future<List<ResponseType>> _priorResponses(String sessionId) async {
+    final answers = <NudgeResponse>[];
+    for (final nudge in await _nudges.forSession(sessionId)) {
+      answers.addAll(await _nudges.responsesFor(nudge.id));
+    }
+    answers.sort((a, b) => a.respondedAt.compareTo(b.respondedAt));
+    return [for (final a in answers) a.response];
   }
 
   /// Marks the task done once no unresolved sessions remain.

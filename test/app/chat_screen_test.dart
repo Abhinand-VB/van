@@ -10,6 +10,7 @@ import 'package:van/data/repositories/session_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
+import 'package:van/inference/capabilities/negotiate.dart';
 import 'package:van/inference/router.dart';
 import 'package:van/ui/chat_screen.dart';
 import 'package:van/ui/task_list_screen.dart';
@@ -44,6 +45,9 @@ void main() {
       notifications: notifications,
       templates: NudgeTemplates.fromJson(
         File('assets/nudge_templates/templates.json').readAsStringSync(),
+      ),
+      negotiatePrompt: PromptTemplate.parse(
+        File('assets/prompts/negotiate.v1.txt').readAsStringSync(),
       ),
       clock: clock,
       ids: SequentialIds('x'),

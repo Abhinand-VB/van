@@ -9,6 +9,7 @@ import 'package:van/data/repositories/session_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
+import 'package:van/inference/capabilities/negotiate.dart';
 import 'package:van/inference/router.dart';
 import 'package:van_core/van_core.dart';
 
@@ -46,6 +47,9 @@ void main() {
       notifications: notifications,
       templates: NudgeTemplates.fromJson(
         File('assets/nudge_templates/templates.json').readAsStringSync(),
+      ),
+      negotiatePrompt: PromptTemplate.parse(
+        File('assets/prompts/negotiate.v1.txt').readAsStringSync(),
       ),
       clock: clock,
       ids: SequentialIds('x'),
@@ -525,6 +529,184 @@ void main() {
       final result = await service.capture('call the bank 30 minutes');
       expect(await service.undoCapture(result.task.id), isTrue);
       expect(await service.undoCapture(result.task.id), isFalse);
+    });
+  });
+
+  group('negotiating a stalled block', () {
+    /// Captures a task and puts the clock [late] minutes past its block.
+    Future<WorkSession> stall(String sentence, {int late = 30}) async {
+      final result = await service.capture(sentence);
+      final session = result.sessions.first;
+      clock.advanceTo(session.plannedStart.add(Duration(minutes: late)));
+      return session;
+    }
+
+    test('proposes something, and changes nothing on its own', () async {
+      final session = await stall('write the report 60 minutes');
+
+      final outcome = await service.negotiate(session.id);
+
+      expect(outcome, isNotNull);
+      expect(outcome!.proposal.message, isNotEmpty);
+      final untouched = await sessions.byId(session.id);
+      expect(
+        untouched!.status,
+        SessionStatus.planned,
+        reason: 'negotiate proposes; only applyNegotiation may act',
+      );
+    });
+
+    test('the ladder picks the level, and it climbs with lateness', () async {
+      final early = await stall('write the report 60 minutes', late: 5);
+      expect(
+        (await service.negotiate(early.id))!.level,
+        InterventionLevel.l0Gentle,
+      );
+
+      clock.advanceTo(early.plannedStart.add(const Duration(minutes: 30)));
+      expect(
+        (await service.negotiate(early.id))!.level,
+        InterventionLevel.l2Diagnose,
+      );
+    });
+
+    test('giving a reason is met with a smaller ask, not a repeat', () async {
+      final session = await stall('write the report 60 minutes', late: 5);
+
+      final outcome = await service.negotiate(
+        session.id,
+        reason: 'too tired to face an hour of it',
+      );
+
+      expect(outcome!.level, InterventionLevel.l3Shrink);
+      expect(outcome.proposal.action, NegotiationAction.shrink);
+      expect(outcome.proposal.shrinkToMinutes, 30);
+    });
+
+    test('applying a shrink replaces the block with a smaller one', () async {
+      final session = await stall('write the report 60 minutes', late: 5);
+      final outcome = await service.negotiate(session.id, reason: 'too tired');
+
+      final next = await service.applyNegotiation(
+        session.id,
+        outcome!.proposal,
+        reason: 'too tired',
+      );
+
+      expect(next!.plannedMinutes, 30);
+      expect(next.parentSessionId, session.id);
+      expect(next.rescheduleCount, 1);
+      expect(
+        (await sessions.byId(session.id))!.status,
+        SessionStatus.rescheduled,
+      );
+      expect(
+        notifications.scheduled.where((n) => n.sessionId == next.id),
+        isNotEmpty,
+        reason: 'the replacement needs its own ladder',
+      );
+      expect(
+        notifications.scheduled.where((n) => n.sessionId == session.id),
+        isEmpty,
+      );
+    });
+
+    test('a shrunken block never lands in the past', () async {
+      final session = await stall('write the report 60 minutes', late: 45);
+      final outcome = await service.negotiate(session.id, reason: 'too tired');
+
+      final next = await service.applyNegotiation(
+        session.id,
+        outcome!.proposal,
+        reason: 'too tired',
+      );
+
+      expect(next!.plannedStart.isAfter(clock.now()), isTrue);
+    });
+
+    test('applying a hold changes nothing but records the answer', () async {
+      final session = await stall('write the report 60 minutes', late: 5);
+      final outcome = await service.negotiate(session.id);
+      expect(outcome!.proposal.action, NegotiationAction.hold);
+
+      final same = await service.applyNegotiation(
+        session.id,
+        outcome.proposal,
+        reason: 'still on it',
+      );
+
+      expect(same!.id, session.id);
+      expect(same.status, SessionStatus.planned);
+      expect(await eventTypes(), contains('nudgeResponded'));
+      expect(
+        notifications.scheduled.where((n) => n.sessionId == session.id),
+        isNotEmpty,
+        reason: 'holding means the ladder carries on, not that it stands down',
+      );
+    });
+
+    test('the level Van chose is on the record', () async {
+      final session = await stall('write the report 60 minutes');
+      await service.negotiate(session.id, reason: 'stuck');
+
+      final chosen = await events.ofType(EventType.interventionSelected);
+      expect(chosen, hasLength(1));
+      expect(chosen.single.field<String>('level'), isNotNull);
+      expect(chosen.single.field<String>('source'), 'fallback');
+      expect(chosen.single.field<bool>('gaveReason'), isTrue);
+    });
+
+    test('a resolved block cannot be renegotiated', () async {
+      final session = await stall('write the report 60 minutes');
+      await service.startSession(session.id);
+      await service.completeSession(session.id);
+
+      const overreach = NegotiationProposal(
+        action: NegotiationAction.hold,
+        message: 'still on for this?',
+      );
+      expect(await service.applyNegotiation(session.id, overreach), isNull);
+    });
+
+    test('a proposal the ladder does not permit is refused', () async {
+      // The whole reason negotiate can be pointed at a cloud model later. A
+      // gentle first prompt must not be able to cancel the afternoon, however
+      // well-formed the JSON was.
+      final session = await stall('write the report 60 minutes', late: 2);
+      const cancelTheDay = NegotiationProposal(
+        action: NegotiationAction.release,
+        message: 'Forget it, take the day off.',
+      );
+
+      expect(
+        await service.applyNegotiation(session.id, cancelTheDay),
+        isNull,
+      );
+      expect((await sessions.byId(session.id))!.status, SessionStatus.planned);
+    });
+
+    test('a reason does not unlock actions the level still forbids', () async {
+      // Explaining yourself earns a smaller ask, not a blank cheque. Shrink
+      // becomes permitted at l3; release does not until l5.
+      final session = await stall('write the report 60 minutes', late: 5);
+      const release = NegotiationProposal(
+        action: NegotiationAction.release,
+        message: 'Leaving it for today.',
+      );
+
+      expect(
+        await service.applyNegotiation(
+          session.id,
+          release,
+          reason: 'genuinely too tired',
+        ),
+        isNull,
+      );
+      expect((await sessions.byId(session.id))!.status, SessionStatus.planned);
+    });
+
+    test('negotiating a session that does not exist is harmless', () async {
+      expect(await service.negotiate('nope'), isNull);
     });
   });
 

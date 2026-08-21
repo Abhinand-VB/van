@@ -10,6 +10,7 @@ import 'package:van/data/repositories/settings_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
+import 'package:van/inference/capabilities/negotiate.dart';
 import 'package:van/inference/router.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/platform/system_clock.dart';
@@ -50,6 +51,9 @@ Future<void> main() async {
   final templates = NudgeTemplates.fromJson(
     await rootBundle.loadString('assets/nudge_templates/templates.json'),
   );
+  final negotiatePrompt = PromptTemplate.parse(
+    await rootBundle.loadString('assets/prompts/negotiate.v1.txt'),
+  );
 
   // v1 ships with no model. Every capability has a deterministic fallback, so
   // this is a working configuration rather than a degraded one. Swapping in a
@@ -69,6 +73,7 @@ Future<void> main() async {
     router: router,
     notifications: notifications,
     templates: templates,
+    negotiatePrompt: negotiatePrompt,
     clock: clock,
     ids: ids,
     waking: waking,
