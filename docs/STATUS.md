@@ -19,7 +19,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **475 tests passing** — 230 in `packages/van_core` (pure Dart), 245 in the app.
+- **492 tests passing** — 238 in `packages/van_core` (pure Dart), 254 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -50,6 +50,7 @@ working configuration, not a degraded one.
 | App: Gemma backend | 15 |
 | App: golden set and runner | 9 |
 | App: inference config | 13 |
+| App: prompt assets | 9 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -73,6 +74,8 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+86ce1ec  Move the last two prompts out of Dart and into assets
+61e3e72  Close both parser gaps the golden set found
 ca5df7e  WP-6 groundwork: the channel, the backend, the goldens, and the harness
 d2abb52  Give Van its own icon below API 26
 da1209c  Add schema v3, because v2 created the column without the index
@@ -356,22 +359,57 @@ prose — which reads as a model failure rather than a wiring one.
 
 ### The gate, and the number to beat
 
-**The deterministic parser scores 26/28 — 92.9% — measured, not asserted.**
+**The deterministic parser scores 29/29 — 100% — measured, not asserted.**
 
 ```bash
 dart run tool/run_goldens.dart
 ```
 
 That is what a candidate model has to beat, not the 80% floor in section 6.
-Routing `extract_task` to something that scores 85% would be a downgrade
-dressed as progress. The floor is for capabilities where the fallback is a
-template rather than a parser.
+Routing `extract_task` to a model at all is now very hard to justify: the
+floor exists for capabilities whose fallback is a *template* — `compose_nudge`
+and `negotiate` — not for one whose fallback is a parser that answers every
+case correctly.
+
+Read the 100% carefully. It went 26/28 to 29/29 across one fix, one
+specification and one case added; it is not evidence the parser got three
+cases better, and a set its own author keeps green proves less than one
+written by someone else.
 
 CI runs the same cases through the same runner against the parser. That
 sameness is the point: a measurement taken by a different harness than the one
 gating the change is not a measurement of the change. And see issue 14 — the
 harness cannot reach `GemmaBackend`, so measuring the model itself still needs
 work.
+
+---
+
+## 3f. Prompts are assets, and the drift nobody would notice
+
+All three prompts live in `assets/prompts/` and load through `Prompts`, which
+is what AGENTS.md asked for from the first commit — the directory simply sat
+empty until `889f23f`.
+
+The reason it matters more than tidiness: **the deterministic fallback never
+reads the prompt.** Rename a placeholder in an asset, or add one the code does
+not fill, and the prompt reaches the model with a literal `{task}` in it — and
+every test stays green, because nothing that runs in CI sends a prompt
+anywhere. `test/inference/prompts_test.dart` builds each request and asserts no
+slot survives. That is the only thing standing between a prompt edit and a
+silently broken model call.
+
+Two rules the tests also hold:
+
+- **No provider names in a prompt.** "You are Claude" in an asset is how a
+  model-agnostic abstraction rots quietly, and `tool/check_layers.dart` cannot
+  see inside assets.
+- **Both nudge-writing prompts must mention the level.** A prompt inviting the
+  model to choose how hard to push would make escalation unpredictable, which
+  is the one thing it must not be. The ladder picks; the model phrases.
+
+`test/support/prompts.dart` reads the real assets rather than stub text. A test
+exercising different prompts than production would stop noticing exactly the
+drift the suite exists to catch.
 
 ---
 
@@ -394,8 +432,8 @@ than this file.**
 | 9 | ~~"After that" can repeat the task shown in NEXT~~ | **Done, 21 Aug 2026** (`37de632`). Verified on the phone. |
 | 10 | ~~`negotiate` is built but nothing calls it~~ | **Done, 21 Aug 2026** (`01d24ed`, `a4a6cd8`). See section 3d. |
 | 12 | **`dumpsys alarm` cannot tell you what is pending** | Recorded because it cost me an hour tonight. The `type=RTC_WAKEUP tag=*walarm*:dev.van.app` lines live in a *cancellation history* section — each entry carries `Reason=alarm_cancelled` or `Reason=pi_cancelled`. Cancelling an alarm **adds** a line there, so the count only ever grows and looks like a leak. The truth is in `shared_prefs/scheduled_notifications.xml`, which lists exactly what will fire. The command is in section 5a, under the fifth run. |
-| 11 | `ExtractTask` and `ComposeNudge` still hold their prompts inline | AGENTS.md has always said prompts live in `assets/prompts/` and are versioned; that directory sat empty until `889f23f`. `Negotiate` now loads `negotiate.v1.txt` via `PromptTemplate`, which is the loader the other two can move to. Not urgent, but it is a stated rule the codebase was quietly breaking. |
-| 13 | **Two parser gaps the golden set found** | Both fail in `test/golden/extract_task.json` on purpose, because a set trimmed to what already passes is a change detector rather than a measurement. (a) *"next week"* is not parsed at all — the parser handles weekdays, today, tomorrow and parts of day, but not week offsets. (b) An **all-caps sentence keeps its shouting**: `TIDY THE DESK` becomes a task titled `TIDY THE DESK`. A blanket downcase would be wrong — it would wreck `call HMRC` and `fix API docs` — so this needs a judgement, which is why it is here rather than fixed. |
+| 11 | ~~`ExtractTask` and `ComposeNudge` still hold their prompts inline~~ | **Done, 21 Aug 2026** (`86ce1ec`). All three prompts are assets, loaded through `Prompts`. See section 3f. |
+| 13 | ~~Two parser gaps the golden set found~~ | **Done, 21 Aug 2026** (`61e3e72`), and the two halves needed opposite treatment. *"next week"* was simply unparsed and is now handled, along with `this week` and `in N weeks`. The **all-caps case is closed as deliberate**: Van cannot tell shouting from acronyms, so any rule turning `TIDY THE DESK` into `Tidy the desk` also turns `FIX API DOCS` into `Fix api docs` — loud versus lossy. The golden now specifies preservation. `extract_task` scores 29/29. |
 | 14 | **`GemmaBackend` cannot be measured off-device** | It needs the platform channel and a model file, so `tool/run_goldens.dart` deliberately has no flag for it. Measuring a candidate model means running the golden set on the phone, which needs a small debug screen or an integration test. Nothing built yet; the WP-6 gate cannot be evaluated until it is. |
 
 ---
@@ -683,6 +721,20 @@ reachable and correctly reports "unavailable", and nothing more than that.
 **Unchanged: six notifications, two ladders**, at 09:00, 09:10, 09:25 and
 09:30, 09:40, 09:55. They have now survived nine reinstalls.
 
+### Ninth run, ~04:30, prompts from the bundle
+
+Short and specific: after moving the prompts into assets, the app had to load
+them from the bundle rather than from disk, and a prompt that exists in the
+repo but is missing from the build would fail only on a real device, at the
+first model call.
+
+Installed, launched, no `Unable to load asset` in logcat, no crash. There is
+also a test asserting `assets/prompts/` is declared in `pubspec.yaml`, since
+that is the single line that decides whether they ship.
+
+**Unchanged: six notifications, two ladders**, at 09:00, 09:10, 09:25 and
+09:30, 09:40, 09:55. Ten reinstalls now.
+
 ---
 
 ## 5c. The cancel that never worked
@@ -786,22 +838,29 @@ EXPLAIN QUERY PLAN SELECT * FROM events WHERE session_id = ?
 
 ## 7. Suggested next steps, in order
 
+Every item in `docs/OVERNIGHT.md`'s work queue is done, and every open issue
+that an agent could close alone is closed. What is left needs you, or needs
+evidence from real use.
+
 1. **Grant Van "Alarms & reminders"** - tap the banner on the Now screen.
 2. **Watch a nudge arrive and press START.** Six are armed across two blocks.
    This closes the last gap in issue 3.
 3. **Ignore the 09:00 block on purpose, then open Chat.** One minute, and it
    is the only part of the negotiation loop never reached on hardware.
-4. **Use it for a week.** Everything in the loop is built, connected and
-   verified except the three checks above. Let real annoyance pick what comes
-   next. Three dials worth watching, one number each: the sweep's five-minute
-   replacement lead, `SuppressionPolicy.dismissalLimit`, and whether halving a
-   block is the right first concession.
-5. **Only then decide about WP-6.** The groundwork is done (section 3e) and
-   the remaining work is real: a LiteRT-LM dependency, one `LlmEngine`, and a
-   way to run the golden set on the phone (issue 14). Worth doing **only if a
-   week of use shows nudge wording or parsing is actually the problem** — the
-   parser already scores 92.9%, so `extract_task` is not the case for it.
-   `compose_nudge` and `negotiate`, where the fallback is a template, are.
+4. **Listen to the drum** (issue 2). Never heard by a human. Note the ringer
+   was muted every time I looked.
+5. **Use it for a week.** Then let real annoyance pick what comes next. Three
+   dials worth watching, one number each: the sweep's five-minute replacement
+   lead, `SuppressionPolicy.dismissalLimit`, and whether halving a block is
+   the right first concession.
+6. **Only then decide about WP-6** (section 3e). My honest read: the case for
+   it has got weaker, not stronger. The parser now answers every golden case
+   correctly, so `extract_task` does not need a model. If nudge *wording* gets
+   stale after a week — the same handful of phrasings, in the same order —
+   that is the argument for one, and it points at `compose_nudge` and
+   `negotiate` only. Note issue 14: the golden harness cannot reach
+   `GemmaBackend`, so the gate cannot be evaluated until there is a way to run
+   the set on the phone.
 
 ---
 
@@ -809,6 +868,47 @@ EXPLAIN QUERY PLAN SELECT * FROM events WHERE session_id = ?
 
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
+
+### 21 August 2026, overnight — the last two issues on the board
+
+**Finished.** Every item in the `OVERNIGHT.md` work queue was already done, so
+this was queue item 6: pick what is valuable. The two remaining issues an agent
+could close alone.
+
+*Issue 13* (`61e3e72`), and the halves needed opposite treatment. "next week"
+was simply not parsed — no deadline at all, so the work was never late. Fixed,
+along with "this week" and "in N weeks", and both resolve to seven days out
+rather than the end of the coming week, because Van schedules against deadlines
+and the vaguer reading lets work sit for nine days without being late.
+
+The all-caps case I closed the *other* way, as deliberate. Van cannot tell
+shouting from acronyms, so any rule turning `TIDY THE DESK` into `Tidy the
+desk` also turns `FIX API DOCS` into `Fix api docs`. The first is merely loud;
+the second is lossy. The golden now specifies preservation.
+
+*Issue 11* (`86ce1ec`): all three prompts are assets now. Section 3f explains
+why this is more than tidiness — the deterministic fallback never reads the
+prompt, so a renamed placeholder would ship a literal `{task}` to the model and
+every test would stay green. There is now a test that builds each request and
+asserts no slot survives.
+
+475 to 492 tests.
+
+**A number to read carefully.** `extract_task` now scores 29/29 on the golden
+set, up from 26/28. That is one real fix, one specification, and one case
+added — not three cases of improvement. And a golden set whose author keeps it
+green proves less than one written by someone else. I would not lean on it as
+evidence the parser is finished.
+
+**What I would do next: nothing.** Everything on the board that does not need
+you is done. The remaining items are three device checks, a drum that needs
+human ears, and WP-6 — whose case has got *weaker* tonight, since a parser
+answering every golden case correctly does not need a model. If nudge wording
+goes stale after a week of real use, that is the argument, and it points at
+`compose_nudge` and `negotiate` rather than `extract_task`.
+
+**What I need from you.** The four checks in next steps, and then a week of
+actually using it.
 
 ### 21 August 2026, overnight — WP-6 groundwork, and a config that was never read
 
