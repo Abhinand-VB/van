@@ -19,7 +19,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **303 tests passing** — 211 in `packages/van_core` (pure Dart), 92 in the app.
+- **320 tests passing** — 211 in `packages/van_core` (pure Dart), 109 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -37,6 +37,8 @@ working configuration, not a degraded one.
 | App: inference | 27 |
 | App: end-to-end loop | 17 |
 | App: nudge record and fatigue | 9 |
+| App: first run and permissions | 9 |
+| App: settings store | 8 |
 
 ---
 
@@ -59,6 +61,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+02e045e  Ask for permission once, then say so instead of nagging
 c0ba269  Make the fatigue logic real instead of well-tested and unreachable
 3085a06  Fix the reason no nudge has ever fired on the device
 74cb226  Move abandoned work instead of losing it (stale-session sweep)
@@ -213,7 +216,8 @@ than this file.**
 | 5 | Inference logging is fire-and-forget | `EventLogInferenceObserver` uses `unawaited` so a slow write never delays the call it describes. A crash can therefore lose the last few inference events. Accepted; the alternative is making every model call wait on a database write. Tests must `flushLog()` before asserting. |
 | 6 | Legacy launcher icons are Flutter's default | `mipmap-*/ic_launcher.png` still show the Flutter logo below API 26. The adaptive icon covers everything at or above it. |
 | 7 | ~~`NudgeRepo` is never constructed in production~~ | **Done, 21 Aug 2026** (`c0ba269`). See section 3b. |
-| 8 | **The exact-alarm settings screen opens on every cold start** | `hasPermission()` now correctly requires both the notification and exact-alarm grants, and `_FirstRun` requests whatever is missing on first paint. Until the grant is given, that means being thrown into system settings every single launch. `_FirstRun`'s own doc comment claims it asks "once and never nags", which was never true and is now visibly untrue. Needs a persisted "already asked" flag — the `settings` table exists and is unused. |
+| 8 | ~~The exact-alarm settings screen opens on every cold start~~ | **Done, 21 Aug 2026** (`02e045e`). Asked once, latched in the `settings` table; a standing banner on the Now screen replaces the nagging. Verified on the phone. |
+| 9 | **"After that" can repeat the task shown in NEXT** | Spotted on the device, minor. `now_screen.dart` builds that list as `_open.skip(1)`, which assumes the first open *task* is the one the NEXT card is showing. NEXT comes from `service.next()` and is session-based, so the two disagree whenever the next session belongs to a task that is not first by deadline order. The screenshot from 21 Aug shows "Hi" in both places. Filter by the NEXT card's task id instead of skipping by position. |
 
 ---
 
@@ -366,6 +370,26 @@ They will fire *near* those times rather than on them — the exact-alarm grant
 is still withheld, so they are registered through the inexact fallback with a
 one-hour window.
 
+### Third run, ~02:15, after the first-run fix
+
+- **The fix works on hardware.** First launch after installing opened the
+  permission screen once — correct, the latch was empty. A clean force-stop and
+  relaunch stayed in Van. The `settings` table holds exactly one row:
+  `asked_for_permission = true`.
+- **The banner shows the right variant.** Notifications are allowed but exact
+  alarms are not, so it reads *"Nudges may arrive up to an hour late. Allow
+  alarms and reminders to fix."* rather than the harder warning. Tapping it
+  reopens the permission screen.
+- All six morning alarms survived the reinstall and are still armed.
+- One thing to be careful of when reading `dumpsys window` after a transition:
+  it can return the *previous* focused window if queried too quickly. It looked
+  briefly as though the fix had not worked; force-stopping both apps and
+  relaunching gave the unambiguous answer.
+
+**Unchanged from the second run: what is on your phone in the morning.** Three
+tasks and six notifications between 09:00 and 09:55, listed in the table above.
+Press START on any one of them and issue 3 closes.
+
 ---
 
 ## 6. Product decisions on record
@@ -393,20 +417,20 @@ one-hour window.
 
 ## 7. Suggested next steps, in order
 
-1. **Grant Van "Alarms & reminders"** in system settings. One tap, it is the
-   last thing standing between Van and doing its job, and it also stops the
-   settings screen ambushing you on every launch until issue 8 is fixed.
+1. **Grant Van "Alarms & reminders"** — now reachable by tapping the banner on
+   the Now screen, no hunting through settings. One tap, and it is the last
+   thing between Van and firing on the minute rather than within the hour.
 2. **Watch a nudge arrive and press START.** That closes the last gap in issue
    3 and is the only part of the loop never yet observed end to end.
-3. **Fix issue 8** — a persisted "already asked" flag in the unused `settings`
-   table. Small, and it is the first thing you will resent otherwise.
-4. **Use it for a week.** The loop is functionally complete (`74cb226`), can
-   reach you (`3085a06`), and now backs off when ignored (`c0ba269`). Everything
-   after this should be driven by what annoys or fails in real use. Two things
-   I would watch: the sweep's five-minute replacement lead may feel too eager,
-   and the fatigue threshold of two ignored ladders may prove too twitchy or
-   too slow — it is `SuppressionPolicy.dismissalLimit`, one number.
-5. Then either the `negotiate` capability, the chat screen, or WP-6
+3. **Use it for a week.** The loop is functionally complete (`74cb226`), can
+   reach you (`3085a06`), backs off when ignored (`c0ba269`), and no longer
+   ambushes you at launch (`02e045e`). Everything after this should be driven
+   by what annoys or fails in real use. Three things I would watch: the sweep's
+   five-minute replacement lead may feel too eager, the fatigue threshold of
+   two ignored ladders may prove too twitchy or too slow
+   (`SuppressionPolicy.dismissalLimit`, one number), and issue 9 is the kind of
+   small wrongness that gets irritating fast.
+4. Then either the `negotiate` capability, the chat screen, or WP-6
    (on-device Gemma 4), depending on whether nudge quality or capture friction
    turns out to be the real problem.
 
@@ -416,6 +440,50 @@ one-hour window.
 
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
+
+### 21 August 2026, overnight — ask once, then inform
+
+**Finished.** Issue 8, the settings screen that opened on every cold start.
+Commit `02e045e`. 303 → 320 tests.
+
+A persisted latch in the `settings` table stops the nagging. On its own that
+would have replaced nagging with something worse — decline once and Van goes
+quiet forever, never nudging and never explaining why, which is the same shape
+as the bug found two nights ago. So the latch ships with the thing that makes
+declining safe: a standing banner on the Now screen for as long as a grant is
+missing, which reopens the permission screen when tapped. Ask once, then
+inform, never nag.
+
+The banner distinguishes the two failures, because they are not the same and
+conflating them would train you to ignore it. No notification permission means
+Van is a task list and it says so. Missing exact alarms only means a nudge
+lands somewhere in the following hour, so it says that instead. That required
+`hasPermission()`'s boolean to become `NudgePermissions` — a single bool could
+never have told you which of two problems you had.
+
+Verified on the phone: first launch asked once, a clean relaunch stayed in Van,
+and the banner is showing the correct understated variant.
+
+**Decided on your behalf** — `DECISIONS_PENDING.md` D10–D12, all cheap to
+reverse. D10 is the one worth a look: declining permission is now a supported
+state rather than something Van keeps pushing back on.
+
+**Tried, and learned from.** One of my own widget tests asserted the banner
+could be tapped to grant permission on a fresh install — but `_FirstRun` grants
+it first, so the banner is never there to tap. The test premise was wrong, not
+the code; it now sets the latch first, which is also the realistic scenario.
+Separately, `dumpsys window` returned a stale focused window straight after a
+transition and made it look briefly as though the fix had failed.
+
+**Found while looking.** Issue 9: the "After that" list can repeat the task
+already shown in the NEXT card. Small, real, and visible in the screenshot from
+tonight.
+
+**What I would do next.** Tap the banner to grant the alarm permission, then
+watch one nudge land and press START. That is the last unobserved part of the
+loop.
+
+**What I need from you.** Nothing blocking.
 
 ### 21 August 2026, overnight — making the fatigue logic reachable
 
