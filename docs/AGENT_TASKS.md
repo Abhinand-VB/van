@@ -1,5 +1,10 @@
 # Van — Work Packages for Coding Agents
 
+> **This file is the original plan, not the current state.**
+> Read `docs/STATUS.md` first: WP-0 to WP-5, WP-7 and WP-8 are done, and WP-4
+> was built differently from the description below. Do not implement a package
+> from this file without checking STATUS first.
+
 Read `AGENTS.md` and `docs/ARCHITECTURE.md` before starting any package.
 
 **How to use this file.** Each work package is a self-contained assignment for one agent
@@ -190,6 +195,12 @@ the fallback templates; WP-6 adds the model).
 ---
 
 ## WP-4 — Platform layer: alarms and notifications
+
+> **BUILT DIFFERENTLY. See `docs/STATUS.md` section 3.** The headless-isolate
+> design below was rejected in favour of pre-scheduling the whole escalation
+> ladder when a session is planned and cancelling the remaining rungs when the
+> user responds. No background isolate, far better Doze behaviour, and the only
+> shape iOS permits. The deliverables below are kept for the record.
 
 **Goal.** Wake the app at the right minute and show something.
 

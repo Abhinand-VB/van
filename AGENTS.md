@@ -1,7 +1,13 @@
 # AGENTS.md — Rules for coding agents working on Van
 
-Read this file completely before writing any code. Then read `docs/ARCHITECTURE.md`.
-Pick up work from `docs/AGENT_TASKS.md`.
+**Start with `docs/STATUS.md`** - it says what is built, what is not, what was
+built differently from the plan, and what is currently broken or blocked.
+
+Then read this file completely, then `docs/ARCHITECTURE.md`. `docs/AGENT_TASKS.md`
+is the original plan and is partly out of date; STATUS overrides it.
+
+Update `docs/STATUS.md` at the end of every session. It is the only handover
+between sessions - nothing else survives.
 
 ## What this project is
 
