@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **533 tests, all green,
+Van is finished as far as an agent can take it alone. **535 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -58,7 +58,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **533 tests passing** — 238 in `packages/van_core` (pure Dart), 295 in the app.
+- **535 tests passing** — 238 in `packages/van_core` (pure Dart), 297 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -95,6 +95,7 @@ working configuration, not a degraded one.
 | App: notification actions | 11 |
 | App: focus screen | 17 |
 | App: timezone | 6 |
+| App: negotiation rule set | 2 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -118,6 +119,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+9702dfa  Give Negotiate the same rule set the gate judges by
 6b1f4b3  Parse deadlines in the user's timezone, not UTC
 04c31da  Guard the last two methods that could rewrite a closed block
 87fe6f3  Refuse an action arriving twice for the same block
@@ -644,6 +646,31 @@ invisible by construction, and the golden set encodes UTC expectations for the
 same reason. `test/app/timezone_test.dart` runs at the device's real offset and
 is the first thing in the project to do so.
 
+### Running that search, once
+
+I ran it on 21 Aug across `lib/` and `packages/van_core/lib/`. Forty-odd
+defaulted parameters; all but one either have no environment-dependent value to
+carry (`maxOutputTokens`, `temperature`, the model defaults) or are threaded
+correctly (`SuppressionPolicy`, `InferenceRouter.observer`, `InterventionPolicy`).
+
+**One was half-wired.** `VanService` passed `policy` into `Negotiate` and not
+`rules`, while keeping its own copy of `rules` for the gate. `Negotiate` uses
+the rule set twice — to tell the model which actions its level permits, and as
+the floor its deterministic fallback shrinks to. So the two could disagree, and
+the failure has a nasty shape: **Van proposes a shrink and then refuses it.**
+With a 30-minute floor, a stalled 40-minute block produced a shrink to 20, and
+`applyNegotiation` rejected it — the user accepts Van's own suggestion and
+nothing happens.
+
+Latent, because nothing overrode `rules`. But this is the second time tonight
+that a proposal was refused by the gate that made it: `applyNegotiation`
+dropping the user's `reason` had the same symptom from a different cause. That
+is a shape worth recognising — **the fallback and the gate must be given the
+same facts**, or Van argues with itself.
+
+`giveUpAfterMinutes` is the honest other half of the search: never overridden
+by anyone either, but wired consistently to its one consumer, so it stays.
+
 **How to look for the next one:** grep for a parameter with a default, then
 grep for its name at the call sites. If production never mentions it, either
 the default is the only value anyone wanted — in which case delete the
@@ -675,6 +702,7 @@ than this file.**
 | 14 | **`GemmaBackend` cannot be measured off-device** | It needs the platform channel and a model file, so `tool/run_goldens.dart` deliberately has no flag for it. Measuring a candidate model means running the golden set on the phone, which needs a small debug screen or an integration test. Nothing built yet; the WP-6 gate cannot be evaluated until it is. |
 | 15 | **Snooze and Not today need the app to open** | Fixed the cheap way on 21 Aug (`59e063d`): all three actions are now `showsUserInterface`, so Android launches Van and the response arrives through `consumeLaunchAction`. That works, and it is intrusive — pressing "Not today" opens the app to dismiss something. The real fix is handling actions in the background isolate, which needs its own database connection; until then this is honest rather than silent. **Notifications armed before the fix keep the old flags**, so the six pending for this morning still lose Snooze and Not today. |
 | 18 | ~~Deadlines were parsed in UTC, not the user's timezone~~ | **Done, 21 Aug 2026** (`6b1f4b3`). `TemporalParser` takes a `utcOffset`, `ExtractTask` defaults it to zero, and `VanService` never passed one — so on a UTC-7 phone every typed deadline was seven hours early. The planner had the right offset the whole time, so the two disagreed about what day it was. **Existing rows keep their wrong deadlines**; nothing back-fills them. |
+| 19 | **The timezone offset is read once, at startup** | `main.dart` computes `DateTime.now().timeZoneOffset` and hands it to `WakingHours`; `VanService` holds it in a `final` field and derives the parser and the suppression policy from it. Nothing recomputes it, so a process alive across a DST change or a flight keeps the old offset — the same class of bug as issue 18, an hour wide instead of seven, until Van is restarted. **Next US transition is 1 Nov 2026**, so there is time to do it properly. Fix is a composition-root change: rebuild the service when the offset moves, off the `resumed` lifecycle callback the three screens already use. Not attempted overnight — it needs device verification, and the phone was locked. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 

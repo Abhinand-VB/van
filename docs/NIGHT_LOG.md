@@ -275,6 +275,54 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — running the recipe I had just written down
+
+**Finished.** The previous iteration ended by writing a search into section 3k
+and not running it: *grep for a parameter with a default, then grep for its
+name at the call sites.* This iteration ran it. Phone still locked
+(`isKeyguardShowing=true`), so code-only again.
+
+Forty-odd defaulted parameters across `lib/` and `packages/van_core/lib/`. Most
+are fine, and it is worth saying why: a default like `temperature = 0.7` has no
+environment-dependent value it could be carrying, and `SuppressionPolicy`,
+`InferenceRouter.observer` and `InterventionPolicy` are all threaded properly.
+The search is only interesting where a parameter *should* have been given
+something and was not.
+
+**One was.** `VanService` builds `Negotiate` with `policy: policy` and no
+`rules`, while keeping its own `rules` for the gate. `Negotiate` uses the rule
+set to tell the model what its level permits and as the floor its own fallback
+shrinks to; `VanService._rules.reject` judges the result. Two rule sets that
+happened to be equal because nobody had ever passed a different one.
+
+The failure it would produce is the memorable part. Give Van a 30-minute floor
+and stall a 40-minute block: `Negotiate` halves against the *default* 15, offers
+a shrink to 20, and `applyNegotiation` refuses it. **The user accepts Van's own
+proposal and nothing happens.** One line to fix; I checked the test fails
+against the old wiring first, and it failed with exactly the predicted
+`shrinkToMinutes` of 20.
+
+**That is the second self-refusal tonight.** Earlier, `applyNegotiation` was
+dropping the user's `reason`, recomputing a lower level, and rejecting the
+proposal Van had just made. Different cause, identical symptom. The general
+statement is now in 3k: *the fallback and the gate must be given the same
+facts.* Anything that judges a proposal has to be built from the same inputs as
+the thing that proposed it.
+
+**What I found and did not fix.** The timezone offset is read once, in
+`main.dart`, and frozen in a `final` field — so a process that survives a DST
+change keeps the old offset and every deadline drifts by an hour. It is issue
+18 again, smaller. I did not fix it: the repair is a composition-root change
+that rebuilds the service on `resumed`, it wants verification on hardware, and
+the phone is locked. The next US transition is 1 November, so nothing is
+burning. Recorded as issue 19 with the fix sketched.
+
+**Note on the recipe itself.** It found one real thing out of forty candidates,
+which is a good hit rate for a mechanical search, and the one it found was
+invisible to all four of the review questions used earlier in the week. Worth
+keeping. It also has a clean stopping condition — you can finish it — which
+none of the questions do.
+
 ### 21 August 2026, overnight — every deadline was seven hours early
 
 **Finished.** The phone was still locked, so code-only again. Four review
