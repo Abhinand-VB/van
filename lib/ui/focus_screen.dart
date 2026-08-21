@@ -43,7 +43,7 @@ class _FocusScreenState extends State<FocusScreen> {
   @override
   void initState() {
     super.initState();
-    _remaining = Duration(minutes: widget.session.plannedMinutes);
+    _remaining = _remainingFor(widget.session, widget.clock.now());
     // The screen stays awake: a focus timer that blanks out is a focus timer
     // you stop trusting.
     unawaited(
@@ -61,10 +61,27 @@ class _FocusScreenState extends State<FocusScreen> {
 
   void _tick(Timer _) {
     if (!mounted) return;
-    setState(() {
-      _remaining = _remaining - const Duration(seconds: 1);
-      if (_remaining.isNegative) _remaining = Duration.zero;
-    });
+    // Recomputed from the clock rather than decremented, so the timer cannot
+    // drift and cannot be fooled by the screen sleeping through a tick.
+    setState(
+      () => _remaining = _remainingFor(widget.session, widget.clock.now()),
+    );
+  }
+
+  /// How much of [session] is left at [now].
+  ///
+  /// Measured from when START was actually pressed, not from when this screen
+  /// opened. The Now card offers RESUME on a running block, so this screen is
+  /// routinely reached partway through - and a timer that restarted at the
+  /// full length each time would quietly turn a 45-minute block into as much
+  /// time as you liked.
+  static Duration _remainingFor(WorkSession session, DateTime now) {
+    final planned = Duration(minutes: session.plannedMinutes);
+    final start = session.actualStart;
+    if (start == null) return planned;
+
+    final left = planned - now.difference(start);
+    return left.isNegative ? Duration.zero : left;
   }
 
   Future<void> _done() async {

@@ -542,9 +542,21 @@ class VanService {
       LadderIds.forRung(sessionId, rung);
 
   /// Records an explicit START and stands the remaining nudges down.
+  ///
+  /// Idempotent, and it has to be. The Now card shows RESUME on a running
+  /// block and wires it to this same call, so backing out of the focus screen
+  /// and tapping again is one gesture away. Restarting would overwrite
+  /// `actualStart` - the field `WorkSession` calls ground truth for whether
+  /// they began, and the one number the whole product exists to measure - with
+  /// whatever time they happened to come back.
+  ///
+  /// Closed work cannot be reopened either. A stale notification action can
+  /// arrive for a block the sweep has already moved, and START on it must not
+  /// resurrect a skipped session as a running one.
   Future<WorkSession?> startSession(String sessionId) async {
     final session = await _sessions.byId(sessionId);
-    if (session == null) return null;
+    if (session == null || session.isResolved) return null;
+    if (session.hasStarted) return session;
 
     final started = session.start(_clock.now());
     await _sessions.save(started);
