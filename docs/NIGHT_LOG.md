@@ -275,6 +275,48 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — the screen nobody had tested
+
+**Finished.** The two remaining issues an agent could act on (1a and 15) share
+one root cause: Van has no background isolate. Building one would reverse a
+decision WP-4 made deliberately and STATUS section 3 records — and it cannot be
+verified on the phone without waiting for a real notification. `OVERNIGHT.md`
+says not to silently rewrite a deliberate decision, and that a half-finished
+item is worse than an untouched one. So I left it and looked elsewhere.
+
+Elsewhere turned out to be `FocusScreen`: 149 lines, **zero tests**, and the
+screen the owner lands on at 09:00 after pressing START.
+
+**Resuming overwrote the moment they began.** The Now card shows RESUME on a
+running block and wires it to the same `startSession` as START, which had no
+guard — so `session.start(now)` ran a second time and replaced `actualStart`.
+That field's own doc says it is ground truth and is never inferred; overwriting
+it turns "started at 09:00, twenty minutes late" into "started at 09:20, on
+time". One gesture away: back out of the focus screen, tap again.
+
+**The timer had the matching bug**, which is what made me look twice. It
+counted down from the full block length every time the screen opened, so
+resuming after twenty minutes of a forty-five minute block showed 45:00 again.
+A fixed block quietly became as much time as you liked.
+
+Both are section 3i now. Nine tests, where there had been none.
+
+**What I found and did not fix.** "I'm stuck" calls `stopEarly` and then
+`snooze`, and the second overwrites the first's status — so the block ends up
+`rescheduled` rather than `partial`. Nothing is truly lost, but the session row
+alone stops saying they got started. That composition is also why `snooze`
+cannot grow the resolved-session guard I gave `startSession`: it is
+deliberately called on a `partial` block. Fixing it properly means one service
+method expressing the intent instead of two calls that depend on neither
+guarding. That is a refactor, not a patch, and it is issue 17 rather than a
+rushed change at six in the morning.
+
+**A pattern worth noting.** Three of tonight's finds — the notification
+actions, the launch action, and these two — were in code with no tests at all,
+reached by asking "what has never been exercised?" rather than by reading
+recently-changed files. The review passes found bugs in new code; this one
+found them in old code that nothing had ever run.
+
 ### 21 August 2026, overnight — reversing myself on the other two buttons
 
 **Finished.** Issue 15, which I had opened a few hours earlier and decided not

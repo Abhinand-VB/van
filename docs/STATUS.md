@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **512 tests, all green,
+Van is finished as far as an agent can take it alone. **521 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -51,7 +51,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **512 tests passing** — 238 in `packages/van_core` (pure Dart), 274 in the app.
+- **521 tests passing** — 238 in `packages/van_core` (pure Dart), 283 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -86,6 +86,7 @@ working configuration, not a degraded one.
 | App: negotiation guards (review) | 5 |
 | App: fatigue window | 2 |
 | App: notification actions | 11 |
+| App: focus screen | 9 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -109,6 +110,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+ff7c20d  Resuming a block is not starting it again
 59e063d  Make every nudge button open the app, reversing last night's call
 d104b1a  Collect the notification action that launched the app
 73505a8  Do not build the model just to throw it away
@@ -520,6 +522,39 @@ change here, existing ladders keep the old behaviour until they are re-armed.
 
 ---
 
+## 3i. Starting, resuming, and the field that must not move
+
+`WorkSession.actualStart` is the one number the product exists to measure. Its
+own doc says it is ground truth for whether you began and is never inferred.
+
+**The Now card offers RESUME on a running block**, wired to the same
+`startSession` as START. Until 21 Aug that call had no guard, so backing out of
+the focus screen and tapping again overwrote `actualStart` with whenever you
+came back — turning "started at 09:00, twenty minutes late" into "started at
+09:20, on time".
+
+`startSession` is now idempotent, and refuses resolved work as well: a stale
+notification action can arrive for a block the sweep has already moved, and
+START must not resurrect a skipped session.
+
+**The timer had the matching bug.** It counted down from the full block length
+every time the screen opened, so resuming partway through showed the whole
+block again — quietly turning a fixed forty-five minutes into as much time as
+you liked. It is computed from `actualStart` now, and recomputed from the clock
+each tick rather than decremented, so it cannot drift and cannot be fooled by
+the screen sleeping through a tick.
+
+**`FocusScreen` had no tests at all**, which is how both survived. It is the
+screen you are on while working and the place START lands you.
+
+One thing that is *not* fixed and is issue 17: "I'm stuck" composes `stopEarly`
+and `snooze`, and the second overwrites the first's status. That composition is
+also why `snooze` cannot currently grow a resolved-session guard — it is
+deliberately called on a `partial` block. The two are worth untangling
+together.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -543,6 +578,7 @@ than this file.**
 | 13 | ~~Two parser gaps the golden set found~~ | **Done, 21 Aug 2026** (`61e3e72`), and the two halves needed opposite treatment. *"next week"* was simply unparsed and is now handled, along with `this week` and `in N weeks`. The **all-caps case is closed as deliberate**: Van cannot tell shouting from acronyms, so any rule turning `TIDY THE DESK` into `Tidy the desk` also turns `FIX API DOCS` into `Fix api docs` — loud versus lossy. The golden now specifies preservation. `extract_task` scores 29/29. |
 | 14 | **`GemmaBackend` cannot be measured off-device** | It needs the platform channel and a model file, so `tool/run_goldens.dart` deliberately has no flag for it. Measuring a candidate model means running the golden set on the phone, which needs a small debug screen or an integration test. Nothing built yet; the WP-6 gate cannot be evaluated until it is. |
 | 15 | **Snooze and Not today need the app to open** | Fixed the cheap way on 21 Aug (`59e063d`): all three actions are now `showsUserInterface`, so Android launches Van and the response arrives through `consumeLaunchAction`. That works, and it is intrusive — pressing "Not today" opens the app to dismiss something. The real fix is handling actions in the background isolate, which needs its own database connection; until then this is honest rather than silent. **Notifications armed before the fix keep the old flags**, so the six pending for this morning still lose Snooze and Not today. |
+| 17 | **"I'm stuck" overwrites the partial it just recorded** | `FocusScreen._stuck` calls `stopEarly` (status `partial`) and then `snooze`, and the second call's `markRescheduled()` overwrites the first one's status. Nothing is truly lost — `actualStart` survives and the `sessionPartial` event is in the append-only log — but the session row alone no longer says they got started. The fix is a single service method expressing "stopped early, try again in twenty minutes" rather than composing two calls, which would also let `snooze` grow a resolved-session guard it currently cannot have: `_stuck` depends on snoozing a `partial` block. Fragile coupling, worth untangling together. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 
 ---
