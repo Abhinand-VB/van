@@ -176,6 +176,81 @@ void main() {
     });
   });
 
+  group('a fumbled thumb', () {
+    // All three buttons write to the database and then pop, and until the pop
+    // lands all three stay tappable. These sequences are one mis-tap away.
+
+    test('Need more time cannot erase a completion', () async {
+      final live = await running('write the report 45 minutes');
+      await service.completeSession(live.session.id);
+      final finishedAt = (await sessions.byId(live.session.id))!.actualEnd;
+
+      await service.stopEarly(live.session.id);
+
+      final still = await sessions.byId(live.session.id);
+      expect(still!.status, SessionStatus.completed);
+      expect(still.actualEnd, finishedAt);
+    });
+
+    test('Done cannot rewrite a partial as finished', () async {
+      final live = await running('write the report 45 minutes');
+      await service.stopEarly(live.session.id);
+
+      await service.completeSession(live.session.id);
+
+      expect(
+        (await sessions.byId(live.session.id))!.status,
+        SessionStatus.partial,
+      );
+    });
+
+    test('Done twice records one completion', () async {
+      final live = await running('write the report 45 minutes');
+
+      await service.completeSession(live.session.id);
+      clock.advanceTo(clock.now().add(const Duration(minutes: 5)));
+      await service.completeSession(live.session.id);
+
+      expect(
+        await EventRepo(db, clock).ofType(EventType.sessionCompleted),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('one press ends the visit, so there is no second', (
+      tester,
+    ) async {
+      // The screen pops as soon as a decision lands, which is what stops a
+      // second button being reachable at all. _deciding is the belt to that
+      // brace: the three buttons stay tappable during the write itself.
+      final live = await running('write the report 45 minutes');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Navigator(
+            onGenerateRoute: (_) => MaterialPageRoute<void>(
+              builder: (_) => FocusScreen(
+                service: service,
+                clock: clock,
+                session: live.session,
+                task: live.task,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.text('Done'));
+      await tester.pumpAndSettle();
+
+      expect(find.text("I'm stuck"), findsNothing);
+      expect(
+        await EventRepo(db, clock).ofType(EventType.sessionCompleted),
+        hasLength(1),
+      );
+    });
+  });
+
   group('an action arriving twice', () {
     // Reachable rather than theoretical. With Van killed nothing cancels a
     // notification until an action is actually processed, so the 09:00 and

@@ -570,9 +570,15 @@ class VanService {
   }
 
   /// Records a completed session.
+  ///
+  /// Refuses work that is already closed. The focus screen's three buttons
+  /// stay live during the write, so tapping Done and then Need more time is
+  /// one fumbled thumb away - and without this the second call would rewrite
+  /// a completion as a partial. Every other mutating method on this class
+  /// guards the same way; these two were the last without it.
   Future<void> completeSession(String sessionId) async {
     final session = await _sessions.byId(sessionId);
-    if (session == null) return;
+    if (session == null || session.isResolved) return;
     await _sessions.save(session.complete(_clock.now()));
     await _events.append(EventType.sessionCompleted, {
       'sessionId': sessionId,
@@ -581,9 +587,13 @@ class VanService {
   }
 
   /// Records a session that started but stopped early.
+  ///
+  /// Refuses work that is already closed - see [completeSession]. Stopping a
+  /// finished block early is not a thing that can happen, and letting it
+  /// would erase the completion.
   Future<void> stopEarly(String sessionId) async {
     final session = await _sessions.byId(sessionId);
-    if (session == null) return;
+    if (session == null || session.isResolved) return;
     await _sessions.save(session.stopEarly(_clock.now()));
     await _events.append(EventType.sessionPartial, {'sessionId': sessionId});
   }

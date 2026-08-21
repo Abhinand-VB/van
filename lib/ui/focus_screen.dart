@@ -40,6 +40,14 @@ class _FocusScreenState extends State<FocusScreen> {
   Timer? _ticker;
   late Duration _remaining;
 
+  /// Set once any of the three buttons is pressed.
+  ///
+  /// Each writes to the database and then pops, and until the pop lands all
+  /// three stay tappable. Done followed by Need more time is one fumbled
+  /// thumb away, and the service refuses the second call - so without this
+  /// the user would press a button and watch nothing happen.
+  bool _deciding = false;
+
   @override
   void initState() {
     super.initState();
@@ -85,11 +93,15 @@ class _FocusScreenState extends State<FocusScreen> {
   }
 
   Future<void> _done() async {
+    if (_deciding) return;
+    setState(() => _deciding = true);
     await widget.service.completeSession(widget.session.id);
     if (mounted) Navigator.of(context).pop();
   }
 
   Future<void> _needMoreTime() async {
+    if (_deciding) return;
+    setState(() => _deciding = true);
     // Stopping early still counts as having started, which is the behaviour
     // Van most wants to reinforce.
     await widget.service.stopEarly(widget.session.id);
@@ -97,6 +109,8 @@ class _FocusScreenState extends State<FocusScreen> {
   }
 
   Future<void> _stuck() async {
+    if (_deciding) return;
+    setState(() => _deciding = true);
     // One call, because it is one decision. Doing this as stopEarly followed
     // by snooze meant an interruption between them could leave the block
     // stopped with nothing scheduled to pick it up again.
@@ -136,7 +150,7 @@ class _FocusScreenState extends State<FocusScreen> {
                 width: double.infinity,
                 height: 56,
                 child: FilledButton(
-                  onPressed: _done,
+                  onPressed: _deciding ? null : _done,
                   child: const Text('Done'),
                 ),
               ),
@@ -145,7 +159,7 @@ class _FocusScreenState extends State<FocusScreen> {
                 width: double.infinity,
                 height: 48,
                 child: OutlinedButton(
-                  onPressed: _needMoreTime,
+                  onPressed: _deciding ? null : _needMoreTime,
                   child: const Text('Need more time'),
                 ),
               ),
@@ -154,7 +168,7 @@ class _FocusScreenState extends State<FocusScreen> {
                 width: double.infinity,
                 height: 48,
                 child: TextButton(
-                  onPressed: _stuck,
+                  onPressed: _deciding ? null : _stuck,
                   child: const Text("I'm stuck"),
                 ),
               ),
