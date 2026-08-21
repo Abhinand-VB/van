@@ -6,6 +6,7 @@ import 'package:van/data/db/database.dart';
 import 'package:van/data/repositories/event_repo.dart';
 import 'package:van/data/repositories/nudge_repo.dart';
 import 'package:van/data/repositories/session_repo.dart';
+import 'package:van/data/repositories/settings_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
@@ -42,6 +43,7 @@ Future<void> main() async {
   final sessions = SessionRepo(db);
   final events = EventRepo(db, clock);
   final nudges = NudgeRepo(db);
+  final settings = SettingsRepo(db);
 
   final notifications = AndroidNotifications(FlutterLocalNotificationsPlugin());
 
@@ -87,7 +89,14 @@ Future<void> main() async {
 
   await service.noteAppOpened();
 
-  runApp(VanApp(service: service, clock: clock, notifications: notifications));
+  runApp(
+    VanApp(
+      service: service,
+      clock: clock,
+      notifications: notifications,
+      settings: settings,
+    ),
+  );
 }
 
 /// Application shell.
@@ -97,6 +106,7 @@ class VanApp extends StatelessWidget {
     required this.service,
     required this.clock,
     required this.notifications,
+    required this.settings,
     super.key,
   });
 
@@ -108,6 +118,9 @@ class VanApp extends StatelessWidget {
 
   /// Notification delivery, used for the first-run permission prompt.
   final Notifications notifications;
+
+  /// Persists the one-time record that permission has been asked for.
+  final SettingsRepo settings;
 
   @override
   Widget build(BuildContext context) {
@@ -127,20 +140,37 @@ class VanApp extends StatelessWidget {
       ),
       home: _FirstRun(
         notifications: notifications,
-        child: NowScreen(service: service, clock: clock),
+        settings: settings,
+        child: NowScreen(
+          service: service,
+          clock: clock,
+          notifications: notifications,
+        ),
       ),
     );
   }
 }
 
-/// Asks for notification permission once, on first paint.
+/// Asks for notification permission once, on first paint, and then stops.
 ///
-/// Van without permission to interrupt is a task list, so this is not an
-/// optional nicety - but it is asked once and never nagged about.
+/// Van without permission to interrupt is a task list, so it has to ask. But
+/// asking sends the user out to a system settings screen, and doing that on
+/// every cold start until they comply is how an app gets uninstalled. The
+/// latch is persisted rather than held in memory, because "first run" has to
+/// survive being killed.
+///
+/// Declining is therefore *allowed*, and the consequence is not silence: the
+/// Now screen carries a standing banner for as long as the grant is missing.
+/// That is the whole trade - ask once, then inform, never nag.
 class _FirstRun extends StatefulWidget {
-  const _FirstRun({required this.notifications, required this.child});
+  const _FirstRun({
+    required this.notifications,
+    required this.settings,
+    required this.child,
+  });
 
   final Notifications notifications;
+  final SettingsRepo settings;
   final Widget child;
 
   @override
@@ -151,11 +181,18 @@ class _FirstRunState extends State<_FirstRun> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) async {
-      if (!await widget.notifications.hasPermission()) {
-        await widget.notifications.requestPermission();
-      }
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _askOnce());
+  }
+
+  Future<void> _askOnce() async {
+    if (await widget.settings.flag(SettingKeys.askedForPermission)) return;
+    if ((await widget.notifications.permissions()).complete) return;
+
+    // Latched before the request rather than after: if the user is thrown out
+    // to settings and never comes back, Van has still asked, and must not ask
+    // again on the next launch.
+    await widget.settings.setFlag(SettingKeys.askedForPermission);
+    await widget.notifications.requestPermission();
   }
 
   @override

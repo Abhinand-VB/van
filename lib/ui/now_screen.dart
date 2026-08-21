@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
+import 'package:van/platform/notifications.dart';
 import 'package:van/ui/focus_screen.dart';
 import 'package:van_core/van_core.dart';
 
@@ -12,13 +13,21 @@ import 'package:van_core/van_core.dart';
 /// productivity system before they can start is the problem, not the product.
 class NowScreen extends StatefulWidget {
   /// Creates the screen.
-  const NowScreen({required this.service, required this.clock, super.key});
+  const NowScreen({
+    required this.service,
+    required this.clock,
+    required this.notifications,
+    super.key,
+  });
 
   /// The application service.
   final VanService service;
 
   /// Source of the current time.
   final Clock clock;
+
+  /// Read to tell the user when the OS will not let Van reach them.
+  final Notifications notifications;
 
   @override
   State<NowScreen> createState() => _NowScreenState();
@@ -30,6 +39,10 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
   List<Task> _open = const [];
   bool _busy = false;
   String? _message;
+  NudgePermissions _permissions = const NudgePermissions(
+    canPost: true,
+    canScheduleExactly: true,
+  );
 
   @override
   void initState() {
@@ -57,12 +70,22 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
     final swept = await widget.service.sweepStaleSessions();
     final next = await widget.service.next();
     final open = await widget.service.openTasks();
+    // Read every refresh rather than cached: the user can revoke either grant
+    // from system settings at any moment, and Van finding out on the next
+    // restart is exactly the silent failure this banner exists to prevent.
+    final permissions = await widget.notifications.permissions();
     if (!mounted) return;
     setState(() {
       _next = next;
       _open = open;
+      _permissions = permissions;
       if (!swept.isEmpty) _message = _sweepMessage(swept);
     });
+  }
+
+  Future<void> _requestPermission() async {
+    await widget.notifications.requestPermission();
+    await _refresh();
   }
 
   /// Says plainly what happened to work nobody started.
@@ -145,6 +168,13 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
+            if (!_permissions.complete) ...[
+              _PermissionBanner(
+                permissions: _permissions,
+                onFix: _requestPermission,
+              ),
+              const SizedBox(height: 20),
+            ],
             _CaptureField(
               controller: _input,
               busy: _busy,
@@ -327,4 +357,60 @@ String _shortDate(DateTime local) {
     'Dec',
   ];
   return '${local.day} ${months[local.month - 1]}';
+}
+
+/// Says so when the OS will not let Van do its job.
+///
+/// Van asks for permission once and then stops asking, so this is the only
+/// thing standing between a declined prompt and an app that silently never
+/// nudges anyone. It is deliberately a row on the Now screen rather than a
+/// dialog: present every time you look, impossible to be trapped by.
+class _PermissionBanner extends StatelessWidget {
+  const _PermissionBanner({required this.permissions, required this.onFix});
+
+  final NudgePermissions permissions;
+  final VoidCallback onFix;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    // Two different problems. One makes Van a task list; the other only makes
+    // it imprecise, and overstating that would train the user to ignore this.
+    final blocked = !permissions.canPost;
+    final colours = theme.colorScheme;
+
+    return Material(
+      color: blocked ? colours.errorContainer : colours.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onFix,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Icon(
+                blocked ? Icons.notifications_off : Icons.schedule,
+                size: 20,
+                color: blocked ? colours.onErrorContainer : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  blocked
+                      ? 'Van cannot send notifications, so it cannot nudge '
+                            'you. Tap to fix.'
+                      : 'Nudges may arrive up to an hour late. Allow alarms '
+                            'and reminders to fix.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: blocked ? colours.onErrorContainer : null,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }

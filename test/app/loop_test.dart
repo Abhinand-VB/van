@@ -10,53 +10,9 @@ import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/router.dart';
-import 'package:van/platform/notifications.dart';
 import 'package:van_core/van_core.dart';
 
-/// Records what would have been shown, so the loop can be driven without a
-/// phone. Everything above this line is the same code the device runs.
-class FakeNotifications implements Notifications {
-  final scheduled = <PendingNudge>[];
-  final cancelled = <int>[];
-  bool permitted = true;
-
-  @override
-  Future<void> init(
-    void Function(String sessionId, NudgeAction action) onAction,
-  ) async {}
-
-  @override
-  Future<bool> hasPermission() async => permitted;
-
-  @override
-  Future<bool> requestPermission() async => permitted;
-
-  @override
-  Future<void> schedule(PendingNudge nudge) async => scheduled.add(nudge);
-
-  @override
-  Future<void> showNow(PendingNudge nudge) async => scheduled.add(nudge);
-
-  @override
-  Future<void> cancel(int id) async {
-    cancelled.add(id);
-    scheduled.removeWhere((n) => n.id == id);
-  }
-
-  @override
-  Future<void> cancelForSession(String sessionId) async {
-    final ids = scheduled
-        .where((n) => n.sessionId == sessionId)
-        .map((n) => n.id)
-        .toList();
-    for (final id in ids) {
-      await cancel(id);
-    }
-  }
-
-  @override
-  Future<List<int>> pending() async => scheduled.map((n) => n.id).toList();
-}
+import '../support/fake_notifications.dart';
 
 void main() {
   late VanDatabase db;

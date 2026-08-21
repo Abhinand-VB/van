@@ -55,6 +55,40 @@ enum NudgeAction {
   notToday,
 }
 
+/// Which of the two grants Van needs the OS has actually given.
+///
+/// They are separate permissions and they fail differently, so a single
+/// boolean cannot say anything useful to the user. Without [canPost] Van is a
+/// task list. With [canPost] but not [canScheduleExactly] it still works, but
+/// a nudge lands somewhere inside the following hour rather than on the
+/// minute - degraded, not broken, and worth saying so rather than nagging.
+class NudgePermissions {
+  /// Creates a permission snapshot.
+  const NudgePermissions({
+    required this.canPost,
+    required this.canScheduleExactly,
+  });
+
+  /// Nothing is granted. The state a fresh install starts in.
+  const NudgePermissions.none() : canPost = false, canScheduleExactly = false;
+
+  /// Whether Van may post notifications at all.
+  final bool canPost;
+
+  /// Whether Van may schedule an alarm for an exact minute.
+  final bool canScheduleExactly;
+
+  /// Whether Van can do its job properly.
+  bool get complete => canPost && canScheduleExactly;
+
+  /// Whether nudges will arrive, even if not punctually.
+  bool get workable => canPost;
+
+  @override
+  String toString() =>
+      'NudgePermissions(post: $canPost, exact: $canScheduleExactly)';
+}
+
 /// Delivers nudges, and reports what the user did about them.
 abstract interface class Notifications {
   /// Prepares channels and restores the timezone database.
@@ -62,12 +96,8 @@ abstract interface class Notifications {
     void Function(String sessionId, NudgeAction action) onAction,
   );
 
-  /// Whether the OS will let Van interrupt at a chosen minute.
-  ///
-  /// Both halves matter and they are separate grants on Android: posting
-  /// notifications at all, and scheduling an exact alarm. An app that may post
-  /// but may not schedule exactly is a task list.
-  Future<bool> hasPermission();
+  /// Which grants the OS has given Van, read fresh every time.
+  Future<NudgePermissions> permissions();
 
   /// Asks for permission. Returns whether it was granted.
   Future<bool> requestPermission();
@@ -177,19 +207,22 @@ class AndroidNotifications implements Notifications {
   };
 
   @override
-  Future<bool> hasPermission() async {
+  Future<NudgePermissions> permissions() async {
     final android = _plugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
         >();
-    // Notifications alone are not enough. Until this iteration the exact-alarm
-    // grant was only ever requested when notifications were *also* missing, so
-    // on a device where the user had allowed notifications it was never asked
-    // for at all - and every zonedSchedule threw.
-    final canPost = await android?.areNotificationsEnabled() ?? false;
-    final canScheduleExactly =
-        await android?.canScheduleExactNotifications() ?? false;
-    return canPost && canScheduleExactly;
+    if (android == null) return const NudgePermissions.none();
+
+    // Notifications alone are not enough, and the two are asked for
+    // separately. Reading only the first is what hid the missing exact-alarm
+    // grant for two days: on a phone where notifications were already allowed,
+    // Van never asked for the other one and every zonedSchedule threw.
+    return NudgePermissions(
+      canPost: await android.areNotificationsEnabled() ?? false,
+      canScheduleExactly:
+          await android.canScheduleExactNotifications() ?? false,
+    );
   }
 
   @override
