@@ -275,6 +275,39 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, morning — the same defect, three different right answers
+
+**Finished.** The rest of issue 24, and the interesting part is that the twelve
+sites did not want one fix.
+
+Applying the question section 3t ended on — *why is nothing awaiting this?* —
+sorted them immediately. The swipe had an API waiting to be used, so the answer
+was to stop it being fire-and-forget at all. Two are logging paths where
+swallowing is honest and the comment now says so. The remaining eight are
+`initState`, `didChangeAppLifecycleState` and `addPostFrameCallback`, which
+return void: nothing is *able* to await them, so a handler is genuinely the
+right answer rather than a shrug.
+
+**One helper, `inBackground`, rather than eight `catchError`s.** Not to save
+typing — to put the rule somewhere. Its doc comment carries the line that
+matters and that I would otherwise have to re-derive at every call site:
+silence is honest for work the user did not ask for, and dishonest for anything
+carrying an intention of theirs. A refresh they did not request can fail
+quietly. A tap cannot.
+
+**Checked rather than assumed, again.** I reverted `inBackground` at one site
+and confirmed the screen test fails — a read that throws during `initState`
+does reach the zone. Three of the four new tests are about the helper itself,
+including one asserting it does *not* wait, which is the whole reason it exists
+and the easiest thing to accidentally break.
+
+**Looking back at the shape of this.** Issue 24 started as one line in a table
+— "nine other `unawaited` calls have no error handler" — and I nearly closed it
+with a mechanical sweep of `catchError`. It would have passed the gate, left
+the swipe still losing a task silently, and buried the one site that mattered
+among eleven that did not. Sorting by *consequence* before reaching for a fix
+is what made the difference, and it took one question to do.
+
 ### 21 August 2026, morning — a fix that was better than the one I planned
 
 **Finished.** Issue 24's sharpest item, boarded an iteration earlier: the task

@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **567 tests, all green,
+Van is finished as far as an agent can take it alone. **571 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -108,7 +108,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **567 tests passing** — 249 in `packages/van_core` (pure Dart), 318 in the app.
+- **571 tests passing** — 249 in `packages/van_core` (pure Dart), 322 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -1033,6 +1033,22 @@ never take a capture down and did. This promised a failed log could not affect
 anything and it could. Both were true of the happy path and false where it
 mattered.
 
+### Where it ended up
+
+All twelve sites are closed, and they did not all want the same fix:
+
+| Kind | Sites | Answer |
+|---|---|---|
+| A user's action, fire-and-forget by accident | the swipe | **Stop it being unawaited.** `confirmDismiss` — section 3t |
+| A logging path | the inference observer, `GemmaBackend`'s cancel | Swallow, and say in the comment that it is deliberate |
+| Callbacks that return void | 8 lifecycle and post-frame calls | `inBackground`, in `lib/ui/background.dart` |
+
+The helper exists so the rule lives in one place instead of being re-derived at
+eight call sites, and its doc comment carries the boundary: **silence is honest
+for work the user did not ask for**, and dishonest for anything carrying an
+intention of theirs. A refresh they did not request can fail quietly. A tap
+cannot.
+
 ---
 
 ## 3t. The fix was to stop it being fire-and-forget, not to catch what it threw
@@ -1098,7 +1114,7 @@ than this file.**
 | 21 | ~~Notification ids came from `String.hashCode`~~ | **Done, 21 Aug 2026** (`25cde26`). See section 3m. Explicit FNV-1a, pinned by tests, and the mask widened from 22 to 28 bits — the old one had 2 real collisions in 5000 session ids. **One-time cost:** rungs armed by an older build carry old ids and cannot be cancelled by a newer one. Section 0 says to reinstall after the 09:30–09:55 nudges have fired. |
 | 22 | ~~A capture during a sweep could double-book a slot~~ | **Done, 21 Aug 2026** (`2eed1fb`). See section 3n. `capture` and `sweepStaleSessions` now run one at a time; reproduced first, with both blocks landing at 12:05Z. |
 | 23 | ~~Three armed nudges have no rows in the database~~ | **Explained and closed, 21 Aug 2026.** Not a defect. Session `hljn1mbedk2` was armed at **01:40:54**; `c0ba269` — the fix for issue 7, *`NudgeRepo` is never constructed in production* — landed at **01:53:22** and is what added `_nudges.save(...)` to `_armLadder`. Twelve minutes earlier, the build on the phone wrote `nudgeScheduled` events and no rows, because it had no `NudgeRepo`. The alarms are still registered with Android; `cancelForSession` derives its ids rather than reading them back, so Van can still cancel them — which is section 3m's decision paying for itself. See section 3q. |
-| 24 | **Eight `unawaited` calls have no error handler** | `unawaited` silences the analyzer and catches nothing, so any of these becomes an unhandled async error if it throws. Three are done: the inference observer and `GemmaBackend`'s cancel (`c860476`), and the swipe (`8e030ba`, and see section 3t — the fix was to stop it being unawaited at all). The rest are refresh-on-resume — **`now_screen.dart:51,66`**, **`task_list_screen.dart:36,47`** — and the stall prompt, **`chat_screen.dart:105,118`**, which would fail to a red screen rather than a stale view; plus **`focus_screen.dart:57,66`** and **`chat_screen.dart:269`** (`SystemChrome` and a scroll animation, low risk). None of the remainder can lose a user's action, which is what made the swipe worth doing first. |
+| 24 | ~~`unawaited` calls with no error handler~~ | **Done, 21 Aug 2026** (`c860476`, `8e030ba`, `fe933c2`). Twelve sites. One needed the call to stop being fire-and-forget at all (the swipe — section 3t); two are logging paths that can be swallowed honestly; the remaining eight are lifecycle and post-frame callbacks that return void, so nothing *can* await them, and they go through `inBackground` in `lib/ui/background.dart`. Every `unawaited` left in `lib/` is either that helper or already handled. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 
