@@ -275,6 +275,48 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, morning — a fix that was better than the one I planned
+
+**Finished.** Issue 24's sharpest item, boarded an iteration earlier: the task
+list's swipe-to-complete wrote unawaited, so a failed write left the row
+visually gone and the task still open in the database. The one site on that
+list that could silently lose something the user did.
+
+Phone still locked and the 09:55 rung had not appeared either — same reading as
+section 3r, not worth another entry.
+
+**I implemented the fix I had planned, and it did not work.** Catch the
+failure, tell the user, reload from the database to bring the row back. The
+diagnostic said everything was right except the thing that mattered: the task
+was still open in the database, the message appeared, and **the row stayed
+gone**. Re-inserting an item with the same key does not revive a dismissed
+`Dismissible` — its state has already moved on and no amount of correcting the
+data source reaches it.
+
+Worth noting how that was found: I stopped guessing after two wrong theories
+(not enough pumping, then a stale read) and wrote a throwaway test that printed
+the database, the snackbar and the widget count at each step. Three lines of
+output ended twenty minutes of speculation.
+
+**`confirmDismiss` is the API this always wanted.** It gets to return false, so
+the row animates back by itself; there is no optimistic removal to undo; and
+the framework awaits it, so the write is not fire-and-forget at all.
+
+**That reframes issue 24.** I had written it as a list of `unawaited` calls
+needing `catchError`. For this one the right fix was to stop the call being
+unawaited — a caller that actually awaits cannot drop a failure, and needs no
+handler to remind it. The question for each remaining site is not "what should
+this catch" but "why is nothing awaiting this". Sometimes the answer is that
+nothing can, because a lifecycle callback returns void, and then a handler is
+correct. Sometimes there was an API that wanted the future all along.
+
+**And a note on my own planning.** The decision I recorded an iteration ago
+said these needed "the treatment `ChatScreen._send` got — catch, restore what
+the user did, say so". That was the right instinct and the wrong prescription,
+because `_send` restores into a text field and this had to restore into a
+widget that had already animated away. Copying the shape of an earlier fix is
+not the same as solving the same problem.
+
 ### 21 August 2026, morning — the error I had already seen and explained away
 
 **Finished.** Phone still locked; the 09:40 rung had not appeared either, which
