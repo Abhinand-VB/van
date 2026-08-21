@@ -152,6 +152,17 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
     final theme = Theme.of(context);
     final next = _next;
 
+    // Everything except whatever the card above is already showing. Matched by
+    // task id rather than by dropping the first entry: the card comes from the
+    // next *session* and this list is ordered by deadline, so the two disagree
+    // whenever the next block belongs to a task that is not the most urgent.
+    // Skipping by position then hides an unrelated task and repeats the one
+    // already on screen.
+    final rest = _open
+        .where((task) => task.id != next?.task.id)
+        .take(4)
+        .toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Van'),
@@ -195,10 +206,15 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
                 onStart: _start,
               ),
             const SizedBox(height: 32),
-            if (_open.length > 1) ...[
-              Text('After that', style: theme.textTheme.titleSmall),
+            if (rest.isNotEmpty) ...[
+              Text(
+                // "After that" only means anything when there is a card above
+                // for it to come after.
+                next == null ? 'Open' : 'After that',
+                style: theme.textTheme.titleSmall,
+              ),
               const SizedBox(height: 8),
-              for (final task in _open.skip(1).take(4))
+              for (final task in rest)
                 ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
