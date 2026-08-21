@@ -102,18 +102,19 @@ Future<void> main() async {
     waking: waking,
   );
 
-  await notifications.init((sessionId, action) async {
-    switch (action) {
-      case NudgeAction.start:
-        await service.startSession(sessionId);
-      case NudgeAction.snooze:
-        await service.snooze(sessionId);
-      case NudgeAction.notToday:
-        await service.notToday(sessionId);
-      case NudgeAction.opened:
-        break;
-    }
-  });
+  await notifications.init(
+    (sessionId, action) async => handleNudgeAction(service, sessionId, action),
+  );
+
+  // A notification pressed while Van was not running never reaches the
+  // callback above - there was no Flutter engine to receive it. Android
+  // launches the app and leaves the response here instead, so it has to be
+  // collected once, at startup, or pressing START on a nudge simply opens Van
+  // and does nothing.
+  final launched = await notifications.consumeLaunchAction();
+  if (launched != null) {
+    await handleNudgeAction(service, launched.sessionId, launched.action);
+  }
 
   await service.noteAppOpened();
 
@@ -125,6 +126,32 @@ Future<void> main() async {
       settings: settings,
     ),
   );
+}
+
+/// Routes a notification action to the service.
+///
+/// Top-level and public so that both routes into it - the live callback and
+/// the launch-details read - are the same code, and so it can be tested. It
+/// used to be a closure inside `main`, which meant the single most important
+/// interaction Van has was unreachable by any test.
+Future<void> handleNudgeAction(
+  VanService service,
+  String sessionId,
+  NudgeAction action,
+) async {
+  switch (action) {
+    case NudgeAction.start:
+      await service.startSession(sessionId);
+    case NudgeAction.snooze:
+      await service.snooze(sessionId);
+    case NudgeAction.notToday:
+      await service.notToday(sessionId);
+    case NudgeAction.opened:
+      // Opening the notification body is not an answer. Van shows the Now
+      // screen and waits; whatever the user does there is recorded by the
+      // method they choose.
+      break;
+  }
 }
 
 /// Application shell.

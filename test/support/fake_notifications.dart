@@ -34,6 +34,17 @@ class FakeNotifications implements Notifications {
     canScheduleExactly: canScheduleExactly,
   );
 
+  /// What Android hands over when a notification launched the app.
+  ({String sessionId, NudgeAction action})? launchAction;
+
+  @override
+  Future<({String sessionId, NudgeAction action})?>
+  consumeLaunchAction() async {
+    final pending = launchAction;
+    launchAction = null;
+    return pending;
+  }
+
   @override
   Future<bool> requestPermission() async {
     requests++;

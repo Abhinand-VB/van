@@ -132,6 +132,14 @@ abstract interface class Notifications {
   /// Asks for permission. Returns whether it was granted.
   Future<bool> requestPermission();
 
+  /// The action that launched Van, if a notification did.
+  ///
+  /// Must be read at startup. When Van is not running, pressing an action
+  /// button does not reach the callback passed to [init] - that callback only
+  /// exists while a Flutter engine does. Android launches the app instead and
+  /// hands the response over here, once.
+  Future<({String sessionId, NudgeAction action})?> consumeLaunchAction();
+
   /// Schedules [nudge] to fire at its instant.
   Future<void> schedule(PendingNudge nudge);
 
@@ -252,6 +260,21 @@ class AndroidNotifications implements Notifications {
   }
 
   @override
+  Future<({String sessionId, NudgeAction action})?>
+  consumeLaunchAction() async {
+    final details = await _plugin.getNotificationAppLaunchDetails();
+    if (details == null || !details.didNotificationLaunchApp) return null;
+
+    final sessionId = details.notificationResponse?.payload;
+    if (sessionId == null || sessionId.isEmpty) return null;
+
+    return (
+      sessionId: sessionId,
+      action: _actionFrom(details.notificationResponse?.actionId),
+    );
+  }
+
+  @override
   Future<bool> requestPermission() async {
     final android = _plugin
         .resolvePlatformSpecificImplementation<
@@ -356,9 +379,18 @@ class AndroidNotifications implements Notifications {
 /// Must be a top-level function annotated for the AOT compiler, or the
 /// callback is tree-shaken away in release builds and actions silently stop
 /// working.
+///
+/// Deliberately empty, and that has a cost worth stating plainly. This runs in
+/// a separate isolate with no Flutter engine, so it cannot reach `VanService`
+/// or the database without opening a second connection to both. Actions that
+/// **do not** open the app - Snooze and Not today - therefore do nothing at
+/// all when Van is not running. See STATUS issue 15.
+///
+/// Actions that *do* open the app are not lost: Android hands them over
+/// through `getNotificationAppLaunchDetails`, which `main.dart` reads at
+/// startup via [Notifications.consumeLaunchAction]. START is marked
+/// `showsUserInterface`, so START is the one that survives - which is
+/// deliberate, since it is the only action whose whole purpose is to get you
+/// into the work.
 @pragma('vm:entry-point')
-void notificationTapBackground(NotificationResponse response) {
-  // Intentionally empty: the action is re-read from the pending intent when
-  // the app next opens. Doing database work here would need a second isolate
-  // and a second database connection for no benefit at this stage.
-}
+void notificationTapBackground(NotificationResponse response) {}
