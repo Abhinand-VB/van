@@ -73,10 +73,39 @@ abstract final class LadderIds {
   /// deliberately larger so growing it needs no thought here.
   static const perSession = 8;
 
+  /// The largest hash slice that keeps every id inside Android's positive
+  /// 32-bit range, derived rather than written down so that changing
+  /// [perSession] cannot silently push ids past the end of it.
+  ///
+  /// At `perSession` 8 this is `0x0FFFFFFF`, and the largest id it can produce
+  /// is exactly `2^31 - 1`.
+  static const int _mask = 0x7FFFFFFF ~/ perSession;
+
+  /// A deliberately explicit 32-bit hash: FNV-1a over the code units.
+  ///
+  /// **Not `String.hashCode`.** That is a perfectly good hash and a bad
+  /// contract. Nothing documents it as stable across Dart SDK versions, and
+  /// these ids are persisted in everything but name - Android holds them in
+  /// its alarm store for days, and the process that cancels a rung is usually
+  /// not the process that armed it. An id Van can no longer re-derive is a
+  /// notification Van can never cancel, and the failure is invisible: the
+  /// cancel succeeds, because cancelling an id that was never scheduled is a
+  /// no-op.
+  ///
+  /// Written out here so it is part of the repository and pinned by tests,
+  /// rather than a property of whichever SDK happened to build the APK.
+  static int _hash(String s) {
+    var h = 0x811C9DC5;
+    for (final unit in s.codeUnits) {
+      h = ((h ^ unit) * 0x01000193) & 0xFFFFFFFF;
+    }
+    return h;
+  }
+
   /// The id for rung [rung] of [sessionId].
   static int forRung(String sessionId, int rung) {
     assert(rung >= 0 && rung < perSession, 'rung must fit the reserved block');
-    return (sessionId.hashCode & 0x3FFFFF) * perSession + rung;
+    return (_hash(sessionId) & _mask) * perSession + rung;
   }
 
   /// Every id [sessionId] could possibly have used.
