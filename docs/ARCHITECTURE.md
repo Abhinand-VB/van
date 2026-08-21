@@ -322,7 +322,10 @@ but the path is shared so it stays exercised and tested.
 ### 6.1 Scheduling
 
 - `FreeSlotFinder` — commitments + horizon + waking hours produce `List<FreeSlot>`.
-  v1 commitments come from the app's own sessions; phase 2 adds calendar.
+  v1 commitments come from the app's own sessions; the device calendar arrives
+  through the same type — see `docs/WP_CALENDAR.md`. (This line used to say
+  "phase 2", which contradicted the roadmap table below. The phase is undecided;
+  the WP explains why the phase ladder does not really apply.)
 - `SessionPlanner` — task + slots + constraints produce proposed `WorkSession`s.
   Constraints: max 90 min per session, min 15 min, at least 10 min break between,
   finish at least 12 h before deadline. Never emit one giant block.

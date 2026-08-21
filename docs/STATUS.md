@@ -1355,7 +1355,15 @@ evidence from real use.
    dials worth watching, one number each: the sweep's five-minute replacement
    lead, `SuppressionPolicy.dismissalLimit`, and whether halving a block is
    the right first concession.
-6. **Only then decide about WP-6** (section 3e). My honest read: the case for
+6. **Consider the calendar before WP-6.** Van plans your day as if nothing else is
+   on it, which is a correctness problem rather than a missing feature. Written up
+   as `docs/WP_CALENDAR.md` — the domain work is genuinely small (one call site;
+   `Commitment` was designed for it), and the real cost is a settings surface Van
+   does not have plus four behavioural decisions that matter more than the
+   plumbing. The phase numbering in `ARCHITECTURE.md` contradicted itself on this
+   and the WP explains why.
+
+7. **Only then decide about WP-6** (section 3e). My honest read: the case for
    it has got weaker, not stronger. The parser now answers every golden case
    correctly, so `extract_task` does not need a model. If nudge *wording* gets
    stale after a week — the same handful of phrasings, in the same order —
