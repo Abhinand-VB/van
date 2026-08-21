@@ -654,6 +654,37 @@ void main() {
       expect(chosen.single.field<bool>('gaveReason'), isTrue);
     });
 
+    test('a block already underway cannot be renegotiated', () async {
+      // Found by review, and worse than the bug being looked for. A started
+      // session is neither resolved nor stale, so the only guard was
+      // isResolved - and accepting a shrink would have replaced work in
+      // progress with a smaller block later on, cancelling what the user was
+      // doing at that moment.
+      final session = await stall('write the report 60 minutes');
+      final outcome = await service.negotiate(session.id, reason: 'too tired');
+      await service.startSession(session.id);
+
+      expect(
+        await service.applyNegotiation(
+          session.id,
+          outcome!.proposal,
+          reason: 'too tired',
+        ),
+        isNull,
+      );
+
+      final running = await sessions.byId(session.id);
+      expect(running!.status, SessionStatus.started);
+      expect(running.plannedMinutes, 60);
+    });
+
+    test('a running block is not offered a negotiation at all', () async {
+      final session = await stall('write the report 60 minutes');
+      await service.startSession(session.id);
+
+      expect(await service.negotiate(session.id, reason: 'too tired'), isNull);
+    });
+
     test('a resolved block cannot be renegotiated', () async {
       final session = await stall('write the report 60 minutes');
       await service.startSession(session.id);
@@ -680,6 +711,61 @@ void main() {
         await service.applyNegotiation(session.id, cancelTheDay),
         isNull,
       );
+      expect((await sessions.byId(session.id))!.status, SessionStatus.planned);
+    });
+
+    test('a release the ladder permits closes the block and says so', () async {
+      // Reaching l5 through the public API needs three moves, a deadline
+      // inside a day and a prior refusal, which is a lot of scaffolding to
+      // test one return value. Forcing the level is the smaller lie: the
+      // rules, the apply path and the persistence are all the real ones.
+      final conceding = VanService(
+        tasks: TaskRepo(db),
+        sessions: sessions,
+        events: events,
+        nudges: nudges,
+        router: InferenceRouter(defaultBackend: const NullBackend()),
+        notifications: notifications,
+        templates: NudgeTemplates.fromJson(
+          File('assets/nudge_templates/templates.json').readAsStringSync(),
+        ),
+        prompts: testPrompts(),
+        clock: clock,
+        ids: SequentialIds('c'),
+        waking: const WakingHours(utcOffset: Duration.zero),
+        policy: const _AlwaysConcede(),
+      );
+
+      final captured = await conceding.capture('write the report 45 minutes');
+      final session = captured.sessions.first;
+      clock.advanceTo(session.plannedStart.add(const Duration(minutes: 30)));
+
+      const release = NegotiationProposal(
+        action: NegotiationAction.release,
+        message: 'Leaving it for today.',
+      );
+      final closed = await conceding.applyNegotiation(session.id, release);
+
+      // The bug this pins: release used to return null on success as well as
+      // on refusal, so the chat card could not tell them apart and reported
+      // "Let go for today" over a block it had failed to release.
+      expect(closed, isNotNull);
+      expect(closed!.status, SessionStatus.skipped);
+      expect((await sessions.byId(session.id))!.status, SessionStatus.skipped);
+      expect(
+        notifications.scheduled.where((n) => n.sessionId == session.id),
+        isEmpty,
+      );
+    });
+
+    test('null from applyNegotiation means refused, and only that', () async {
+      final session = await stall('write the report 60 minutes', late: 2);
+      const release = NegotiationProposal(
+        action: NegotiationAction.release,
+        message: 'Leaving it for today.',
+      );
+
+      expect(await service.applyNegotiation(session.id, release), isNull);
       expect((await sessions.byId(session.id))!.status, SessionStatus.planned);
     });
 
@@ -850,4 +936,14 @@ void main() {
       );
     });
   });
+}
+
+/// Forces the ladder to its top rung, so the release path can be exercised
+/// without three snoozes and a refusal first.
+class _AlwaysConcede extends InterventionPolicy {
+  const _AlwaysConcede();
+
+  @override
+  InterventionLevel select(InterventionContext context) =>
+      InterventionLevel.l5Concede;
 }

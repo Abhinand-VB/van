@@ -152,6 +152,7 @@ class VanService {
     required IdGenerator ids,
     WakingHours waking = const WakingHours(),
     InterventionPolicy policy = const InterventionPolicy(),
+    NegotiationRules rules = const NegotiationRules(),
     ImportanceScorer scorer = const ImportanceScorer(),
     SuppressionPolicy? suppression,
     int giveUpAfterMinutes = 60,
@@ -174,6 +175,7 @@ class VanService {
        _ids = ids,
        _waking = waking,
        _policy = policy,
+       _rules = rules,
        _sweep = StaleSessionSweep(
          rescheduler: Rescheduler(ids: ids),
          giveUpAfterMinutes: giveUpAfterMinutes,
@@ -195,7 +197,7 @@ class VanService {
   final WakingHours _waking;
   final InterventionPolicy _policy;
   final StaleSessionSweep _sweep;
-  static const _rules = NegotiationRules();
+  final NegotiationRules _rules;
 
   /// A renegotiated block never lands closer than this to now, so accepting
   /// a proposal does not fire a nudge in the same breath.
@@ -496,77 +498,30 @@ class VanService {
 
   /// Closes the books on [sessionId]'s ladder and records [response].
   ///
-  /// Van never learns from Android that a notification was *shown* - there is
-  /// no such callback - so delivery is inferred: a rung whose instant has
-  /// passed and which was never cancelled did reach the user. That inference
-  /// is the whole basis of the fatigue count, so it is made in exactly one
-  /// place rather than guessed at each call site.
+  /// Two steps, and only the first belongs to this method. Rungs still in the
+  /// future are stood down: the user answered before Van got to them, which is
+  /// the ladder working. They are marked suppressed rather than deleted,
+  /// because the record of what was *not* said is what tells a quiet day from
+  /// a broken scheduler.
   ///
-  /// Rungs still in the future are marked suppressed rather than deleted. The
-  /// user answered before Van got to them, which is the ladder working, and
-  /// the record of what was stood down is worth keeping.
+  /// Recording the answer is then delegated to [_recordAnswer], which owns the
+  /// inference that a rung whose instant has passed did reach the user. That
+  /// inference underpins the entire fatigue count, so it lives in one place -
+  /// which it briefly did not, when this method grew its own copy.
   Future<void> _settleLadder(
     String sessionId,
     ResponseType response, {
     String? reasonText,
   }) async {
     final now = _clock.now();
-    final armed = await _nudges.forSession(sessionId);
 
-    Nudge? answered;
-    for (final nudge in armed) {
+    for (final nudge in await _nudges.forSession(sessionId)) {
       if (nudge.wasSuppressed || nudge.deliveredAt != null) continue;
-
-      if (nudge.scheduledAt.isAfter(now)) {
-        await _nudges.save(
-          Nudge(
-            id: nudge.id,
-            sessionId: nudge.sessionId,
-            type: nudge.type,
-            importance: nudge.importance,
-            level: nudge.level,
-            scheduledAt: nudge.scheduledAt,
-            copy: nudge.copy,
-            templateId: nudge.templateId,
-            backendId: nudge.backendId,
-            wasSuppressed: true,
-            suppressionReason: 'answeredBeforeItFired',
-          ),
-        );
-        continue;
-      }
-
-      final delivered = nudge.deliver(nudge.scheduledAt);
-      await _nudges.save(delivered);
-      await _events.append(EventType.nudgeDelivered, {
-        'sessionId': sessionId,
-        'nudgeId': nudge.id,
-        'level': nudge.level.name,
-        'at': nudge.scheduledAt.toIso8601String(),
-      });
-      answered = delivered;
+      if (!nudge.scheduledAt.isAfter(now)) continue;
+      await _nudges.save(nudge.suppress('answeredBeforeItFired'));
     }
 
-    // Nothing fired, so there is nothing to have responded to. An event would
-    // be a lie and a fatigue tick would be unearned.
-    if (answered == null) return;
-
-    await _nudges.saveResponse(
-      NudgeResponse(
-        id: _ids.next(),
-        nudgeId: answered.id,
-        response: response,
-        respondedAt: now,
-        latencySeconds: now.difference(answered.deliveredAt!).inSeconds,
-        reasonText: reasonText,
-      ),
-    );
-    await _events.append(EventType.nudgeResponded, {
-      'sessionId': sessionId,
-      'nudgeId': answered.id,
-      'response': response.name,
-      'level': answered.level.name,
-    });
+    await _recordAnswer(sessionId, response, reasonText: reasonText);
   }
 
   /// A stable notification id for rung [rung] of [sessionId].
@@ -818,7 +773,11 @@ class VanService {
     String? reason,
   }) async {
     final session = await _sessions.byId(sessionId);
-    if (session == null) return null;
+    // Nothing to negotiate about work that is finished or already underway.
+    // Proposing a smaller block to someone mid-session is not help.
+    if (session == null || session.isResolved || session.hasStarted) {
+      return null;
+    }
     final task = await _tasks.byId(session.taskId);
     if (task == null) return null;
 
@@ -865,6 +824,9 @@ class VanService {
 
   /// Carries out a proposal the user accepted.
   ///
+  /// Returns the block as it now stands, or null when the proposal was
+  /// refused - which is the only thing null means.
+  ///
   /// Re-validates rather than trusting the caller. The proposal may have been
   /// sitting on screen for a while, and a block that has since been started or
   /// moved must not be renegotiated out from under itself.
@@ -884,7 +846,14 @@ class VanService {
     String? reason,
   }) async {
     final session = await _sessions.byId(sessionId);
-    if (session == null || session.isResolved) return null;
+    // `isResolved` is not enough: a *started* block is neither resolved nor
+    // renegotiable. Without the second check, accepting a shrink on work
+    // already in progress replaces it with a smaller block later on - which
+    // cancels what the user is doing at that moment, which is the single
+    // worst thing Van could do to someone who did exactly what it asked.
+    if (session == null || session.isResolved || session.hasStarted) {
+      return null;
+    }
     final task = await _tasks.byId(session.taskId);
     if (task == null) return null;
 
@@ -926,12 +895,17 @@ class VanService {
       case NegotiationAction.release:
         await _settleLadder(sessionId, ResponseType.dismissed);
         await _notifications.cancelForSession(sessionId);
-        await _sessions.save(session.skip());
+        final released = session.skip();
+        await _sessions.save(released);
         await _events.append(EventType.sessionMissed, {
           'sessionId': sessionId,
           'reason': 'negotiated_release',
         });
-        return null;
+        // Returns the closed block rather than null, so that null means one
+        // thing only: the proposal was refused. It meant both, and the chat
+        // card cheerfully reported "Let go for today" over a block that had
+        // been started in the meantime and was still running.
+        return released;
 
       case NegotiationAction.shrink:
       case NegotiationAction.defer:

@@ -246,6 +246,29 @@ void main() {
       expect(find.text('Left as it is.'), findsOneWidget);
     });
 
+    testWidgets('never claims a change it did not make', (tester) async {
+      // The card can sit on screen while the block moves on. Accepting then
+      // has to report the refusal, not the proposal - the old code asked what
+      // was proposed before asking whether it happened, so a release over an
+      // already-started block still said "Let go for today".
+      final session = await stall('write the report 60 minutes');
+      await showChat(tester);
+      await send(tester, 'too tired');
+
+      await service.startSession(session.id);
+
+      await tester.tap(find.text('Shrink it'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('already moved on'), findsOneWidget);
+      expect(find.textContaining('Moved to'), findsNothing);
+      expect(
+        (await SessionRepo(db).byId(session.id))!.plannedMinutes,
+        60,
+        reason: 'the block was started, so nothing may have shrunk it',
+      );
+    });
+
     testWidgets('once answered, typing captures a task again', (tester) async {
       await stall('write the report 60 minutes');
       await showChat(tester);

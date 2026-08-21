@@ -142,6 +142,26 @@ class Nudge {
     backendId: backendId,
   );
 
+  /// Records that this was held back, for [reason].
+  ///
+  /// A method rather than a hand-built copy at the call site: the class has
+  /// twelve fields and a copy that quietly dropped one - the template id, say -
+  /// would corrupt the record without failing anything.
+  Nudge suppress(String reason) => Nudge(
+    id: id,
+    type: type,
+    importance: importance,
+    level: level,
+    scheduledAt: scheduledAt,
+    copy: copy,
+    sessionId: sessionId,
+    deliveredAt: deliveredAt,
+    templateId: templateId,
+    backendId: backendId,
+    wasSuppressed: true,
+    suppressionReason: reason,
+  );
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||

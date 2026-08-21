@@ -200,14 +200,19 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     );
     if (!mounted) return;
 
-    final note = switch (card.outcome.proposal.action) {
-      NegotiationAction.hold => 'Left as it is.',
-      NegotiationAction.release => 'Let go for today.',
-      _ when next == null => 'That block has already moved on.',
-      _ =>
-        'Moved to ${_clockTime(next.plannedStart.toLocal())}, '
-            '${next.plannedMinutes} min.',
-    };
+    // Refusal is checked first, and has to be. The old shape asked about the
+    // action before the outcome, so a release that the domain turned down -
+    // because the block had been started while the card sat on screen - still
+    // reported "Let go for today" over work that was running.
+    final note = next == null
+        ? 'That block has already moved on.'
+        : switch (card.outcome.proposal.action) {
+            NegotiationAction.hold => 'Left as it is.',
+            NegotiationAction.release => 'Let go for today.',
+            _ =>
+              'Moved to ${_clockTime(next.plannedStart.toLocal())}, '
+                  '${next.plannedMinutes} min.',
+          };
 
     setState(() {
       _entries[index] = card.closed(note);
