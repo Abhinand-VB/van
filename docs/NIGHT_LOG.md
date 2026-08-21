@@ -275,6 +275,52 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — the id Android remembers
+
+**Finished.** Phone locked again (`isKeyguardShowing=true`), tree green at 541
+before starting. The question this time was about identifiers: Van *derives*
+notification ids instead of storing them, so what exactly is that derivation
+promising?
+
+**More than Dart promises back.** `LadderIds.forRung` folded
+`sessionId.hashCode` into 22 bits. `String.hashCode` is a perfectly good hash
+and a bad contract — nothing documents it as stable across SDK versions, and
+these ids are persisted in all but name. Android holds them in its alarm store
+for days, across app updates, and the process that cancels a rung is routinely
+not the one that armed it. That is already written in the comment above the
+class; the comment just did not follow its own reasoning to the hash.
+
+**The failure would have been silent, which is what makes it worth fixing
+before it happens.** Cancelling an id that was never scheduled is a no-op, so a
+changed hash means Van cancels nothing, reports success, and the stale
+notification fires anyway — forever uncancellable.
+
+**Four tests already covered this function and none would have caught it.**
+They checked determinism within a run, distinctness, and range. Not one pinned
+a value. That is the actual defect: the function had an external consumer and
+no test that said so.
+
+**The second half was arithmetic I could measure instead of argue.** 22 bits is
+a small place to put a birthday problem, and two live sessions sharing a block
+means cancelling one silently cancels the other's ladder. Rather than quote a
+probability I ran the old derivation over 5000 session ids: **2 real
+collisions.** The new mask is derived from `perSession` instead of written down
+— 28 bits, zero collisions on the same sample, and it cannot drift if the block
+size ever changes. The largest id it can produce is exactly 2^31 - 1.
+
+**What this costs the owner, stated plainly.** Rungs armed by the installed
+build carry old ids, so a rebuilt Van could not cancel them. Six are armed for
+09:00–09:55. I put a line in section 0 saying to reinstall after 10:00. I do
+*not* know whether Android clears an app's alarms on update anyway — that is
+checkable on an unlocked phone and I did not have one, so I said so rather than
+assuming the convenient answer.
+
+**The general form, which is the part worth keeping.** A value is persisted if
+anything outside the process remembers it, database or not. Android's alarm
+store counts; so do notification payloads, file names, and SharedPreferences
+keys. A derivation feeding one of those is an API with an external consumer,
+and it needs a test that pins it.
+
 ### 21 August 2026, overnight — what a capture leaves behind when it fails
 
 **Finished.** Phone still locked (`isKeyguardShowing=true`, `Dozing`), DND

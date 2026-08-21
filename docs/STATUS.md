@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **541 tests, all green,
+Van is finished as far as an agent can take it alone. **544 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -43,6 +43,15 @@ five in the evening produced a task that was already overdue. Fixed at 06:55
 (issue 18). Tasks captured from now on are right; anything already in the
 database still carries the old deadline, so re-type it if it matters.
 
+**If you rebuild and reinstall, do it after 10:00.** Notification ids are
+derived from the session id, and I changed the derivation this morning
+(`25cde26`) for good reasons written up in section 3m. The six nudges armed for
+09:00–09:55 were armed by the *installed* build and carry the old ids, so a new
+build could no longer cancel them. They would still fire. I could not check on
+a locked phone whether Android clears an app's alarms on update anyway — if it
+does, this is moot and you would simply lose them. Either way, letting them
+fire first costs nothing.
+
 Two things on your phone are mine, not yours: test tasks called "Alarm wiring
 check" and "Negotiate wiring check". Delete them whenever.
 
@@ -58,7 +67,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **541 tests passing** — 238 in `packages/van_core` (pure Dart), 303 in the app.
+- **544 tests passing** — 238 in `packages/van_core` (pure Dart), 306 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -97,6 +106,7 @@ working configuration, not a degraded one.
 | App: timezone | 6 |
 | App: negotiation rule set | 2 |
 | App: capture failure paths | 6 |
+| App: ladder ids | 9 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -120,6 +130,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+25cde26  Stop deriving persisted notification ids from String.hashCode
 f2e736b  Do not lose a capture because an alarm failed
 9702dfa  Give Negotiate the same rule set the gate judges by
 6b1f4b3  Parse deadlines in the user's timezone, not UTC
@@ -724,6 +735,41 @@ let the exception decide.
 
 ---
 
+## 3m. Ids that Android remembers, and Dart does not promise
+
+`LadderIds.forRung` derives a notification id from the session id rather than
+storing one, and that part is right: the process that cancels a rung is
+routinely not the process that armed it, hours later, so anything held in
+memory is gone by then.
+
+**It derived it from `String.hashCode`.** That is a good hash and a bad
+contract. Nothing documents it as stable across Dart SDK versions, and these
+ids are persisted in everything but name — Android keeps them in its alarm
+store for days, across app updates. If the hash ever moved, every armed
+notification would become uncancellable, and **silently**: cancelling an id
+that was never scheduled is a no-op, so Van reports success while the old
+notification fires anyway.
+
+Four tests covered this function. None of them pinned a value, so all four
+would have passed through such a change without a word. The derivation is now
+an explicit FNV-1a written out in the file, and the tests pin its actual
+output. **That test failing is a decision to make, not a number to update.**
+
+**The second problem was arithmetic.** 22 bits is a small space to put a
+birthday problem in, and two live sessions sharing a block means cancelling one
+silently cancels the other's whole ladder. Measured rather than argued: the old
+derivation produces **2 real collisions across 5000 session ids**. The mask is
+now derived from `perSession` rather than written down — 28 bits, zero
+collisions on the same sample, and it cannot drift if the block size changes.
+
+**The general form:** *a value is persisted if anything outside the process
+remembers it*, whether or not it is in the database. Android's alarm store
+counts. So does a notification payload, a file name, and anything in
+`SharedPreferences`. A derivation feeding one of those is an API with an
+external consumer, and it needs the test that says so.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -750,6 +796,7 @@ than this file.**
 | 18 | ~~Deadlines were parsed in UTC, not the user's timezone~~ | **Done, 21 Aug 2026** (`6b1f4b3`). `TemporalParser` takes a `utcOffset`, `ExtractTask` defaults it to zero, and `VanService` never passed one — so on a UTC-7 phone every typed deadline was seven hours early. The planner had the right offset the whole time, so the two disagreed about what day it was. **Existing rows keep their wrong deadlines**; nothing back-fills them. |
 | 19 | **The timezone offset is read once, at startup** | `main.dart` computes `DateTime.now().timeZoneOffset` and hands it to `WakingHours`; `VanService` holds it in a `final` field and derives the parser and the suppression policy from it. Nothing recomputes it, so a process alive across a DST change or a flight keeps the old offset — the same class of bug as issue 18, an hour wide instead of seven, until Van is restarted. **Next US transition is 1 Nov 2026**, so there is time to do it properly. Fix is a composition-root change: rebuild the service when the offset moves, off the `resumed` lifecycle callback the three screens already use. Not attempted overnight — it needs device verification, and the phone was locked. |
 | 20 | ~~A failed alarm destroyed the whole capture~~ | **Done, 21 Aug 2026** (`f2e736b`). See section 3l. Both layers: `_armLadder` records `nudgeScheduleFailed` and carries on, and `ChatScreen._send` gives the typed sentence back instead of eating it. |
+| 21 | ~~Notification ids came from `String.hashCode`~~ | **Done, 21 Aug 2026** (`25cde26`). See section 3m. Explicit FNV-1a, pinned by tests, and the mask widened from 22 to 28 bits — the old one had 2 real collisions in 5000 session ids. **One-time cost:** rungs armed by an older build carry old ids and cannot be cancelled by a newer one. Section 0 says to reinstall after the 09:00 nudges have fired. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 
