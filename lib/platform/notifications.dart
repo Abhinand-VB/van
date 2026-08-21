@@ -327,20 +327,37 @@ class AndroidNotifications implements Notifications {
     );
   }
 
+  /// The buttons on a nudge.
+  ///
+  /// **Every one is `showsUserInterface`, and that is load-bearing.** An
+  /// action without it never launches the app, so with Van not running it
+  /// reaches `notificationTapBackground` - an isolate with no Flutter engine,
+  /// which cannot touch the database. The action is then lost, and because
+  /// `cancelNotification` defaults to true, the notification disappears while
+  /// it happens. The user presses "Snooze 10", watches it vanish, and gets
+  /// nudged again ten minutes later about a block that never moved. That is
+  /// not a button doing nothing; that is a button lying.
+  ///
+  /// Opening the app to snooze something is intrusive, and it is the lesser
+  /// problem. The better fix is a background isolate with its own database
+  /// connection - see STATUS issue 15 - and until that exists, honest and
+  /// intrusive beats silent and broken.
+  static const nudgeActions = <AndroidNotificationAction>[
+    AndroidNotificationAction('start', 'Start', showsUserInterface: true),
+    AndroidNotificationAction('snooze', 'Snooze 10', showsUserInterface: true),
+    AndroidNotificationAction(
+      'not_today',
+      'Not today',
+      showsUserInterface: true,
+    ),
+  ];
+
   NotificationDetails _details(PendingNudge nudge) {
     // A conceded nudge is Van telling you it has moved the work. Offering
     // START on it would be incoherent.
     final actions = nudge.level == InterventionLevel.l5Concede
         ? const <AndroidNotificationAction>[]
-        : const <AndroidNotificationAction>[
-            AndroidNotificationAction(
-              'start',
-              'Start',
-              showsUserInterface: true,
-            ),
-            AndroidNotificationAction('snooze', 'Snooze 10'),
-            AndroidNotificationAction('not_today', 'Not today'),
-          ];
+        : nudgeActions;
 
     return NotificationDetails(
       android: AndroidNotificationDetails(
@@ -380,17 +397,18 @@ class AndroidNotifications implements Notifications {
 /// callback is tree-shaken away in release builds and actions silently stop
 /// working.
 ///
-/// Deliberately empty, and that has a cost worth stating plainly. This runs in
-/// a separate isolate with no Flutter engine, so it cannot reach `VanService`
-/// or the database without opening a second connection to both. Actions that
-/// **do not** open the app - Snooze and Not today - therefore do nothing at
-/// all when Van is not running. See STATUS issue 15.
+/// Deliberately empty, and it should stay unreachable. This runs in a separate
+/// isolate with no Flutter engine, so it cannot reach `VanService` or the
+/// database without opening a second connection to both - anything that
+/// arrives here is therefore lost.
 ///
-/// Actions that *do* open the app are not lost: Android hands them over
-/// through `getNotificationAppLaunchDetails`, which `main.dart` reads at
-/// startup via [Notifications.consumeLaunchAction]. START is marked
-/// `showsUserInterface`, so START is the one that survives - which is
-/// deliberate, since it is the only action whose whole purpose is to get you
-/// into the work.
+/// Nothing routes here today: every action in
+/// [AndroidNotifications.nudgeActions] is `showsUserInterface`, so Android
+/// launches the app and hands the response to
+/// `getNotificationAppLaunchDetails`, which `main.dart` collects at startup
+/// through [Notifications.consumeLaunchAction].
+///
+/// Drop `showsUserInterface` from an action and it starts arriving here
+/// instead, silently. There is a test asserting none of them has.
 @pragma('vm:entry-point')
 void notificationTapBackground(NotificationResponse response) {}

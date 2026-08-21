@@ -131,6 +131,34 @@ void main() {
     });
   });
 
+  group('the buttons themselves', () {
+    test('every one opens the app, or it is silently lost', () {
+      // The guard on issue 15. An action without showsUserInterface never
+      // launches Van, so with the app killed it reaches the background
+      // isolate, which has no Flutter engine and cannot touch the database.
+      // Worse, cancelNotification defaults to true - so the notification
+      // vanishes while the action is dropped, and Van nudges again ten
+      // minutes later about a block that never moved.
+      expect(AndroidNotifications.nudgeActions, isNotEmpty);
+      for (final action in AndroidNotifications.nudgeActions) {
+        expect(
+          action.showsUserInterface,
+          isTrue,
+          reason: '"${action.id}" would be dropped whenever Van is not running',
+        );
+      }
+    });
+
+    test('offers exactly the three the handler knows', () {
+      // A fourth button with no case in handleNudgeAction would fall through
+      // to `opened` and quietly do nothing.
+      expect(
+        AndroidNotifications.nudgeActions.map((a) => a.id),
+        ['start', 'snooze', 'not_today'],
+      );
+    });
+  });
+
   group('an action pressed while Van was not running', () {
     // The gap this closes. With the app killed, the callback passed to init()
     // does not exist - there is no Flutter engine to receive it. Android
