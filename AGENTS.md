@@ -9,6 +9,10 @@ is the original plan and is partly out of date; STATUS overrides it.
 Update `docs/STATUS.md` at the end of every session. It is the only handover
 between sessions - nothing else survives.
 
+Working unattended overnight? Read `docs/OVERNIGHT.md` — it is the standing
+brief for a self-directed session, and it is written to be re-read from a cold
+context on every loop iteration.
+
 When working unattended, never stop to ask a question. Choose the most
 defensible option, implement it, and record both the question and the decision
 in `docs/DECISIONS_PENDING.md`. A stalled overnight run is worth less than a
