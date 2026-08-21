@@ -13,13 +13,17 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **501 tests, all green,
+Van is finished as far as an agent can take it alone. **510 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
    tap. Until then nudges land within the hour rather than on the minute.
 2. **Wait for a nudge and press START.** Six are armed, 09:00–09:55. This is
-   the last unverified step of the loop.
+   the last unverified step of the loop — and until 05:15 this morning it
+   would have silently done nothing when Van was not running, which is
+   exactly the state your phone will be in. Fixed and tested; see issue 16.
+   **Snooze and Not today still do nothing from a killed app** (issue 15), so
+   if you want to try those, open Van first.
 3. **Ignore the 09:00 block on purpose, then open Chat.** One minute, and the
    only part of the negotiation loop never reached on hardware.
 4. **Listen to the drum.** Nobody ever has. Your ringer was muted every time
@@ -44,7 +48,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **501 tests passing** — 238 in `packages/van_core` (pure Dart), 263 in the app.
+- **510 tests passing** — 238 in `packages/van_core` (pure Dart), 272 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -78,6 +82,7 @@ working configuration, not a degraded one.
 | App: prompt assets | 9 |
 | App: negotiation guards (review) | 5 |
 | App: fatigue window | 2 |
+| App: notification actions | 9 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -101,6 +106,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+d104b1a  Collect the notification action that launched the app
 73505a8  Do not build the model just to throw it away
 e32ce8a  Fatigue is measured over the day the rung fires, not the day it is armed
 d9eb37c  Three defects found by reading tonight's code back
@@ -443,9 +449,9 @@ drift the suite exists to catch.
 
 ---
 
-## 3g. Five defects that all had the same shape
+## 3g. Six defects that all had the same shape
 
-Two review passes over the night's work turned up five bugs, and it is worth
+Three review passes over the night's work turned up six bugs, and it is worth
 naming what they had in common, because the next one will look the same.
 
 **Every one was a guard that was correct about one case and silent about its
@@ -458,11 +464,18 @@ twin.**
 | `_settleLadder`'s doc said the delivery inference lived in one place | splitting it had made two copies |
 | spacing was measured to the instant a rung fires | fatigue, four lines away, was still measured from the instant it was armed |
 | `detach()` released the engine | a plain `by lazy` meant it *built* one first, purely to throw away |
+| `notificationTapBackground` said the action was "re-read when the app next opens" | nothing read it, so pressing START with Van killed did nothing |
 
-None was found by a failing test. Four were found by reading the code back and
-asking what the comment claimed versus what the line did; the fifth was found
+None was found by a failing test. Five were found by reading the code back and
+asking what the comment claimed versus what the line did; the other was found
 by a test written for something else, which started failing for a reason I had
 not predicted.
+
+The sixth is the sharpest instance of the pattern, because the comment was not
+vague — it stated a specific mechanism ("re-read from the pending intent when
+the app next opens") that no code implemented. **A comment describing
+behaviour is a claim, and claims in this codebase have been wrong about as
+often as they have been right.** Grep for the thing it says happens.
 
 **The practical lesson:** when a fix is applied to one input, check its
 neighbours in the same function before moving on. The fatigue bug survived a
@@ -493,6 +506,8 @@ than this file.**
 | 11 | ~~`ExtractTask` and `ComposeNudge` still hold their prompts inline~~ | **Done, 21 Aug 2026** (`86ce1ec`). All three prompts are assets, loaded through `Prompts`. See section 3f. |
 | 13 | ~~Two parser gaps the golden set found~~ | **Done, 21 Aug 2026** (`61e3e72`), and the two halves needed opposite treatment. *"next week"* was simply unparsed and is now handled, along with `this week` and `in N weeks`. The **all-caps case is closed as deliberate**: Van cannot tell shouting from acronyms, so any rule turning `TIDY THE DESK` into `Tidy the desk` also turns `FIX API DOCS` into `Fix api docs` — loud versus lossy. The golden now specifies preservation. `extract_task` scores 29/29. |
 | 14 | **`GemmaBackend` cannot be measured off-device** | It needs the platform channel and a model file, so `tool/run_goldens.dart` deliberately has no flag for it. Measuring a candidate model means running the golden set on the phone, which needs a small debug screen or an integration test. Nothing built yet; the WP-6 gate cannot be evaluated until it is. |
+| 15 | **Snooze and Not today are lost when Van is not running** | They are not marked `showsUserInterface`, so they never open the app, and the background handler runs in an isolate with no Flutter engine — it cannot reach `VanService` or the database without opening a second connection to both. Pressing them with Van killed does nothing at all, silently. START survives because it *does* open the app (issue 16). Fixing this properly means a background isolate with its own database; marking them `showsUserInterface` would 'fix' it by yanking you into the app every time you dismiss something, which is worse. |
+| 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 
 ---
 

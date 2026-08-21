@@ -275,6 +275,45 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — the button that never worked
+
+**Finished.** Nothing was left on the board that an agent could close alone, so
+I went looking at the one code path the morning depends on and nobody had ever
+tested: what happens when you press a button on a notification.
+
+**Pressing START while Van was not running did nothing.** The callback passed
+to `Notifications.init` only exists while a Flutter engine does. With the
+process dead — which is exactly what your phone will be at 09:00 — Android does
+not deliver to it. It launches the app and leaves the response in
+`getNotificationAppLaunchDetails`, and nothing in Van read that. The app would
+open, show the Now screen, and the block would still be sitting there
+unstarted.
+
+The comment on `notificationTapBackground` said "the action is re-read from the
+pending intent when the app next opens". That mechanism did not exist. Found
+the same way as the other five: read the comment, grep for the thing it claims
+happens, find nothing.
+
+Fixed by `consumeLaunchAction`, read once at startup — once, because replaying
+it would re-snooze the block on every subsequent open.
+
+**The handler moved out of `main()`.** It was a closure inside `main`, which
+meant the single most important interaction Van has — which button does what —
+was unreachable by any test. If that switch had mapped START to snooze, nothing
+would have caught it. Nine tests now cover it.
+
+**What is still broken, and is now issue 15.** Snooze and Not today do not open
+the app, so with Van killed they reach the empty background isolate and are
+lost silently. Fixing that needs a background isolate with its own database
+connection. Marking them `showsUserInterface` would "fix" it by dragging you
+into the app every time you dismiss a nudge, which is worse than the bug.
+
+**A note on my own tooling.** My device crash check greps logcat for `FATAL`,
+and tonight it reported two — both from Samsung's HEVC image decoder in an
+unrelated process, matching the literal word in "Fatal error in decoder". A
+check that cries wolf is a check you stop reading. `FATAL EXCEPTION` is the
+string that means what I wanted.
+
 ### 21 August 2026, overnight — a second review pass, and two more
 
 **Finished.** Last night's iteration concluded "next: nothing". That judgement
