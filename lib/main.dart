@@ -13,7 +13,7 @@ import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/router.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/platform/system_clock.dart';
-import 'package:van/ui/now_screen.dart';
+import 'package:van/ui/shell.dart';
 import 'package:van_core/van_core.dart';
 
 /// Identifiers unique enough to survive a restart without a uuid dependency.
@@ -141,7 +141,7 @@ class VanApp extends StatelessWidget {
       home: _FirstRun(
         notifications: notifications,
         settings: settings,
-        child: NowScreen(
+        child: VanShell(
           service: service,
           clock: clock,
           notifications: notifications,
