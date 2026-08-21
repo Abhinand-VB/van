@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:van/data/repositories/event_repo.dart';
+import 'package:van/data/repositories/nudge_repo.dart';
 import 'package:van/data/repositories/session_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
@@ -102,6 +103,7 @@ class VanService {
     required TaskRepo tasks,
     required SessionRepo sessions,
     required EventRepo events,
+    required NudgeRepo nudges,
     required InferenceRouter router,
     required Notifications notifications,
     required NudgeTemplates templates,
@@ -109,11 +111,16 @@ class VanService {
     required IdGenerator ids,
     WakingHours waking = const WakingHours(),
     InterventionPolicy policy = const InterventionPolicy(),
+    ImportanceScorer scorer = const ImportanceScorer(),
+    SuppressionPolicy? suppression,
     int giveUpAfterMinutes = 60,
   }) : _tasks = tasks,
        _sessions = sessions,
        _events = events,
+       _nudges = nudges,
        _router = router,
+       _scorer = scorer,
+       _suppression = suppression ?? SuppressionPolicy(waking: waking),
        _notifications = notifications,
        _templates = templates,
        _clock = clock,
@@ -128,7 +135,10 @@ class VanService {
   final TaskRepo _tasks;
   final SessionRepo _sessions;
   final EventRepo _events;
+  final NudgeRepo _nudges;
   final InferenceRouter _router;
+  final ImportanceScorer _scorer;
+  final SuppressionPolicy _suppression;
   final Notifications _notifications;
   final NudgeTemplates _templates;
   final Clock _clock;
@@ -222,12 +232,52 @@ class VanService {
   /// The prompt at the start, the check ten minutes later, the diagnose at
   /// twenty-five. All three are cancelled the moment the user responds, so an
   /// answered nudge never escalates behind their back.
+  ///
+  /// Because the ladder is armed up front rather than decided live (see the
+  /// WP-4 deviation in STATUS), the suppression gate has to be run *here*,
+  /// against the instant each rung will fire at rather than the instant it is
+  /// being scheduled. Quiet hours and the spacing between rungs are exactly
+  /// knowable in advance; the dismissal streak is the freshest estimate Van
+  /// has. Whether a focus session will be running, and whether the phone will
+  /// be in do-not-disturb, are not knowable at all - the OS enforces the
+  /// latter itself, and an answered session cancels its own remaining rungs.
   Future<void> _armLadder(WorkSession session, Task task) async {
     final rungs = <(InterventionLevel, int)>[
       (InterventionLevel.l0Gentle, 0),
       (InterventionLevel.l1Check, _policy.checkAfterMinutes),
       (InterventionLevel.l2Diagnose, _policy.diagnoseAfterMinutes),
     ];
+
+    // One read for the whole ladder: the streak cannot change while it is
+    // being armed, and re-querying per rung would only cost three scans.
+    final fatigue = <NudgeType, int>{
+      for (final type in const [
+        NudgeType.sessionStart,
+        NudgeType.sessionMissed,
+      ])
+        type: await _nudges.consecutiveDismissals(type, _startOfToday()),
+    };
+
+    // Spacing is measured to the instant a rung will *fire*, not the instant
+    // it is being armed. Those are the same thing for a live engine and wildly
+    // different for a pre-scheduled one: arming a ladder for tomorrow morning
+    // seconds after being nudged must not silence tomorrow morning.
+    final lastNudge = await _nudges.lastDelivered();
+    final lastDeliveredAt = lastNudge?.deliveredAt;
+
+    // A replacement block continues the conversation its parent started. Van
+    // said "not started?", the user said "in ten minutes" - the reminder they
+    // just asked for is not an unrelated second interruption, and the general
+    // spacing rule must not swallow it.
+    final continuesFromParent =
+        lastNudge?.sessionId != null &&
+        lastNudge!.sessionId == session.parentSessionId;
+
+    // The offset of the last rung actually armed in *this* ladder. Null until
+    // one is, which is what separates "continuing a conversation" from
+    // starting one - a rung whose predecessor was suppressed is not a
+    // continuation, and must be spaced against the last real nudge instead.
+    int? lastArmedOffset;
 
     for (var i = 0; i < rungs.length; i++) {
       final (level, offset) = rungs[i];
@@ -237,6 +287,25 @@ class VanService {
       final type = offset == 0
           ? NudgeType.sessionStart
           : NudgeType.sessionMissed;
+      final dismissals = fatigue[type] ?? 0;
+      final continuesSameSession =
+          lastArmedOffset != null || continuesFromParent;
+      final gapMinutes = lastArmedOffset != null
+          ? offset - lastArmedOffset
+          : lastDeliveredAt == null
+          ? null
+          : at.difference(lastDeliveredAt).inMinutes;
+
+      final gate = _suppression.evaluate(
+        SuppressionContext(
+          type: type,
+          now: at,
+          minutesSinceLastNudge: gapMinutes,
+          consecutiveDismissals: dismissals,
+          continuesSameSession: continuesSameSession,
+        ),
+      );
+
       final copy = await _router.run(
         ComposeNudge(_templates),
         NudgeCopyRequest(
@@ -249,6 +318,43 @@ class VanService {
         ),
       );
 
+      // Recorded whether or not it goes out. What Van decided not to say is
+      // as informative as what it said, and it is the only way to tell a
+      // quiet day from a broken scheduler.
+      await _nudges.save(
+        Nudge(
+          id: _ids.next(),
+          sessionId: session.id,
+          type: type,
+          importance: _scorer.score(
+            ScoringContext(
+              type: type,
+              hoursToDeadline: task.hoursUntilDeadline(at),
+              rescheduleCount: session.rescheduleCount,
+              minutesSinceLastNudge: gapMinutes,
+              consecutiveDismissals: dismissals,
+              continuesSameSession: continuesSameSession,
+            ),
+          ),
+          level: level,
+          scheduledAt: at,
+          copy: copy.text,
+          templateId: copy.templateId,
+          wasSuppressed: gate.suppressed,
+          suppressionReason: gate.reason?.name,
+        ),
+      );
+
+      if (gate.suppressed) {
+        await _events.append(EventType.nudgeSuppressed, {
+          'sessionId': session.id,
+          'level': level.name,
+          'at': at.toIso8601String(),
+          'reason': gate.reason!.name,
+        });
+        continue;
+      }
+
       await _notifications.schedule(
         PendingNudge(
           id: notificationId(session.id, i),
@@ -260,6 +366,7 @@ class VanService {
           urgent: (task.hoursUntilDeadline(at) ?? 999) < 6,
         ),
       );
+      lastArmedOffset = offset;
 
       await _events.append(EventType.nudgeScheduled, {
         'sessionId': session.id,
@@ -268,6 +375,90 @@ class VanService {
         'templateId': copy.templateId,
       });
     }
+  }
+
+  /// Midnight local at the start of the current day, as UTC.
+  ///
+  /// Fatigue is a *today* measure: yesterday's swipes should not silence Van
+  /// this morning.
+  DateTime _startOfToday() {
+    final wall = _waking.toLocalWall(_clock.now());
+    return _waking.toUtcInstant(DateTime.utc(wall.year, wall.month, wall.day));
+  }
+
+  /// Closes the books on [sessionId]'s ladder and records [response].
+  ///
+  /// Van never learns from Android that a notification was *shown* - there is
+  /// no such callback - so delivery is inferred: a rung whose instant has
+  /// passed and which was never cancelled did reach the user. That inference
+  /// is the whole basis of the fatigue count, so it is made in exactly one
+  /// place rather than guessed at each call site.
+  ///
+  /// Rungs still in the future are marked suppressed rather than deleted. The
+  /// user answered before Van got to them, which is the ladder working, and
+  /// the record of what was stood down is worth keeping.
+  Future<void> _settleLadder(
+    String sessionId,
+    ResponseType response, {
+    String? reasonText,
+  }) async {
+    final now = _clock.now();
+    final armed = await _nudges.forSession(sessionId);
+
+    Nudge? answered;
+    for (final nudge in armed) {
+      if (nudge.wasSuppressed || nudge.deliveredAt != null) continue;
+
+      if (nudge.scheduledAt.isAfter(now)) {
+        await _nudges.save(
+          Nudge(
+            id: nudge.id,
+            sessionId: nudge.sessionId,
+            type: nudge.type,
+            importance: nudge.importance,
+            level: nudge.level,
+            scheduledAt: nudge.scheduledAt,
+            copy: nudge.copy,
+            templateId: nudge.templateId,
+            backendId: nudge.backendId,
+            wasSuppressed: true,
+            suppressionReason: 'answeredBeforeItFired',
+          ),
+        );
+        continue;
+      }
+
+      final delivered = nudge.deliver(nudge.scheduledAt);
+      await _nudges.save(delivered);
+      await _events.append(EventType.nudgeDelivered, {
+        'sessionId': sessionId,
+        'nudgeId': nudge.id,
+        'level': nudge.level.name,
+        'at': nudge.scheduledAt.toIso8601String(),
+      });
+      answered = delivered;
+    }
+
+    // Nothing fired, so there is nothing to have responded to. An event would
+    // be a lie and a fatigue tick would be unearned.
+    if (answered == null) return;
+
+    await _nudges.saveResponse(
+      NudgeResponse(
+        id: _ids.next(),
+        nudgeId: answered.id,
+        response: response,
+        respondedAt: now,
+        latencySeconds: now.difference(answered.deliveredAt!).inSeconds,
+        reasonText: reasonText,
+      ),
+    );
+    await _events.append(EventType.nudgeResponded, {
+      'sessionId': sessionId,
+      'nudgeId': answered.id,
+      'response': response.name,
+      'level': answered.level.name,
+    });
   }
 
   /// A stable notification id for rung [rung] of [sessionId].
@@ -281,6 +472,7 @@ class VanService {
 
     final started = session.start(_clock.now());
     await _sessions.save(started);
+    await _settleLadder(sessionId, ResponseType.started);
     await _notifications.cancelForSession(sessionId);
     await _events.append(EventType.sessionStarted, {
       'sessionId': sessionId,
@@ -315,6 +507,7 @@ class VanService {
     final task = await _tasks.byId(session.taskId);
     if (task == null) return null;
 
+    await _settleLadder(sessionId, ResponseType.snoozed);
     await _notifications.cancelForSession(sessionId);
     await _sessions.save(session.markRescheduled());
 
@@ -337,6 +530,7 @@ class VanService {
   Future<void> notToday(String sessionId) async {
     final session = await _sessions.byId(sessionId);
     if (session == null) return;
+    await _settleLadder(sessionId, ResponseType.dismissed);
     await _notifications.cancelForSession(sessionId);
     await _sessions.save(session.skip());
     await _events.append(EventType.sessionMissed, {
@@ -390,6 +584,10 @@ class VanService {
       clock: _clock,
     )) {
       final original = outcome.stale;
+      // The defining fatigue signal: Van asked, escalated, and was never
+      // answered. Nothing else in the app can record an ignore, because an
+      // ignore is the absence of an action.
+      await _settleLadder(original.id, ResponseType.ignored);
       await _notifications.cancelForSession(original.id);
       await _sessions.save(original);
       await _events.append(EventType.sessionMissed, {

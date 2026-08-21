@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/data/db/database.dart';
 import 'package:van/data/repositories/event_repo.dart';
+import 'package:van/data/repositories/nudge_repo.dart';
 import 'package:van/data/repositories/session_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
@@ -62,6 +63,7 @@ void main() {
   late FakeNotifications notifications;
   late EventRepo events;
   late SessionRepo sessions;
+  late NudgeRepo nudges;
   late VanService service;
   late FakeClock clock;
 
@@ -74,11 +76,13 @@ void main() {
     notifications = FakeNotifications();
     events = EventRepo(db, clock);
     sessions = SessionRepo(db);
+    nudges = NudgeRepo(db);
 
     service = VanService(
       tasks: TaskRepo(db),
       sessions: sessions,
       events: events,
+      nudges: nudges,
       router: InferenceRouter(
         defaultBackend: const NullBackend(),
         observer: EventLogInferenceObserver(events),
@@ -265,6 +269,201 @@ void main() {
         expect(event.field<String>('reason'), 'unavailable');
       }
       expect(await events.ofType(EventType.inferenceOk), isEmpty);
+    });
+  });
+
+  group('the nudge record and fatigue', () {
+    /// Captures a task and walks the clock past the point where the nudge
+    /// engine has given up on the resulting block.
+    Future<WorkSession> abandon(String sentence) async {
+      final result = await service.capture(sentence);
+      final session = result.sessions.first;
+      clock.advanceTo(session.plannedStart.add(const Duration(minutes: 90)));
+      return session;
+    }
+
+    test('every armed rung is written down, not just fired', () async {
+      final result = await service.capture('read the paper 45 minutes');
+      final session = result.sessions.first;
+
+      final recorded = await nudges.forSession(session.id);
+      expect(recorded, hasLength(3));
+      expect(
+        recorded.map((n) => n.level),
+        [
+          InterventionLevel.l0Gentle,
+          InterventionLevel.l1Check,
+          InterventionLevel.l2Diagnose,
+        ],
+      );
+      for (final nudge in recorded) {
+        expect(nudge.copy, isNotEmpty);
+        expect(nudge.templateId, isNotNull);
+        expect(nudge.wasSuppressed, isFalse);
+        expect(nudge.deliveredAt, isNull, reason: 'none of these have fired');
+      }
+    });
+
+    test('the recorded rung carries a real score, not the baseline', () async {
+      final first = await service.capture('read the paper 45 minutes');
+      final opening = (await nudges.forSession(
+        first.sessions.first.id,
+      )).firstWhere((n) => n.type == NudgeType.sessionStart);
+      expect(opening.importance, NudgeType.sessionStart.baseImportance);
+
+      // Once the work has been moved, the same rung scores higher: a block on
+      // its second attempt matters more than one on its first.
+      clock.advanceTo(
+        first.sessions.first.plannedStart.add(const Duration(minutes: 90)),
+      );
+      final moved = (await service.sweepStaleSessions()).moved.single;
+      final second = (await nudges.forSession(
+        moved.id,
+      )).firstWhere((n) => n.type == NudgeType.sessionStart);
+
+      expect(second.importance, greaterThan(opening.importance));
+      expect(second.importance, lessThanOrEqualTo(10));
+    });
+
+    test('starting records a delivery and a started response', () async {
+      final result = await service.capture('read the paper 45 minutes');
+      final session = result.sessions.first;
+
+      clock.advanceTo(session.plannedStart.add(const Duration(minutes: 4)));
+      await service.startSession(session.id);
+
+      final recorded = await nudges.forSession(session.id);
+      final fired = recorded.where((n) => n.wasDelivered).toList();
+      expect(fired, hasLength(1), reason: 'only the l0 rung had come due');
+      expect(fired.single.level, InterventionLevel.l0Gentle);
+
+      final replies = await nudges.responsesFor(fired.single.id);
+      expect(replies, hasLength(1));
+      expect(replies.single.response, ResponseType.started);
+      expect(replies.single.latencySeconds, 4 * 60);
+
+      final types = await eventTypes();
+      expect(types, contains('nudgeDelivered'));
+      expect(types, contains('nudgeResponded'));
+    });
+
+    test('rungs stood down before firing are kept, marked why', () async {
+      final result = await service.capture('read the paper 45 minutes');
+      final session = result.sessions.first;
+
+      clock.advanceTo(session.plannedStart.add(const Duration(minutes: 4)));
+      await service.startSession(session.id);
+
+      final standDowns = (await nudges.forSession(
+        session.id,
+      )).where((n) => n.wasSuppressed).toList();
+      expect(standDowns, hasLength(2));
+      for (final nudge in standDowns) {
+        expect(nudge.suppressionReason, 'answeredBeforeItFired');
+      }
+    });
+
+    test('answering before anything fired records no response', () async {
+      await service.capture('first thing 60 minutes');
+      final later = await service.capture('second thing 45 minutes');
+      final session = later.sessions.first;
+      expect(session.plannedStart.isAfter(clock.now()), isTrue);
+
+      // Started ahead of time: nothing has interrupted them at all.
+      await service.startSession(session.id);
+
+      final recorded = await nudges.forSession(session.id);
+      expect(recorded.where((n) => n.wasDelivered), isEmpty);
+      for (final nudge in recorded) {
+        expect(await nudges.responsesFor(nudge.id), isEmpty);
+      }
+      expect(
+        await eventTypes(),
+        isNot(contains('nudgeResponded')),
+        reason: 'an unearned fatigue tick would silence Van for no reason',
+      );
+    });
+
+    test('the sweep is what records an ignore', () async {
+      final session = await abandon('read the paper 45 minutes');
+      await service.sweepStaleSessions();
+
+      final fired = (await nudges.forSession(
+        session.id,
+      )).where((n) => n.wasDelivered).toList();
+      expect(fired, hasLength(3), reason: 'all three rungs had come due');
+
+      final replies = await nudges.responsesFor(fired.last.id);
+      expect(replies.single.response, ResponseType.ignored);
+    });
+
+    test('one ignored ladder is not yet fatigue', () async {
+      await abandon('read the paper 45 minutes');
+      await service.sweepStaleSessions();
+
+      expect(
+        await nudges.consecutiveDismissals(
+          NudgeType.sessionMissed,
+          DateTime.utc(2026, 8, 19),
+        ),
+        lessThan(3),
+      );
+    });
+
+    test('two ignored ladders and Van stops chasing', () async {
+      // The payoff. Ignore everything twice and the follow-up rungs stop
+      // being armed at all - Van still says the block is due, but it no
+      // longer chases you about it.
+      await abandon('read the paper 45 minutes');
+      final first = await service.sweepStaleSessions();
+
+      clock.advanceTo(
+        first.moved.single.plannedStart.add(const Duration(minutes: 90)),
+      );
+      final second = await service.sweepStaleSessions();
+      final survivor = second.moved.single;
+
+      final armed = await nudges.forSession(survivor.id);
+      final chases = armed
+          .where((n) => n.type == NudgeType.sessionMissed)
+          .toList();
+      expect(chases, isNotEmpty);
+      for (final chase in chases) {
+        expect(
+          chase.wasSuppressed,
+          isTrue,
+          reason: 'the ${chase.level.name} rung should have been held back',
+        );
+        expect(
+          chase.suppressionReason,
+          SuppressionReason.dismissalFatigue.name,
+        );
+      }
+
+      // Held back means not handed to the OS, not merely logged.
+      expect(
+        notifications.scheduled.where((n) => n.sessionId == survivor.id),
+        hasLength(1),
+        reason: 'only the opening prompt should still be armed',
+      );
+      expect(await eventTypes(), contains('nudgeSuppressed'));
+    });
+
+    test('fatigue is a today measure, not a permanent verdict', () async {
+      await abandon('read the paper 45 minutes');
+      await service.sweepStaleSessions();
+
+      final yesterday = DateTime.utc(2026, 8, 18);
+      final tomorrow = DateTime.utc(2026, 8, 20);
+      expect(
+        await nudges.consecutiveDismissals(NudgeType.sessionMissed, yesterday),
+        greaterThan(0),
+      );
+      expect(
+        await nudges.consecutiveDismissals(NudgeType.sessionMissed, tomorrow),
+        0,
+        reason: "yesterday's swipes must not silence Van this morning",
+      );
     });
   });
 

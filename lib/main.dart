@@ -4,6 +4,7 @@ import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/data/db/database.dart';
 import 'package:van/data/repositories/event_repo.dart';
+import 'package:van/data/repositories/nudge_repo.dart';
 import 'package:van/data/repositories/session_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
@@ -40,6 +41,7 @@ Future<void> main() async {
   final tasks = TaskRepo(db);
   final sessions = SessionRepo(db);
   final events = EventRepo(db, clock);
+  final nudges = NudgeRepo(db);
 
   final notifications = AndroidNotifications(FlutterLocalNotificationsPlugin());
 
@@ -61,6 +63,7 @@ Future<void> main() async {
     tasks: tasks,
     sessions: sessions,
     events: events,
+    nudges: nudges,
     router: router,
     notifications: notifications,
     templates: templates,
