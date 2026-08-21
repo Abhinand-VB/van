@@ -1,0 +1,175 @@
+{
+  "_comment": [
+    "Golden set for the extract_task capability.",
+    "",
+    "Every case is a sentence someone might actually type, with the smallest",
+    "assertion that would catch the capability getting it wrong. Fields left",
+    "out are not checked, which is deliberate: over-specifying turns a golden",
+    "set into a change detector that has to be edited every time anything",
+    "improves.",
+    "",
+    "`now` is the instant the sentence was typed, so relative dates resolve.",
+    "Deadlines are ISO-8601 UTC and are compared exactly.",
+    "",
+    "CI runs these against the deterministic parser, which is what ships.",
+    "tool/run_goldens.dart runs the same file against any backend, which is",
+    "how a model gets measured before anything is routed to it. The WP-6 gate",
+    "is 80%: below that, the model is worse than the parser it would replace.",
+    "",
+    "Some cases fail today, on purpose. A set trimmed to only what already",
+    "passes is a change detector, not a measurement - and the gate is a pass",
+    "rate precisely because 100% was never the bar. A failing case here is a",
+    "description of a real gap; see STATUS issue 13."
+  ],
+  "capability": "extract_task",
+  "now": "2026-08-19T09:00:00Z",
+  "cases": [
+    {
+      "name": "plain task, no detail",
+      "input": "call the bank",
+      "expect": { "title": "Call the bank", "deadline": null }
+    },
+    {
+      "name": "duration in minutes",
+      "input": "read the paper 45 minutes",
+      "expect": { "title": "Read the paper", "estimatedMinutes": 45 }
+    },
+    {
+      "name": "duration in hours",
+      "input": "write the report 2 hours",
+      "expect": { "title": "Write the report", "estimatedMinutes": 120 }
+    },
+    {
+      "name": "fractional hours",
+      "input": "review the draft 1.5 hours",
+      "expect": { "estimatedMinutes": 90 }
+    },
+    {
+      "name": "named weekday deadline",
+      "input": "finish the assignment by friday",
+      "expect": {
+        "title": "Finish the assignment",
+        "deadline": "2026-08-21T23:59:00Z"
+      }
+    },
+    {
+      "name": "deadline and duration together",
+      "input": "finish the database assignment by friday, 3 hours",
+      "expect": {
+        "title": "Finish the database assignment",
+        "deadline": "2026-08-21T23:59:00Z",
+        "estimatedMinutes": 180
+      }
+    },
+    {
+      "name": "tomorrow",
+      "input": "submit the form by tomorrow",
+      "expect": { "deadline": "2026-08-20T23:59:00Z" }
+    },
+    {
+      "name": "today",
+      "input": "email the landlord today",
+      "expect": { "deadline": "2026-08-19T23:59:00Z" }
+    },
+    {
+      "name": "tonight means this evening, not end of day",
+      "input": "pack the bag tonight",
+      "expect": { "deadline": "2026-08-19T20:00:00Z" }
+    },
+    {
+      "name": "the title does not repeat the duration",
+      "input": "gym 45 minutes",
+      "expect": { "title": "Gym" }
+    },
+    {
+      "name": "the title does not repeat the deadline",
+      "input": "renew the passport by monday",
+      "expect": { "title": "Renew the passport" }
+    },
+    {
+      "name": "leading capital is normalised",
+      "input": "TIDY THE DESK",
+      "expect": { "title": "Tidy the desk" }
+    },
+    {
+      "name": "surrounding whitespace is ignored",
+      "input": "   book the dentist   ",
+      "expect": { "title": "Book the dentist" }
+    },
+    {
+      "name": "no duration stated means none invented",
+      "input": "think about the redesign",
+      "expect": { "estimatedMinutes": null }
+    },
+    {
+      "name": "no deadline stated means none invented",
+      "input": "clean the kitchen",
+      "expect": { "deadline": null }
+    },
+    {
+      "name": "a number that is not a duration is left alone",
+      "input": "read chapter 4",
+      "expect": { "estimatedMinutes": null }
+    },
+    {
+      "name": "minutes abbreviated",
+      "input": "stretch 20 min",
+      "expect": { "estimatedMinutes": 20 }
+    },
+    {
+      "name": "hours abbreviated",
+      "input": "practise piano 1 hr",
+      "expect": { "estimatedMinutes": 60 }
+    },
+    {
+      "name": "high priority from urgency",
+      "input": "urgent: reply to the landlord",
+      "expect": { "priority": "high" }
+    },
+    {
+      "name": "ordinary sentences are normal priority",
+      "input": "water the plants",
+      "expect": { "priority": "normal" }
+    },
+    {
+      "name": "next week is seven days out",
+      "input": "plan the trip by next week",
+      "expect": { "deadline": "2026-08-26T23:59:00Z" }
+    },
+    {
+      "name": "a weekday already past this week rolls forward",
+      "input": "post the letter by tuesday",
+      "expect": { "deadline": "2026-08-25T23:59:00Z" }
+    },
+    {
+      "name": "the same weekday as today rolls a week forward",
+      "input": "return the library books by wednesday",
+      "expect": { "deadline": "2026-08-26T23:59:00Z" }
+    },
+    {
+      "name": "a long sentence keeps a usable title",
+      "input": "sort out the insurance paperwork that has been sitting on the table for weeks",
+      "expect": { "titleContains": "insurance" }
+    },
+    {
+      "name": "an empty sentence still yields something usable",
+      "input": "   ",
+      "expect": { "titleIsNotEmpty": true }
+    },
+    {
+      "name": "punctuation does not leak into the title",
+      "input": "buy milk!!!",
+      "expect": { "titleContains": "milk" }
+    },
+    {
+      "name": "a duration in the middle of the sentence is found",
+      "input": "spend 30 minutes on the budget",
+      "expect": { "estimatedMinutes": 30 }
+    },
+    {
+      "name": "both halves of a compound duration",
+      "input": "deep work 90 minutes",
+      "expect": { "estimatedMinutes": 90 }
+    }
+  ]
+}

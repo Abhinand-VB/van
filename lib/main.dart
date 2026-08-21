@@ -8,10 +8,12 @@ import 'package:van/data/repositories/nudge_repo.dart';
 import 'package:van/data/repositories/session_repo.dart';
 import 'package:van/data/repositories/settings_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
+import 'package:van/inference/backends/gemma_backend.dart';
 import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/capabilities/negotiate.dart';
-import 'package:van/inference/router.dart';
+import 'package:van/inference/config.dart';
+import 'package:van/platform/local_llm.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/platform/system_clock.dart';
 import 'package:van/ui/shell.dart';
@@ -56,12 +58,35 @@ Future<void> main() async {
   );
 
   // v1 ships with no model. Every capability has a deterministic fallback, so
-  // this is a working configuration rather than a degraded one. Swapping in a
-  // real backend is a change to assets/inference_config.json plus one class.
-  final router = InferenceRouter(
-    defaultBackend: const NullBackend(),
-    observer: EventLogInferenceObserver(events),
+  // this is a working configuration rather than a degraded one.
+  //
+  // Routing is read from the asset rather than written here, which is what
+  // makes "adding a provider is a config change" true. Every backend Van can
+  // construct is offered by name; the config decides which capability uses
+  // which. Building them is wiring, so it stays in this file.
+  final config = InferenceConfig.fromJson(
+    await rootBundle.loadString('assets/inference_config.json'),
   );
+  final warnings = <ConfigWarning>[];
+  final router = config.router(
+    available: {
+      'none': const NullBackend(),
+      'gemma_e2b': GemmaBackend(const MethodChannelLocalLlm()),
+    },
+    fallbackBackend: const NullBackend(),
+    observer: EventLogInferenceObserver(events),
+    warnings: warnings,
+  );
+  for (final warning in warnings) {
+    // A bad route is survivable - it falls back to the deterministic path -
+    // but it must not be silent, or a capability could quietly stop using the
+    // model it was meant to.
+    await events.append(EventType.inferenceFallback, {
+      'capability': 'config',
+      'backend': 'none',
+      'reason': warning.message,
+    });
+  }
 
   final waking = WakingHours(utcOffset: DateTime.now().timeZoneOffset);
 
