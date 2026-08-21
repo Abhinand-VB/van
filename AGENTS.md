@@ -9,6 +9,11 @@ is the original plan and is partly out of date; STATUS overrides it.
 Update `docs/STATUS.md` at the end of every session. It is the only handover
 between sessions - nothing else survives.
 
+When working unattended, never stop to ask a question. Choose the most
+defensible option, implement it, and record both the question and the decision
+in `docs/DECISIONS_PENDING.md`. A stalled overnight run is worth less than a
+decision the owner can reverse in the morning.
+
 ## What this project is
 
 Van is an Android app (Flutter) that helps one person stop wasting time. It does not
