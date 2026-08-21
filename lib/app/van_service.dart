@@ -218,12 +218,54 @@ class VanService {
   final StaleSessionSweep _sweep;
   final NegotiationRules _rules;
 
+  /// Operations that pick a time by reading the current plan, run one at a
+  /// time.
+  ///
+  /// One isolate is regularly mistaken for "cannot race". It cannot race in
+  /// the middle of a statement, which is not the same thing. [capture] and
+  /// [sweepStaleSessions] both read the schedule, choose a gap in it, and
+  /// write - with awaits in between for the database, the model and the
+  /// notification channel. A second one entering during any of those awaits
+  /// chooses against a plan that is half-written, and takes a slot the first
+  /// has already promised.
+  ///
+  /// Not a hypothetical pairing: the Now screen sweeps every time the app
+  /// resumes, and its composer is on the same screen.
+  ///
+  /// Only these two need it. Everything else that moves a block - `snooze`,
+  /// `stuck`, `applyNegotiation` - writes to a time the user named rather
+  /// than to a gap it went looking for, so there is nothing to lose a race
+  /// over.
+  /// Null until the first serialised call, and deliberately so.
+  ///
+  /// An eagerly-created `Future.value()` here belongs to whichever zone built
+  /// the service. Widget tests build it in `setUp` and then call in under
+  /// `fakeAsync`, so a continuation chained onto it is scheduled in a zone the
+  /// test never drains, and every such test hangs rather than fails. Starting
+  /// empty keeps the chain inside the zone that is actually using it.
+  Future<void>? _planQueue;
+
+  Future<T> _serialised<T>(Future<T> Function() action) {
+    final previous = _planQueue;
+    final result = previous == null ? action() : previous.then((_) => action());
+    // The chain has to survive a failed operation. Without swallowing the
+    // error here, one thrown exception poisons every later call on it.
+    _planQueue = result.then((_) {}, onError: (_) {});
+    return result;
+  }
+
   /// A renegotiated block never lands closer than this to now, so accepting
   /// a proposal does not fire a nudge in the same breath.
   static const _negotiatedLeadMinutes = 5;
 
   /// Captures [text], plans it, stores it and arms the notifications.
-  Future<CaptureResult> capture(String text) async {
+  ///
+  /// Serialised against the sweep and against other captures - see
+  /// [_planQueue].
+  Future<CaptureResult> capture(String text) =>
+      _serialised(() => _capture(text));
+
+  Future<CaptureResult> _capture(String text) async {
     final now = _clock.now();
 
     final draft = await _router.run(
@@ -753,7 +795,11 @@ class VanService {
   ///
   /// Safe to call often. It is a no-op when nothing is stale, which is why
   /// app open is a good enough trigger and no background isolate is needed.
-  Future<SweepReport> sweepStaleSessions() async {
+  ///
+  /// Serialised against [capture] and against itself - see [_planQueue].
+  Future<SweepReport> sweepStaleSessions() => _serialised(_sweepStaleSessions);
+
+  Future<SweepReport> _sweepStaleSessions() async {
     final now = _clock.now();
     final unresolved = await _sessions.unresolved();
     final stale = unresolved.where((s) => _sweep.isStale(s, now)).toList();

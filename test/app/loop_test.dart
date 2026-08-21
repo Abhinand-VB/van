@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -1145,6 +1146,58 @@ void main() {
       expect(missed.single.field<String>('outcome'), 'dropped');
       expect(missed.single.field<String>('skipReason'), 'pastDeadline');
       expect(await events.ofType(EventType.rescheduleApplied), isEmpty);
+    });
+
+    test('a capture arriving mid-sweep does not double-book', () async {
+      // The sweep reads the free slots once, then awaits repeatedly while it
+      // applies them - settling ladders, cancelling, saving, and arming. A
+      // capture landing in one of those windows plans against a half-applied
+      // sweep: it can see the first replacement and not the second, and take
+      // the slot the sweep has already promised.
+      //
+      // Single-isolate does not mean single-threaded enough. This parks the
+      // sweep inside the platform call that arms its first replacement, which
+      // is exactly where a real phone spends the longest.
+      final first = await service.capture('task one 45 minutes');
+      final second = await service.capture('task two 45 minutes');
+      final latest = [
+        first.sessions.first.plannedStart,
+        second.sessions.first.plannedStart,
+      ].reduce((a, b) => a.isAfter(b) ? a : b);
+      clock.advanceTo(latest.add(const Duration(minutes: 90)));
+
+      final gate = Completer<void>();
+      final reached = Completer<void>();
+      notifications
+        ..scheduleGate = gate
+        ..gateReached = reached;
+
+      final sweeping = service.sweepStaleSessions();
+      await reached.future;
+
+      // The user types while Van is still applying the sweep. Started, not
+      // awaited: awaiting it here would deadlock against the very queue this
+      // is testing, and would also not be what a person does - they press
+      // send and the app carries on.
+      final capturing = service.capture('something new 45 minutes');
+
+      gate.complete();
+      await sweeping;
+      await capturing;
+
+      final live =
+          (await sessions.unresolved()).where((s) => !s.isResolved).toList()
+            ..sort((a, b) => a.plannedStart.compareTo(b.plannedStart));
+
+      for (var i = 1; i < live.length; i++) {
+        expect(
+          live[i - 1].plannedEnd.isAfter(live[i].plannedStart),
+          isFalse,
+          reason:
+              'double-booked: ${live[i - 1].plannedStart} -> '
+              '${live[i - 1].plannedEnd} overlaps ${live[i].plannedStart}',
+        );
+      }
     });
 
     test('two abandoned blocks are both rescued, without colliding', () async {

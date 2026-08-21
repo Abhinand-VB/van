@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:van/platform/notifications.dart';
 
 /// Records what would have been shown, so the loop can be driven without a
@@ -63,10 +65,29 @@ class FakeNotifications implements Notifications {
   /// one itself by dropping to an inexact alarm, and rethrows everything else.
   bool failScheduling = false;
 
+  /// If set, the next [schedule] call parks until this completes, then clears
+  /// itself so only that one call is held.
+  ///
+  /// Van is single-isolate, so the only way two of its operations can
+  /// interleave is at an `await`. Scheduling a notification is a real one on
+  /// the device - a platform channel round-trip - and it is where a sweep
+  /// spends the longest.
+  Completer<void>? scheduleGate;
+
+  /// Completes at the moment [scheduleGate] is entered, so a test can wait for
+  /// the service to actually be parked rather than guessing.
+  Completer<void>? gateReached;
+
   @override
   Future<void> schedule(PendingNudge nudge) async {
     if (failScheduling) {
       throw Exception('the platform refused this alarm');
+    }
+    final gate = scheduleGate;
+    if (gate != null) {
+      scheduleGate = null;
+      gateReached?.complete();
+      await gate.future;
     }
     scheduled.add(nudge);
   }
