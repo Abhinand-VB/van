@@ -10,12 +10,12 @@ import 'package:van/data/repositories/session_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
-import 'package:van/inference/capabilities/negotiate.dart';
 import 'package:van/inference/router.dart';
 import 'package:van/ui/now_screen.dart';
 import 'package:van_core/van_core.dart';
 
 import '../support/fake_notifications.dart';
+import '../support/prompts.dart';
 
 void main() {
   late VanDatabase db;
@@ -45,9 +45,7 @@ void main() {
       templates: NudgeTemplates.fromJson(
         File('assets/nudge_templates/templates.json').readAsStringSync(),
       ),
-      negotiatePrompt: PromptTemplate.parse(
-        File('assets/prompts/negotiate.v1.txt').readAsStringSync(),
-      ),
+      prompts: testPrompts(),
       clock: clock,
       ids: SequentialIds('x'),
       waking: const WakingHours(utcOffset: Duration.zero),

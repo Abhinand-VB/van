@@ -7,6 +7,7 @@ import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/capabilities/extract_task.dart';
 import 'package:van/inference/capabilities/negotiate.dart';
+import 'package:van/inference/prompts.dart';
 import 'package:van/inference/router.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van_core/van_core.dart';
@@ -146,7 +147,7 @@ class VanService {
     required InferenceRouter router,
     required Notifications notifications,
     required NudgeTemplates templates,
-    required PromptTemplate negotiatePrompt,
+    required Prompts prompts,
     required Clock clock,
     required IdGenerator ids,
     WakingHours waking = const WakingHours(),
@@ -163,8 +164,9 @@ class VanService {
        _suppression = suppression ?? SuppressionPolicy(waking: waking),
        _notifications = notifications,
        _templates = templates,
+       _prompts = prompts,
        _negotiate = Negotiate(
-         prompt: negotiatePrompt,
+         prompt: prompts.negotiate,
          templates: templates,
          policy: policy,
        ),
@@ -186,6 +188,7 @@ class VanService {
   final SuppressionPolicy _suppression;
   final Notifications _notifications;
   final NudgeTemplates _templates;
+  final Prompts _prompts;
   final Negotiate _negotiate;
   final Clock _clock;
   final IdGenerator _ids;
@@ -203,7 +206,7 @@ class VanService {
     final now = _clock.now();
 
     final draft = await _router.run(
-      const ExtractTask(),
+      ExtractTask(prompt: _prompts.extractTask),
       ExtractTaskInput(text, now: now),
     );
 
@@ -358,7 +361,7 @@ class VanService {
       );
 
       final copy = await _router.run(
-        ComposeNudge(_templates),
+        ComposeNudge(_templates, prompt: _prompts.composeNudge),
         NudgeCopyRequest(
           type: type,
           level: level,

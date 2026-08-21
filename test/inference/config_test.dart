@@ -7,6 +7,8 @@ import 'package:van/inference/capabilities/extract_task.dart';
 import 'package:van/inference/config.dart';
 import 'package:van/inference/router.dart';
 
+import '../support/prompts.dart';
+
 void main() {
   final none = MockBackend(id: 'none');
   final gemma = MockBackend(id: 'gemma_e2b');
@@ -191,7 +193,7 @@ void main() {
           );
 
       await router.run(
-        const ExtractTask(),
+        ExtractTask(prompt: testPrompts().extractTask),
         ExtractTaskInput('call the bank', now: DateTime.utc(2026, 8, 19, 9)),
       );
 

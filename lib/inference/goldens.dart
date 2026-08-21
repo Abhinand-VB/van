@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:meta/meta.dart';
 import 'package:van/inference/capabilities/extract_task.dart';
+import 'package:van/inference/prompts.dart';
 import 'package:van/inference/router.dart';
 import 'package:van_core/van_core.dart';
 
@@ -136,7 +137,12 @@ class GoldenReport {
 /// the change is not a measurement of the change.
 class GoldenRunner {
   /// Creates a runner over [router].
-  const GoldenRunner(this.router);
+  const GoldenRunner(this.router, {required this.prompts});
+
+  /// The prompts a real backend would be sent. Irrelevant to the fallback,
+  /// which is why CI passes them and never notices - but a measurement of a
+  /// model that used different prompts than production would be worthless.
+  final Prompts prompts;
 
   /// Routes each case to the configured backend, falling back as normal.
   final InferenceRouter router;
@@ -153,7 +159,7 @@ class GoldenRunner {
     final outcomes = <GoldenOutcome>[];
     for (final testCase in set.cases) {
       final draft = await router.run(
-        const ExtractTask(),
+        ExtractTask(prompt: prompts.extractTask),
         ExtractTaskInput(testCase.input, now: set.now),
       );
       outcomes.add(

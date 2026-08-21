@@ -5,6 +5,7 @@ import 'package:meta/meta.dart';
 import 'package:van/inference/backend.dart';
 import 'package:van/inference/capability.dart';
 import 'package:van/inference/parsing.dart';
+import 'package:van/inference/prompts.dart';
 import 'package:van_core/van_core.dart';
 
 /// Everything needed to write one line of nudge copy.
@@ -125,10 +126,12 @@ class NudgeTemplates {
 
 /// Writes the words for a nudge whose level has already been decided.
 class ComposeNudge extends Capability<NudgeCopyRequest, NudgeCopy> {
-  /// Creates the capability over a template bank.
-  const ComposeNudge(this._templates);
+  /// Creates the capability over a prompt asset and a template bank.
+  const ComposeNudge(this._templates, {required PromptTemplate prompt})
+    : _prompt = prompt;
 
   final NudgeTemplates _templates;
+  final PromptTemplate _prompt;
 
   @override
   String get id => 'compose_nudge';
@@ -145,17 +148,14 @@ class ComposeNudge extends Capability<NudgeCopyRequest, NudgeCopy> {
   @override
   LlmRequest buildRequest(NudgeCopyRequest input, BackendCapabilities caps) {
     return LlmRequest(
-      system:
-          'You write one short line of copy for a productivity companion. '
-          'One sentence, under 140 characters, no emoji, no preamble. '
-          'The tone level has already been chosen for you; match it exactly.',
-      prompt:
-          'Tone level: ${input.level.name}\n'
-          'Task: ${input.taskTitle}\n'
-          'Block length: ${input.minutes} minutes\n'
-          'Minutes late: ${input.minutesLate}\n'
-          'Times already moved: ${input.moves}\n\n'
-          'Reply with JSON: {"text": "..."}',
+      system: _prompt.system,
+      prompt: _prompt.fill({
+        'level': input.level.name,
+        'task': input.taskTitle,
+        'minutes': '${input.minutes}',
+        'late': '${input.minutesLate}',
+        'moves': '${input.moves}',
+      }),
       jsonSchema: caps.supportsNativeStructuredOutput ? outputSchema : null,
       maxOutputTokens: 80,
       temperature: 0.9,

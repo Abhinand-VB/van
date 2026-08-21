@@ -10,6 +10,8 @@ import 'package:van/inference/parsing.dart';
 import 'package:van/inference/router.dart';
 import 'package:van_core/van_core.dart';
 
+import '../support/prompts.dart';
+
 final now = DateTime.utc(2026, 8, 19, 9);
 
 NudgeTemplates loadTemplates({int seed = 7}) => NudgeTemplates.fromJson(
@@ -174,7 +176,7 @@ void main() {
   });
 
   group('ExtractTask', () {
-    const capability = ExtractTask();
+    final capability = ExtractTask(prompt: testPrompts().extractTask);
 
     test('parses well-formed model output', () {
       final draft = capability.parse(
@@ -234,7 +236,7 @@ void main() {
     test('uses the model when it answers correctly', () async {
       backend.replyToAll('{"title": "From the model"}');
       final draft = await router.run(
-        const ExtractTask(),
+        ExtractTask(prompt: testPrompts().extractTask),
         ExtractTaskInput('anything', now: now),
       );
       expect(draft.title, 'From the model');
@@ -244,7 +246,7 @@ void main() {
     test('falls back when the backend is unavailable', () async {
       backend.goOffline();
       final draft = await router.run(
-        const ExtractTask(),
+        ExtractTask(prompt: testPrompts().extractTask),
         ExtractTaskInput('buy milk', now: now),
       );
       expect(draft.title, 'Buy milk');
@@ -256,7 +258,7 @@ void main() {
         final mock = MockBackend()..failEverything(kind);
         final only = InferenceRouter(defaultBackend: mock);
         final draft = await only.run(
-          const ExtractTask(),
+          ExtractTask(prompt: testPrompts().extractTask),
           ExtractTaskInput('buy milk', now: now),
         );
         expect(draft.title, 'Buy milk', reason: 'failed for ${kind.name}');
@@ -266,7 +268,7 @@ void main() {
     test('falls back when the model returns unparseable text', () async {
       backend.replyToAll('I am terribly sorry, I cannot help with that.');
       final draft = await router.run(
-        const ExtractTask(),
+        ExtractTask(prompt: testPrompts().extractTask),
         ExtractTaskInput('buy milk', now: now),
       );
       expect(draft.title, 'Buy milk');
@@ -276,7 +278,7 @@ void main() {
     test('a backend that throws does not take the app down', () async {
       final router = InferenceRouter(defaultBackend: _ExplodingBackend());
       final draft = await router.run(
-        const ExtractTask(),
+        ExtractTask(prompt: testPrompts().extractTask),
         ExtractTaskInput('buy milk', now: now),
       );
       expect(draft.title, 'Buy milk');
@@ -304,7 +306,7 @@ void main() {
 
       // 1. Capture from a real sentence.
       final draft = await router.run(
-        const ExtractTask(),
+        ExtractTask(prompt: testPrompts().extractTask),
         ExtractTaskInput(
           'I need to finish my database assignment by friday, 4 hours',
           now: now,
@@ -353,7 +355,10 @@ void main() {
       expect(live.single.level, InterventionLevel.l1Check);
 
       // 4. Write the words for it, twice, and get different lines.
-      final capability = ComposeNudge(templates);
+      final capability = ComposeNudge(
+        templates,
+        prompt: testPrompts().composeNudge,
+      );
       final texts = <String>{};
       for (var i = 0; i < 4; i++) {
         final copy = await InferenceRouter(defaultBackend: dead).run(

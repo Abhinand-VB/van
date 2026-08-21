@@ -5,8 +5,11 @@ import 'package:van/inference/backend.dart';
 import 'package:van/inference/backends/mock_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/capabilities/negotiate.dart';
+import 'package:van/inference/prompts.dart';
 import 'package:van/inference/router.dart';
 import 'package:van_core/van_core.dart';
+
+import '../support/prompts.dart';
 
 void main() {
   late Negotiate negotiate;
@@ -15,9 +18,7 @@ void main() {
 
   setUp(() {
     negotiate = Negotiate(
-      prompt: PromptTemplate.parse(
-        File('assets/prompts/negotiate.v1.txt').readAsStringSync(),
-      ),
+      prompt: testPrompts().negotiate,
       templates: NudgeTemplates.fromJson(
         File('assets/nudge_templates/templates.json').readAsStringSync(),
       ),

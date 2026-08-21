@@ -3,50 +3,8 @@ import 'package:van/inference/backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/capability.dart';
 import 'package:van/inference/parsing.dart';
+import 'package:van/inference/prompts.dart';
 import 'package:van_core/van_core.dart';
-
-/// A prompt loaded from `assets/prompts/`, split into its two halves.
-///
-/// Prompts are assets rather than string literals so they can be versioned,
-/// diffed and swapped without a rebuild - a prompt change is a content change,
-/// and reviewing one inside a Dart file is miserable.
-@immutable
-class PromptTemplate {
-  /// Creates a template.
-  const PromptTemplate({required this.system, required this.prompt});
-
-  /// Parses the `SYSTEM` / `PROMPT` format used under `assets/prompts/`.
-  factory PromptTemplate.parse(String source) {
-    const systemMarker = 'SYSTEM\n';
-    const promptMarker = '\nPROMPT\n';
-
-    final split = source.indexOf(promptMarker);
-    if (split < 0 || !source.startsWith(systemMarker)) {
-      // A malformed asset must not be a crash on a background thread. The
-      // whole file becomes the prompt, which is degraded but works.
-      return PromptTemplate(system: '', prompt: source.trim());
-    }
-    return PromptTemplate(
-      system: source.substring(systemMarker.length, split).trim(),
-      prompt: source.substring(split + promptMarker.length).trim(),
-    );
-  }
-
-  /// Instructions that frame the task.
-  final String system;
-
-  /// The body, with `{placeholders}` still in it.
-  final String prompt;
-
-  /// Substitutes `{key}` for each entry in [values].
-  String fill(Map<String, String> values) {
-    var filled = prompt;
-    for (final entry in values.entries) {
-      filled = filled.replaceAll('{${entry.key}}', entry.value);
-    }
-    return filled;
-  }
-}
 
 /// Everything Van knows about a block that is not starting.
 @immutable

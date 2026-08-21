@@ -5,6 +5,8 @@ import 'package:van/inference/backends/mock_backend.dart';
 import 'package:van/inference/goldens.dart';
 import 'package:van/inference/router.dart';
 
+import '../support/prompts.dart';
+
 void main() {
   GoldenSet loadExtractTask() => GoldenSet.fromJson(
     File('test/golden/extract_task.json').readAsStringSync(),
@@ -39,6 +41,7 @@ void main() {
       // the number a candidate model has to beat, and it is measured by the
       // same runner rather than asserted from memory.
       final report = await GoldenRunner(
+        prompts: testPrompts(),
         InferenceRouter(defaultBackend: MockBackend(available: false)),
       ).run(loadExtractTask());
 
@@ -47,6 +50,7 @@ void main() {
 
     test('scores the same on every run', () async {
       Future<double> score() async => (await GoldenRunner(
+        prompts: testPrompts(),
         InferenceRouter(defaultBackend: MockBackend(available: false)),
       ).run(loadExtractTask())).passRate;
 
@@ -62,6 +66,7 @@ void main() {
         ..replyToAll('{"title": "Wrong", "estimatedMinutes": 1}');
 
       final report = await GoldenRunner(
+        prompts: testPrompts(),
         InferenceRouter(defaultBackend: backend),
       ).run(loadExtractTask());
 
@@ -75,6 +80,7 @@ void main() {
         ..replyToAll('{"title": "Wrong", "estimatedMinutes": 1}');
 
       final report = await GoldenRunner(
+        prompts: testPrompts(),
         InferenceRouter(defaultBackend: backend),
       ).run(loadExtractTask());
 
@@ -88,6 +94,7 @@ void main() {
       final backend = MockBackend()..replyToAll('sorry, I cannot help');
 
       final report = await GoldenRunner(
+        prompts: testPrompts(),
         InferenceRouter(defaultBackend: backend),
       ).run(loadExtractTask());
 
@@ -103,6 +110,7 @@ void main() {
       expect(
         () => GoldenRunner(
           InferenceRouter(defaultBackend: MockBackend()),
+          prompts: testPrompts(),
         ).run(unknown),
         throwsUnsupportedError,
       );

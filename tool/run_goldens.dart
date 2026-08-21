@@ -20,6 +20,7 @@ import 'dart:io';
 
 import 'package:van/inference/backends/mock_backend.dart';
 import 'package:van/inference/goldens.dart';
+import 'package:van/inference/prompts.dart';
 import 'package:van/inference/router.dart';
 
 Future<void> main(List<String> args) async {
@@ -39,6 +40,9 @@ Future<void> main(List<String> args) async {
   // candidate has to beat.
   final report = await GoldenRunner(
     InferenceRouter(defaultBackend: MockBackend(available: false)),
+    prompts: await Prompts.load(
+      (path) async => File(path).readAsString(),
+    ),
   ).run(set);
 
   stdout

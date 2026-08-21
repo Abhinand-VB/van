@@ -1,6 +1,7 @@
 import 'package:van/inference/backend.dart';
 import 'package:van/inference/capability.dart';
 import 'package:van/inference/parsing.dart';
+import 'package:van/inference/prompts.dart';
 import 'package:van_core/van_core.dart';
 
 /// The raw text a user typed, plus the instant it was typed.
@@ -22,10 +23,14 @@ class ExtractTaskInput {
 /// because task capture is the most commoditised part of this product and the
 /// least worth spending model quality on.
 class ExtractTask extends Capability<ExtractTaskInput, TaskDraft> {
-  /// Creates the capability.
-  const ExtractTask({TemporalParser parser = const TemporalParser()})
-    : _parser = parser;
+  /// Creates the capability over a prompt asset.
+  const ExtractTask({
+    required PromptTemplate prompt,
+    TemporalParser parser = const TemporalParser(),
+  }) : _prompt = prompt,
+       _parser = parser;
 
+  final PromptTemplate _prompt;
   final TemporalParser _parser;
 
   @override
@@ -60,14 +65,12 @@ class ExtractTask extends Capability<ExtractTaskInput, TaskDraft> {
               '"estimatedMinutes": 120 or null, "priority": "normal"}';
 
     return LlmRequest(
-      system:
-          'You extract a single task from a sentence. Do not invent a '
-          'deadline or a duration that was not stated - null is correct and '
-          'a wrong deadline is worse than none. The title must not repeat '
-          'the date or duration wording.',
-      prompt:
-          'Current time (UTC): ${input.now.toIso8601String()}\n'
-          'Sentence: ${input.text}$schemaHint',
+      system: _prompt.system,
+      prompt: _prompt.fill({
+        'now': input.now.toIso8601String(),
+        'text': input.text,
+        'schemaHint': schemaHint,
+      }),
       jsonSchema: caps.supportsNativeStructuredOutput ? outputSchema : null,
       maxOutputTokens: 200,
       temperature: 0.2,
