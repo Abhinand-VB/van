@@ -88,6 +88,66 @@ untouched one, because the next iteration cannot tell how far it got.
 
 ---
 
+## 3a. Working with the phone
+
+The device is a Galaxy S25, serial `<device-serial>`, configured so unattended work
+is possible: **screen timeout 15s** (burn-in protection, deliberate), but
+**lock after 30 minutes**. The screen going dark is not the same as the phone
+locking. As long as iterations are less than 30 minutes apart and each one
+wakes the screen, the keyguard never engages and the UI can be driven.
+
+`adb` lives at `%LOCALAPPDATA%\Android\Sdk\platform-tools`. In Git Bash,
+prefix Android paths with `MSYS_NO_PATHCONV=1` or they get rewritten into
+Windows paths.
+
+**Before any UI interaction, every time:**
+
+```bash
+adb shell input keyevent KEYCODE_WAKEUP
+sleep 1
+adb shell dumpsys window | grep -i mCurrentFocus
+```
+
+If `mCurrentFocus` names Keyguard, NotificationShade or StatusBar, the phone
+locked. **Do not try to get past it.** Record that device work was blocked in
+STATUS and carry on with code-only items — there are plenty.
+
+If it names `dev.van.app`, you are clear to drive the UI. The 15s timeout will
+blank the screen between commands; just wake it again. Taps on a dark screen
+silently do nothing and report no error, which is exactly how an hour gets
+wasted.
+
+**Check Do Not Disturb, do not change it:**
+
+```bash
+adb shell settings get global zen_mode
+```
+
+`0` means off. Anything else means `SuppressionPolicy` will hold back every
+nudge below importance 10, and a test of a firing nudge will look like a bug
+when it is the design working. If it is on, say so in STATUS and test with an
+urgent-channel nudge instead. Changing the owner's system settings is not
+yours to do.
+
+**Screenshots.** Only of Van's own UI, only to verify Van's own behaviour. If a
+screenshot catches anything else — a call, a message, someone's contact
+details — do not describe it, do not keep it, and move on.
+
+**What device verification actually needs to prove**, in order:
+
+1. Capture a task through the UI and confirm it lands in the database
+2. A scheduled nudge fires at its time, with the drum sound
+3. The START action on the notification round-trips into `sessionStarted`
+4. Behaviour after 30+ minutes idle (Doze)
+
+Pull the database to check rather than guessing:
+
+```bash
+MSYS_NO_PATHCONV=1 adb exec-out run-as dev.van.app cat /data/data/dev.van.app/app_flutter/van.sqlite > build/devicecheck/van.sqlite
+```
+
+---
+
 ## 4. Hard rules
 
 - **Commit only when green.** Every commit must pass the full gate in section 1.

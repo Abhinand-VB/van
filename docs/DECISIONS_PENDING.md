@@ -29,7 +29,7 @@ on them; note them and move on.
 
 | # | Blocker | Why an agent cannot do it |
 |---|---|---|
-| B2 | Device verification of a firing nudge | The phone auto-locks and an agent cannot get past the keyguard. Needs the screen unlocked, timeout raised, Do Not Disturb off. |
+| B2 | Device verification of a firing nudge | **Now usually possible.** Lock is set to 30 minutes while the screen sleeps at 15s, so waking it does not require unlocking. See OVERNIGHT.md 3a for the procedure. Still blocked if the phone has been idle past 30 minutes and the keyguard has engaged - record it and move on rather than trying to bypass it. |
 | B3 | Cloud backends (WP-9) | Needs an API key, which must never be committed. |
 | B4 | On-device model download (WP-6) | A multi-gigabyte download onto the device, plus a real benchmark run on hardware the agent cannot unlock. Code can be written; the numbers cannot be taken. |
 
