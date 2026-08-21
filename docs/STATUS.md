@@ -19,7 +19,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **320 tests passing** — 211 in `packages/van_core` (pure Dart), 109 in the app.
+- **365 tests passing** — 230 in `packages/van_core` (pure Dart), 135 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -39,6 +39,9 @@ working configuration, not a degraded one.
 | App: nudge record and fatigue | 9 |
 | App: first run and permissions | 9 |
 | App: settings store | 8 |
+| App: Now screen | 4 |
+| App: negotiate capability | 22 |
+| Core: negotiation rules | 19 |
 
 ---
 
@@ -61,6 +64,8 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+889f23f  Build the negotiate capability, with the model kept on a short lead
+37de632  Stop the Now screen showing the same task twice
 02e045e  Ask for permission once, then say so instead of nagging
 c0ba269  Make the fatigue logic real instead of well-tested and unreachable
 3085a06  Fix the reason no nudge has ever fired on the device
@@ -201,6 +206,48 @@ a broken scheduler.
 
 ---
 
+## 3c. How `negotiate` keeps a model on a short lead
+
+`negotiate` is the only capability whose output is an **action** rather than
+text, so it is the one that most needs AGENTS.md rule 3: the model never
+mutates state.
+
+It is deliberately split across the layer boundary:
+
+- **`Negotiate`** (`lib/inference/capabilities/negotiate.dart`) owns the
+  prompt, the schema and the parsing, and returns a `NegotiationProposal`.
+- **`NegotiationRules`** (`van_core`, pure) decides whether Van may act on it.
+
+The binding constraint is the intervention level, and **the level is never the
+model's to pick**. `InterventionPolicy` chooses it before the prompt is built,
+and the prompt is told which actions that level permits:
+
+| Level | May propose |
+|---|---|
+| l0Gentle, l1Check, l2Diagnose | `hold` |
+| l3Shrink, l4Renegotiate | `hold`, `shrink` |
+| l5Concede | `hold`, `shrink`, `defer`, `release` |
+
+So an l0 prompt cannot cancel your afternoon even if the model asks it to. That
+check lives in the domain rather than in `parse` on purpose: the parser sees
+well-formed JSON with a real action and accepts it; refusing it is a business
+rule, not a syntax one. There is a test asserting exactly that division, and it
+is the one to keep if any others are ever cut.
+
+**The fallback is deliberately timid.** It offers the smallest thing the level
+allows, not the largest - a wrong `hold` costs one more notification, a wrong
+`release` loses the work. It concedes by halving rather than releasing whenever
+half a block is still above `minimumBlockMinutes`. One test sweeps forty
+combinations and asserts the fallback is never something the rules would
+refuse, because a fallback that fails validation leaves Van with nothing to say
+at all.
+
+**Prompts are assets now.** `assets/prompts/negotiate.v1.txt` is the first
+prompt to actually follow the AGENTS.md rule; `PromptTemplate` is the loader
+the other two capabilities can move to. See issue 11.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -217,7 +264,9 @@ than this file.**
 | 6 | Legacy launcher icons are Flutter's default | `mipmap-*/ic_launcher.png` still show the Flutter logo below API 26. The adaptive icon covers everything at or above it. |
 | 7 | ~~`NudgeRepo` is never constructed in production~~ | **Done, 21 Aug 2026** (`c0ba269`). See section 3b. |
 | 8 | ~~The exact-alarm settings screen opens on every cold start~~ | **Done, 21 Aug 2026** (`02e045e`). Asked once, latched in the `settings` table; a standing banner on the Now screen replaces the nagging. Verified on the phone. |
-| 9 | **"After that" can repeat the task shown in NEXT** | Spotted on the device, minor. `now_screen.dart` builds that list as `_open.skip(1)`, which assumes the first open *task* is the one the NEXT card is showing. NEXT comes from `service.next()` and is session-based, so the two disagree whenever the next session belongs to a task that is not first by deadline order. The screenshot from 21 Aug shows "Hi" in both places. Filter by the NEXT card's task id instead of skipping by position. |
+| 9 | ~~"After that" can repeat the task shown in NEXT~~ | **Done, 21 Aug 2026** (`37de632`). Verified on the phone. |
+| 10 | **`negotiate` is built but nothing calls it** | `889f23f`. The capability, its rules and its tests are done, but no code path invokes it. Its natural trigger is the user telling Van *why* — which is the chat screen, and does not exist. **This is the same shape as issue 7**, where a well-tested class sat unreachable for weeks, so it is on the board rather than buried in a commit message. Either wire it (chat screen) or accept it as phase-3 groundwork, but do not let it quietly become furniture. |
+| 11 | `ExtractTask` and `ComposeNudge` still hold their prompts inline | AGENTS.md has always said prompts live in `assets/prompts/` and are versioned; that directory sat empty until `889f23f`. `Negotiate` now loads `negotiate.v1.txt` via `PromptTemplate`, which is the loader the other two can move to. Not urgent, but it is a stated rule the codebase was quietly breaking. |
 
 ---
 
@@ -390,6 +439,16 @@ one-hour window.
 tasks and six notifications between 09:00 and 09:55, listed in the table above.
 Press START on any one of them and issue 3 closes.
 
+### Fourth run, ~02:37, after the Now-screen fix
+
+- Issue 9 is fixed and visible: the card shows "Hi", and "After that" lists
+  "Fatigue wiring check" and "Alarm wiring check". Last night's screenshot had
+  "Hi" in both places.
+- The first-run fix is still holding - a fresh install plus relaunch went
+  straight to the Now screen, no settings ambush.
+- The banner is still showing the understated variant, and all six morning
+  alarms survived a third reinstall.
+
 ---
 
 ## 6. Product decisions on record
@@ -417,22 +476,22 @@ Press START on any one of them and issue 3 closes.
 
 ## 7. Suggested next steps, in order
 
-1. **Grant Van "Alarms & reminders"** — now reachable by tapping the banner on
-   the Now screen, no hunting through settings. One tap, and it is the last
-   thing between Van and firing on the minute rather than within the hour.
+1. **Grant Van "Alarms & reminders"** - tap the banner on the Now screen. One
+   tap, and it is the last thing between Van firing on the minute rather than
+   within the hour.
 2. **Watch a nudge arrive and press START.** That closes the last gap in issue
    3 and is the only part of the loop never yet observed end to end.
 3. **Use it for a week.** The loop is functionally complete (`74cb226`), can
    reach you (`3085a06`), backs off when ignored (`c0ba269`), and no longer
    ambushes you at launch (`02e045e`). Everything after this should be driven
-   by what annoys or fails in real use. Three things I would watch: the sweep's
-   five-minute replacement lead may feel too eager, the fatigue threshold of
-   two ignored ladders may prove too twitchy or too slow
-   (`SuppressionPolicy.dismissalLimit`, one number), and issue 9 is the kind of
-   small wrongness that gets irritating fast.
-4. Then either the `negotiate` capability, the chat screen, or WP-6
-   (on-device Gemma 4), depending on whether nudge quality or capture friction
-   turns out to be the real problem.
+   by what annoys or fails in real use. Two dials I would watch: the sweep's
+   five-minute replacement lead may feel too eager, and the fatigue threshold
+   of two ignored ladders may prove too twitchy or too slow
+   (`SuppressionPolicy.dismissalLimit`, one number).
+4. **Decide what happens to `negotiate`** (issue 10). It is built and unused.
+   The honest options are to build the chat screen so it has a trigger, or to
+   label it phase-3 groundwork and stop adding capabilities until something
+   calls one. I would not build a fourth capability before either.
 
 ---
 
@@ -440,6 +499,49 @@ Press START on any one of them and issue 3 closes.
 
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
+
+### 21 August 2026, overnight — a small wrongness, and `negotiate`
+
+**Finished.** Two things.
+
+*Issue 9* (`37de632`): the Now screen showed the same task twice - once on the
+card, once in "After that" below it. The list was built as `_open.skip(1)`,
+which assumes the first open task is the one the card is showing. Usually it
+is, which is why this survived. But the card is ordered by which session starts
+soonest and the list by deadline, so the moment those disagree it hides an
+unrelated task and repeats the one already on screen. The regression test
+builds that disagreement deliberately and has a guard that fails if the two
+orderings happen to agree, so it cannot quietly stop testing anything. Verified
+on the phone.
+
+*Work queue item 2* (`889f23f`): the `negotiate` capability, declared in config
+since WP-5 with no class behind it. Section 3c explains the design; the short
+version is that it is the only capability whose output is an action rather than
+text, so the model proposes and the domain disposes. An l0 prompt cannot cancel
+your afternoon even if the model asks it to. 320 to 365 tests.
+
+It is also the first prompt to live in `assets/prompts/` rather than inline in
+Dart, which AGENTS.md has required from the start while that directory sat
+empty.
+
+**Decided on your behalf** - `DECISIONS_PENDING.md` D13-D15. D13 is the one to
+read: the fallback concedes by halving rather than releasing, on the grounds
+that a wrong hold costs a notification and a wrong release loses the work.
+
+**Flagged rather than hidden.** `negotiate` is built and **nothing calls it**.
+Its trigger is the user telling Van why, which is the chat screen and does not
+exist. That is the same shape as issue 7, where a well-tested class sat
+unreachable for weeks, so it is issue 10 on the board rather than a line in a
+commit message. My recommendation is in next-step 4: do not build a fourth
+capability before something calls one.
+
+**Tried, and learned from.** One of my own new tests asserted the built prompt
+contained no opening brace - but the prompt ends with a JSON example that
+legitimately has them. The assertion now names the eight placeholders and
+checks none of them survived, which is what I actually meant.
+
+**What I need from you.** Nothing blocking. The `negotiate` question in
+next-step 4 is the one that would change what I do next.
 
 ### 21 August 2026, overnight — ask once, then inform
 
