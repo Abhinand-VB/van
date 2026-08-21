@@ -19,7 +19,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **393 tests passing** — 230 in `packages/van_core` (pure Dart), 163 in the app.
+- **412 tests passing** — 230 in `packages/van_core` (pure Dart), 182 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -43,6 +43,7 @@ working configuration, not a degraded one.
 | App: negotiate capability | 22 |
 | App: chat and task list | 14 |
 | App: notification ids | 6 |
+| App: negotiation, service and chat | 19 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -66,6 +67,8 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+a4a6cd8  Give the conversation somewhere to happen
+01d24ed  Let Van renegotiate a stalled block, and act on the answer
 6a0d693  Derive notification ids instead of remembering them
 9e08ef3  Build the chat screen and the flat task list
 9a57658  Add the two service calls the chat screen and task list need
@@ -254,6 +257,48 @@ the other two capabilities can move to. See issue 11.
 
 ---
 
+## 3d. The negotiation loop, end to end
+
+The conversation Van was designed around: not "you did not start" but "you did
+not start — what would work instead". Three pieces.
+
+**`VanService.negotiate(sessionId, reason:)`** asks. It builds the context,
+runs the capability, and returns a proposal. **Nothing changes.**
+
+**`VanService.applyNegotiation(sessionId, proposal, reason:)`** carries one
+out. It re-validates rather than trusting what it is handed, because a
+proposal can sit on screen while the block gets started or swept.
+
+**Chat** is where it happens. Two modes, and the composer hint is the only
+thing telling the user which: normally typing captures a task; when a block has
+stalled, chat opens with a card naming it and typing answers it instead.
+
+Four things to know before changing any of it:
+
+1. **The reason has to travel with the proposal.** The level depends on whether
+   the user explained themselves — explaining earns a smaller ask — so
+   `applyNegotiation` without the reason recomputes a lower level and refuses
+   Van's own proposal. That is not a hole in the gate: the words are the
+   user's, and what is guarded against is a *model* reaching for something
+   drastic, which is still checked either way.
+2. **Holding is not settling.** A hold means the deal stands, so the +10 and
+   +25 rungs must still fire. `_settleLadder` marks unfired rungs suppressed,
+   which is the opposite. It is split now: `_recordAnswer` is the half that
+   records without standing anything down, and hold uses only that.
+3. **A bare acknowledgement is not a reason.** `NudgeResponse` asserts that a
+   `reason` response carries text. Accepting without typing records nothing
+   rather than filing Van's own sentence as if the user had written it;
+   accepting a move without words is recorded as a snooze, which is what it is.
+4. **`stalled()` is deliberately not `next()`.** `next` answers "what should I
+   do"; `stalled` answers "what did I say I would do and then not". Different
+   questions, different orderings.
+
+The accept button names the action — *Shrink it*, *Move it*, *Drop it* — rather
+than saying OK. A button that might cancel your afternoon should say so, and
+there is a test pinning that so it does not erode back into "OK".
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -271,8 +316,8 @@ than this file.**
 | 7 | ~~`NudgeRepo` is never constructed in production~~ | **Done, 21 Aug 2026** (`c0ba269`). See section 3b. |
 | 8 | ~~The exact-alarm settings screen opens on every cold start~~ | **Done, 21 Aug 2026** (`02e045e`). Asked once, latched in the `settings` table; a standing banner on the Now screen replaces the nagging. Verified on the phone. |
 | 9 | ~~"After that" can repeat the task shown in NEXT~~ | **Done, 21 Aug 2026** (`37de632`). Verified on the phone. |
-| 10 | **`negotiate` is built but nothing calls it** | Still true, but the reason is now narrower. `889f23f` built the capability; `9e08ef3` built the chat screen, which is where its trigger belongs. What is missing is the *conversation*: chat currently only captures. Wiring `negotiate` means letting the user reply to a nudge with a reason and rendering the proposal as a second kind of card. That is the next obvious piece of work and it now has a concrete home. |
-| 12 | **`dumpsys alarm` cannot tell you what is pending** | Recorded because it cost me an hour tonight. The `type=RTC_WAKEUP tag=*walarm*:dev.van.app` lines live in a *cancellation history* section — each entry carries `Reason=alarm_cancelled` or `Reason=pi_cancelled`. Cancelling an alarm **adds** a line there, so the count only ever grows and looks like a leak. The truth is in `shared_prefs/scheduled_notifications.xml`, which lists exactly what will fire. See section 5b for the command. |
+| 10 | ~~`negotiate` is built but nothing calls it~~ | **Done, 21 Aug 2026** (`01d24ed`, `a4a6cd8`). See section 3d. |
+| 12 | **`dumpsys alarm` cannot tell you what is pending** | Recorded because it cost me an hour tonight. The `type=RTC_WAKEUP tag=*walarm*:dev.van.app` lines live in a *cancellation history* section — each entry carries `Reason=alarm_cancelled` or `Reason=pi_cancelled`. Cancelling an alarm **adds** a line there, so the count only ever grows and looks like a leak. The truth is in `shared_prefs/scheduled_notifications.xml`, which lists exactly what will fire. The command is in section 5a, under the fifth run. |
 | 11 | `ExtractTask` and `ComposeNudge` still hold their prompts inline | AGENTS.md has always said prompts live in `assets/prompts/` and are versioned; that directory sat empty until `889f23f`. `Negotiate` now loads `negotiate.v1.txt` via `PromptTemplate`, which is the loader the other two can move to. Not urgent, but it is a stated rule the codebase was quietly breaking. |
 
 ---
@@ -493,6 +538,37 @@ with them. Two tasks remain open: "Alarm wiring check" and "Hi".
 Still `inexactAllowWhileIdle`, so they will land near those times rather than
 on them until you grant the alarm permission from the banner.
 
+### Sixth run, ~03:20, the negotiation loop
+
+**Verified on the phone:** the build runs, chat still captures cleanly
+("Negotiate wiring check", 25 min at 09:30), and **no stall card appears** —
+correct, because at 03:20 both remaining blocks are still in the future. That
+is one of the tested behaviours confirmed on hardware.
+
+**Not verified on hardware, and I could not:** the stall conversation itself.
+It needs a block that is already past due, and there is no way to create one
+through the UI — capture always schedules forwards, and moving the device clock
+would be changing your system settings. It is covered by eight widget tests
+driving the real service over a real database, but I have not seen it on the
+phone and am not going to claim otherwise.
+
+**You can settle it in about a minute.** Let the 09:00 block go by without
+pressing START, then open Chat. It should greet you with the block, "Due N min
+ago. Not started.", and "What's in the way?". Type something and you will get a
+proposal card with a named button.
+
+**What is on your phone in the morning: six notifications, two ladders.**
+
+| Task | Nudges |
+|---|---|
+| "Hi" | block at 08:00, no ladder (armed before the alarm fix) |
+| "Alarm wiring check" | 09:00, 09:10, 09:25 |
+| "Negotiate wiring check" | 09:30, 09:40, 09:55 |
+
+Confirmed from the plugin's own store, not from `dumpsys` (issue 12). Still
+`inexactAllowWhileIdle`, so they land near those times rather than on them
+until you grant the alarm permission from the banner.
+
 ---
 
 ## 5c. The cancel that never worked
@@ -556,18 +632,19 @@ across processes here, which the derived ids depend on.
 ## 7. Suggested next steps, in order
 
 1. **Grant Van "Alarms & reminders"** - tap the banner on the Now screen.
-2. **Watch a nudge arrive and press START.** Three are armed for 09:00, 09:10
-   and 09:25. This closes the last gap in issue 3, and it now also exercises
-   the cancel fix in `5c`: pressing START should stop the 09:10 and 09:25
-   rungs, which before tonight it would not have.
-3. **Use it for a week.** The loop is complete, can reach you, backs off when
-   ignored, no longer ambushes you at launch, and now actually stands nudges
-   down when you respond. Everything after this should be driven by what
-   annoys or fails in real use.
-4. **Wire `negotiate` into chat** (issue 10). The capability is built and the
-   screen now exists; what is missing is letting you reply to a nudge with a
-   reason and rendering the proposal as a second kind of card. It is the last
-   thing standing between Van and the conversation it was designed around.
+2. **Watch a nudge arrive and press START.** Six are armed across two blocks.
+   This closes the last gap in issue 3 and exercises the cancel fix in 5c:
+   pressing START should stop that block's later rungs.
+3. **Ignore the 09:00 block on purpose, then open Chat.** One minute, and it
+   is the only part of the negotiation loop I could not reach on hardware.
+4. **Use it for a week.** Every piece is now built and connected: capture,
+   planning, nudging, backing off, sweeping, and renegotiating. Everything
+   after this should be driven by what actually annoys or fails. Three dials
+   worth watching, all one number each: the sweep's five-minute replacement
+   lead, `SuppressionPolicy.dismissalLimit`, and whether halving a block is
+   the right first concession.
+5. Then WP-6 (on-device Gemma 4), or issue 11, or nothing. The loop is
+   complete; the next real signal should come from using it.
 
 ---
 
@@ -575,6 +652,43 @@ across processes here, which the derived ids depend on.
 
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
+
+### 21 August 2026, overnight — the conversation, finally
+
+**Finished.** Issue 10, in two halves, and with it the last piece of the loop.
+
+*The service* (`01d24ed`): `negotiate` asks what to do about a stalled block
+and returns a proposal; `applyNegotiation` carries one out. Nothing changes in
+between, which is what makes AGENTS.md rule 3 real rather than decorative — the
+model proposes, the domain disposes, and the gap between them is a method
+boundary you can see. The gate runs on the way in *and* on the way out, because
+a proposal can sit on screen while the block gets started or swept.
+
+*The chat side* (`a4a6cd8`): chat opens the conversation when a block has
+stalled, and the composer hint changes so a reply is an answer rather than a
+task called "too tired". Van asks once per block — reopening the same question
+on every resume would be notification fatigue wearing a different hat. Section
+3d has the details worth knowing before touching it.
+
+393 to 412 tests.
+
+**Three bugs I wrote and then found.** All three were caught by tests I wrote
+against the behaviour rather than the implementation, which is the argument for
+writing them that way. `applyNegotiation` forgot the user's reason and so
+recomputed a lower level and refused Van's own proposal. `hold` called
+`_settleLadder`, which stands unfired rungs down — the exact opposite of what
+holding means. And a `reason` response was recorded with no text, which
+`NudgeResponse` rightly asserts against.
+
+**What I could not verify on hardware, and why.** The stall conversation needs
+a block that is already past due, and there is no way to make one through the
+UI — capture always schedules forwards, and moving the device clock would be
+changing your system settings. Eight widget tests cover it against the real
+service and a real database. You can settle it in a minute: ignore the 09:00
+block, then open Chat. Next-step 3.
+
+**What I need from you.** Nothing blocking. The loop is complete as of tonight,
+so the honest next step is to use it and let real annoyance pick the next task.
 
 ### 21 August 2026, overnight — the chat screen, and a cancel that never worked
 
