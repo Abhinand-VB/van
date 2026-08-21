@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/platform/notifications.dart';
+import 'package:van/ui/background.dart';
 import 'package:van/ui/focus_screen.dart';
 import 'package:van_core/van_core.dart';
 
@@ -48,7 +49,7 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_refresh());
+    inBackground(_refresh());
   }
 
   @override
@@ -63,7 +64,7 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
     // Coming back to the app is Van's cheapest reliable trigger. It is also
     // the moment the user is most likely to accept being told that this
     // morning's block has been moved to this afternoon.
-    if (state == AppLifecycleState.resumed) unawaited(_refresh());
+    if (state == AppLifecycleState.resumed) inBackground(_refresh());
   }
 
   Future<void> _refresh() async {

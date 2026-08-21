@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
+import 'package:van/ui/background.dart';
 import 'package:van_core/van_core.dart';
 
 /// One line in the conversation.
@@ -102,7 +103,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_askAboutStall());
+    inBackground(_askAboutStall());
   }
 
   @override
@@ -115,7 +116,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_askAboutStall());
+    if (state == AppLifecycleState.resumed) inBackground(_askAboutStall());
   }
 
   /// Opens the conversation if a block is sitting there unstarted.
@@ -266,7 +267,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void _toBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_scroll.hasClients) return;
-      unawaited(
+      inBackground(
         _scroll.animateTo(
           _scroll.position.maxScrollExtent,
           duration: const Duration(milliseconds: 200),

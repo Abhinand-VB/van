@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:van/app/van_service.dart';
+import 'package:van/ui/background.dart';
 import 'package:van_core/van_core.dart';
 
 /// The screen you are on while actually working.
@@ -54,7 +55,7 @@ class _FocusScreenState extends State<FocusScreen> {
     _remaining = _remainingFor(widget.session, widget.clock.now());
     // The screen stays awake: a focus timer that blanks out is a focus timer
     // you stop trusting.
-    unawaited(
+    inBackground(
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky),
     );
     _ticker = Timer.periodic(const Duration(seconds: 1), _tick);
@@ -63,7 +64,7 @@ class _FocusScreenState extends State<FocusScreen> {
   @override
   void dispose() {
     _ticker?.cancel();
-    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
+    inBackground(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
     super.dispose();
   }
 

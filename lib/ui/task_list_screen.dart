@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
+import 'package:van/ui/background.dart';
 import 'package:van_core/van_core.dart';
 
 /// Everything still open, in one flat list.
@@ -33,7 +34,7 @@ class _TaskListScreenState extends State<TaskListScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    unawaited(_refresh());
+    inBackground(_refresh());
   }
 
   @override
@@ -44,7 +45,7 @@ class _TaskListScreenState extends State<TaskListScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) unawaited(_refresh());
+    if (state == AppLifecycleState.resumed) inBackground(_refresh());
   }
 
   Future<void> _refresh() async {
@@ -122,9 +123,7 @@ class _TaskListScreenState extends State<TaskListScreen>
                             _open = [..._open]
                               ..removeWhere((t) => t.id == task.id),
                       );
-                      unawaited(
-                        _refresh().catchError((Object _, StackTrace _) {}),
-                      );
+                      inBackground(_refresh());
                     },
                     child: _TaskRow(task: task, now: widget.clock.now()),
                   );
