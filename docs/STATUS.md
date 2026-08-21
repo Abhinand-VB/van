@@ -27,12 +27,14 @@ on a phone that runs.** Four things need you, and they are small:
      09:30, 09:40 and 09:55.
    - Three more rows exist but are stood down (`answeredBeforeItFired`) and
      will not fire.
-   - The 09:00 block ("Alarm wiring check") **has no nudge rows left in Van's
-     database at all**, though the log shows three were armed with Android at
-     01:40 for 09:00, 09:10 and 09:25. Whether Android still fires them is not
-     something I can see from here — see issue 23. If a notification did appear
-     around 09:00, that is why, and pressing START on it is still the useful
-     test.
+   - The 09:00 block ("Alarm wiring check") has three alarms registered with
+     Android — armed at 01:40 for 09:00, 09:10 and 09:25 — but **no rows in
+     Van's database**, because it was armed twelve minutes before the fix that
+     started writing them (issue 23, now explained and closed). If one of those
+     appeared around 09:00, **pressing START on it still works**: the action
+     carries the session id, that session still exists, and `startSession`
+     does not need the nudge row. It simply will not be counted as a nudge
+     that was answered.
 
    This is the last unverified step of the loop, and until 05:15 this morning
    it would have silently done nothing with Van not running — which is exactly
@@ -907,6 +909,43 @@ know.
 
 ---
 
+## 3q. Date an anomaly against the commit log before calling it a bug
+
+Issue 23 was opened at 09:07 on 21 Aug as an unexplained data anomaly: three
+`nudgeScheduled` events with no matching rows in the `nudges` table, for a
+session that still existed. The only code path that deletes nudge rows also
+deletes the session and the task, and neither had happened. On today's code
+that state is unreachable.
+
+**It was not written by today's code.** The ladder was armed at 01:40:54.
+`c0ba269` — the fix for issue 7, *`NudgeRepo` is never constructed in
+production* — landed at 01:53:22, and it is the commit that added
+`_nudges.save(...)` to `_armLadder`. For those twelve minutes the phone was
+running a build that wrote the events and had nowhere to write the rows.
+
+Every other session in the database fits the same rule exactly: armed before
+01:53, no rows; armed after, rows present. The one apparent exception —
+`hljp5b96na2`, armed at 02:57 with no rows — is accounted for by the
+`undoCapture` recorded 22 seconds later.
+
+**The lesson is procedural.** A phone that has been carrying a new build every
+twenty minutes all night holds the fingerprints of every intermediate version.
+Its database is not a snapshot of one program; it is a sediment of several.
+Before treating a data anomaly as a defect, **date it and check what the code
+looked like then** — `git log --oneline -S <symbol>` answers in seconds what an
+afternoon of reading the current code cannot, because the current code is
+innocent.
+
+**One thing it left behind, and why it is harmless.** Three alarms are
+registered with Android that Van has no row for. It can still cancel them,
+because `cancelForSession` derives ids from the session id rather than reading
+them out of the database — the decision in section 3m, earning its keep in a
+case it was not designed for. Pressing START on one still works too: the
+action carries the session id, and `startSession` never consults the nudge
+table.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -935,7 +974,7 @@ than this file.**
 | 20 | ~~A failed alarm destroyed the whole capture~~ | **Done, 21 Aug 2026** (`f2e736b`). See section 3l. Both layers: `_armLadder` records `nudgeScheduleFailed` and carries on, and `ChatScreen._send` gives the typed sentence back instead of eating it. |
 | 21 | ~~Notification ids came from `String.hashCode`~~ | **Done, 21 Aug 2026** (`25cde26`). See section 3m. Explicit FNV-1a, pinned by tests, and the mask widened from 22 to 28 bits — the old one had 2 real collisions in 5000 session ids. **One-time cost:** rungs armed by an older build carry old ids and cannot be cancelled by a newer one. Section 0 says to reinstall after the 09:30–09:55 nudges have fired. |
 | 22 | ~~A capture during a sweep could double-book a slot~~ | **Done, 21 Aug 2026** (`2eed1fb`). See section 3n. `capture` and `sweepStaleSessions` now run one at a time; reproduced first, with both blocks landing at 12:05Z. |
-| 23 | **Three armed nudges have no rows left in the database** | Found in the 09:07 pull. Session `hljn1mbedk2` (the 09:00 block) has three `nudgeScheduled` events from 01:40 — for 09:00, 09:10 and 09:25 — and **zero rows in the `nudges` table**. The session itself is still `planned`. `NudgeRepo.deleteForSession` is only called from `undoCapture`, which also removes the session, so that is not what happened. **I do not know the cause and have not guessed at one.** It matters because the row is how Van knows to mark a rung delivered or stand it down: an alarm can be live with Android while Van has no record of it, and `cancelForSession` works off derived ids so it would still cancel. Reproducing needs the history, which is on the phone. |
+| 23 | ~~Three armed nudges have no rows in the database~~ | **Explained and closed, 21 Aug 2026.** Not a defect. Session `hljn1mbedk2` was armed at **01:40:54**; `c0ba269` — the fix for issue 7, *`NudgeRepo` is never constructed in production* — landed at **01:53:22** and is what added `_nudges.save(...)` to `_armLadder`. Twelve minutes earlier, the build on the phone wrote `nudgeScheduled` events and no rows, because it had no `NudgeRepo`. The alarms are still registered with Android; `cancelForSession` derives its ids rather than reading them back, so Van can still cancel them — which is section 3m's decision paying for itself. See section 3q. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 

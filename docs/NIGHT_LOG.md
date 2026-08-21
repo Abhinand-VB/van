@@ -275,6 +275,55 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, morning — the database was innocent, and so was the code
+
+**Finished.** Issue 23, opened an iteration earlier and deliberately recorded
+as cause-unknown: three `nudgeScheduled` events for session `hljn1mbedk2` with
+no matching rows in the `nudges` table, and the session still sitting there
+`planned`.
+
+**I started by proving the current code cannot do it.** There is exactly one
+delete path — `NudgeRepo.deleteForSession`, scoped to a single session id,
+reachable only from `undoCapture`, which also deletes the session and the task
+and writes a `taskUpdated` event. None of those happened. The migration only
+touches `events`. I checked whether `TimestampIds` could collide and let
+`insertOnConflictUpdate` overwrite a row: it cannot, the ids are
+microsecond-based and ten base-36 characters wide.
+
+So the state is unreachable — **from today's code**. That is the whole answer,
+and it took one command to find: `git log --oneline -S "deleteForSession"`
+returned a single commit, which pointed at when these methods were born, which
+pointed at the night's timeline.
+
+The ladder was armed at **01:40:54**. `c0ba269` landed at **01:53:22** — the
+fix for issue 7, *`NudgeRepo` is never constructed in production*, and the
+commit that added `_nudges.save(...)` to `_armLadder`. For twelve minutes the
+phone ran a build that wrote the events and had nowhere to write the rows.
+
+Every session in the database obeys that rule exactly. Armed before 01:53: no
+rows. Armed after: rows. The single apparent exception is accounted for by an
+`undoCapture` recorded 22 seconds after its capture.
+
+**What I would tell myself.** The phone has been carrying a new build every
+twenty minutes all night. Its database is not a snapshot of one program, it is
+a sediment of several, and I spent the first part of this iteration reading
+current code that was never going to explain it. Date the anomaly, then ask
+what the code looked like then.
+
+**The part I am glad about.** Recording issue 23 as *unknown* rather than
+inventing a plausible mechanism. The plausible mechanism available at the time
+was "undoCapture deleted another task's nudges" — it would have fitted the
+shape, it would have been written down as fact in a handover document, and it
+would have been false. An open question survives contact with the truth; a
+confident wrong answer does not.
+
+**A loose end that turns out to be harmless, for a reason worth noticing.**
+Three alarms are registered with Android that Van has no row for. It can still
+cancel them, because `cancelForSession` derives its ids from the session id
+instead of reading them back — the decision from section 3m, paying off in a
+situation it was not designed for. Deriving rather than remembering keeps
+working when the remembering never happened.
+
 ### 21 August 2026, morning — pointing the new tool at the real phone
 
 **Finished.** The reader built last iteration had only ever been run against
