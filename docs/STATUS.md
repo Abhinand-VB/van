@@ -1,11 +1,36 @@
 # Van — Project Status
 
-**Last updated:** 21 August 2026 (overnight session; see section 8). Update
-this file at the end of every work session; it is the handover document
-between sessions and between agents.
+**Last updated:** 21 August 2026, after a night of unattended work. Update this
+file at the end of every session; it is the handover between sessions and
+between agents.
 
 Read order for a new session: this file, then `AGENTS.md`, then
-`docs/ARCHITECTURE.md`, then `docs/AGENT_TASKS.md`.
+`docs/ARCHITECTURE.md`. `docs/NIGHT_LOG.md` is the appendix — reasoning and
+device runs, not needed to start work. `docs/AGENT_TASKS.md` is the original
+plan and is largely superseded by this file.
+
+---
+
+## 0. If you are the owner reading this over coffee
+
+Van is finished as far as an agent can take it alone. **492 → 499 tests, all
+green, on a phone that runs.** Four things need you, and they are small:
+
+1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
+   tap. Until then nudges land within the hour rather than on the minute.
+2. **Wait for a nudge and press START.** Six are armed, 09:00–09:55. This is
+   the last unverified step of the loop.
+3. **Ignore the 09:00 block on purpose, then open Chat.** One minute, and the
+   only part of the negotiation loop never reached on hardware.
+4. **Listen to the drum.** Nobody ever has. Your ringer was muted every time
+   I looked, so unmute first.
+
+Then use it for a week and let real annoyance decide what comes next. There is
+no obvious next feature, and section 7 argues the case for WP-6 got *weaker*
+last night rather than stronger.
+
+Two things on your phone are mine, not yours: test tasks called "Alarm wiring
+check" and "Negotiate wiring check". Delete them whenever.
 
 ---
 
@@ -19,7 +44,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **492 tests passing** — 238 in `packages/van_core` (pure Dart), 254 in the app.
+- **499 tests passing** — 238 in `packages/van_core` (pure Dart), 261 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -51,6 +76,7 @@ working configuration, not a degraded one.
 | App: golden set and runner | 9 |
 | App: inference config | 13 |
 | App: prompt assets | 9 |
+| App: negotiation guards (review) | 5 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -74,6 +100,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+d9eb37c  Three defects found by reading tonight's code back
 86ce1ec  Move the last two prompts out of Dart and into assets
 61e3e72  Close both parser gaps the golden set found
 ca5df7e  WP-6 groundwork: the channel, the backend, the goldens, and the harness
@@ -490,250 +517,14 @@ MSYS_NO_PATHCONV=1 adb exec-out run-as dev.van.app cat /data/data/dev.van.app/ap
 
 ---
 
-## 5a. What the device actually proved, 21 August 2026
+## 5a. What the device has proved
 
-Run against the Galaxy S25 (`<device-serial>`) at ~01:30–01:45 local. The phone
-was awake and unlocked throughout, `zen_mode` was `0`, and no system setting
-was changed.
+Nine runs against the phone over the night of 20/21 August. What each one
+found is in **`docs/NIGHT_LOG.md`**; issue 3 above carries the summary that
+matters, which is what is still unconfirmed.
 
-**Timezone matters and is not what the docs assumed.** The device is on
-`America/Los_Angeles`, not IST. Anything reading `planned_start_utc` by hand
-must convert with that offset or every conclusion about the schedule comes out
-wrong by half a day.
-
-**Confirmed working:**
-
-- Capture through the quick-add field lands in the database: `taskCreated`,
-  `sessionPlanned`, the `extract_task` fallback, all present.
-- **The stale-session sweep works on real persisted data.** A session planned
-  on 19 Aug and never started was found 1953 minutes late, closed as
-  `rescheduled`, and given a replacement at 08:00 local — the first minute of
-  the next waking window, which is correct given it ran at 01:32. The event log
-  shows `sessionMissed` (`reason: stale`, `outcome: rescheduled`) followed by
-  `rescheduleApplied` (`reason: sweep`, `moves: 1`).
-- The `_v2` notification channels carry the drum:
-  `android.resource://dev.van.app/raw/nudge_drum` and `..._urgent`. The old
-  channels are `mDeleted=true`. The channel-bump procedure in issue 2 works.
-- After the fix in `3085a06`, three `RTC_WAKEUP` alarms are registered against
-  `dev.van.app` at 09:00, 09:10 and 09:25 — the exact ladder spacing the
-  policy specifies — and three `nudgeScheduled` events exist in the database.
-
-**The defect this run found, now fixed (`3085a06`).** No nudge had ever been
-able to fire on this device. `dumpsys alarm` listed 190 alarms and none
-belonged to Van. The manifest declared no permissions, so
-`AndroidScheduleMode.exactAllowWhileIdle` threw
-`exact_alarms_not_permitted` on every call, and `hasPermission()` only checked
-notifications so the app could never even ask for the exact-alarm grant. The
-event log had been saying this since the 19th: `sessionPlanned` on every
-session, `nudgeScheduled` on none. See the commit message for the full
-reasoning.
-
-**Still not proven, and honestly so:**
-
-- **A nudge being delivered.** The alarms are armed but none has fired yet.
-- **The START round-trip.** Untested, because there was no delivered
-  notification to press it on.
-- **Doze after 30+ minutes.** Not attempted.
-- **The drum's sound.** Still needs a human ear (issue 2). The phone's ringer
-  was muted during this run in any case.
-
-**Two things left on your phone that are mine, not yours:**
-
-1. A task **"Hi"** from an earlier session, whose block the sweep moved to
-   08:00 on 21 Aug.
-2. A test task **"Alarm wiring check"**, 30 minutes, with real nudges armed for
-   **09:00, 09:10 and 09:25 on 21 Aug**. They will go off. They are the proof
-   the fix works — pressing START on the first one would also close out the
-   round-trip gap above. Dismiss them whenever you like.
-
-**One caveat on how they will fire.** The exact-alarm grant is still withheld —
-opening that settings screen is your call, not mine, so I backed out of it
-without changing anything. The alarms registered through the new inexact
-fallback instead, with a one-hour window (`WL=3600000` in `dumpsys`), so they
-will land *near* those times rather than on them. Grant "Alarms & reminders"
-for Van in system settings and they become exact.
-
-### Second run, ~01:50, after wiring up the nudge record
-
-Same conditions: awake, unlocked, `zen_mode` `0`, no system setting changed.
-
-- **The `nudges` table is populated on the device for the first time.** Three
-  rows for the new session, each with its level, template id, scheduled instant
-  and a real score from `ImportanceScorer` (6 for `sessionStart`, 7 for
-  `sessionMissed` — the baselines, correct with no deadline and no prior
-  moves). `was_suppressed` false, `delivered_utc` null, because nothing has
-  fired yet. `nudge_responses` is correctly empty.
-- Six `RTC_WAKEUP` alarms are now registered against `dev.van.app`. Reinstalling
-  did **not** clear the previous ladder.
-- Confirmed the annoyance now filed as issue 8: the exact-alarm settings screen
-  opens on every single cold start while the grant is missing.
-
-**Revised: what is on your phone in the morning.** Three tasks, and **six
-notifications between 09:00 and 09:55**:
-
-| Task | Nudges |
-|---|---|
-| "Hi" | block at 08:00, no ladder (armed before the alarm fix) |
-| "Alarm wiring check" | 09:00, 09:10, 09:25 |
-| "Fatigue wiring check" | 09:30, 09:40, 09:55 |
-
-That is more noise than I would choose to leave you, and it is deliberate:
-each ladder is the evidence for a different fix, and deleting them would delete
-the proof. Press START on any one of them and you close the last device gap in
-issue 3. Ignore them all and the sweep will demonstrate the fatigue logic on
-itself, which is arguably the better test.
-
-They will fire *near* those times rather than on them — the exact-alarm grant
-is still withheld, so they are registered through the inexact fallback with a
-one-hour window.
-
-### Third run, ~02:15, after the first-run fix
-
-- **The fix works on hardware.** First launch after installing opened the
-  permission screen once — correct, the latch was empty. A clean force-stop and
-  relaunch stayed in Van. The `settings` table holds exactly one row:
-  `asked_for_permission = true`.
-- **The banner shows the right variant.** Notifications are allowed but exact
-  alarms are not, so it reads *"Nudges may arrive up to an hour late. Allow
-  alarms and reminders to fix."* rather than the harder warning. Tapping it
-  reopens the permission screen.
-- All six morning alarms survived the reinstall and are still armed.
-- One thing to be careful of when reading `dumpsys window` after a transition:
-  it can return the *previous* focused window if queried too quickly. It looked
-  briefly as though the fix had not worked; force-stopping both apps and
-  relaunching gave the unambiguous answer.
-
-**Unchanged from the second run: what is on your phone in the morning.** Three
-tasks and six notifications between 09:00 and 09:55, listed in the table above.
-Press START on any one of them and issue 3 closes.
-
-### Fourth run, ~02:37, after the Now-screen fix
-
-- Issue 9 is fixed and visible: the card shows "Hi", and "After that" lists
-  "Fatigue wiring check" and "Alarm wiring check". Last night's screenshot had
-  "Hi" in both places.
-- The first-run fix is still holding - a fresh install plus relaunch went
-  straight to the Now screen, no settings ambush.
-- The banner is still showing the understated variant, and all six morning
-  alarms survived a third reinstall.
-
-### Fifth run, ~02:55-03:05, the chat screen and a false alarm
-
-**Verified working on the phone:** the three-tab shell; chat capture end to end
-(sentence in, approval card out, composer cleared); Undo, which removed the
-task, its block and its nudges and left the card struck through and marked
-Removed; the flat task list; and swipe-to-complete.
-
-**The thing I got wrong, and how.** After the undo I counted
-`type=RTC_WAKEUP tag=*walarm*:dev.van.app` lines in `dumpsys alarm`, saw nine
-where I expected six, and concluded that undo was leaving alarms armed. It was
-not. That section is *cancellation history* — every line carries
-`Reason=alarm_cancelled` or `Reason=pi_cancelled` — so cancelling an alarm adds
-a line and the count only ever grows. Two of my three theories about the cause
-were wrong before I stopped guessing and read the plugin's own store, which had
-been correct the whole time.
-
-**Read this instead.** It lists precisely what will fire:
-
-```bash
-MSYS_NO_PATHCONV=1 adb exec-out run-as dev.van.app cat /data/data/dev.van.app/shared_prefs/scheduled_notifications.xml
-```
-
-Each entry carries `id`, `payload` (the session id), `scheduledDateTime` and
-`scheduleMode`. That is the source of truth; `dumpsys alarm` is not.
-
-**The chase was still worth it**, because it made me read `cancelForSession`,
-which had a genuine and much worse bug — see the next section.
-
-**Revised: what is on your phone in the morning.** Down to **three
-notifications, at 09:00, 09:10 and 09:25**, all for "Alarm wiring check". I
-undid "Chat card check" while testing the approval card and completed "Fatigue
-wiring check" while testing the swipe, and both correctly took their ladders
-with them. Two tasks remain open: "Alarm wiring check" and "Hi".
-
-Still `inexactAllowWhileIdle`, so they will land near those times rather than
-on them until you grant the alarm permission from the banner.
-
-### Sixth run, ~03:20, the negotiation loop
-
-**Verified on the phone:** the build runs, chat still captures cleanly
-("Negotiate wiring check", 25 min at 09:30), and **no stall card appears** —
-correct, because at 03:20 both remaining blocks are still in the future. That
-is one of the tested behaviours confirmed on hardware.
-
-**Not verified on hardware, and I could not:** the stall conversation itself.
-It needs a block that is already past due, and there is no way to create one
-through the UI — capture always schedules forwards, and moving the device clock
-would be changing your system settings. It is covered by eight widget tests
-driving the real service over a real database, but I have not seen it on the
-phone and am not going to claim otherwise.
-
-**You can settle it in about a minute.** Let the 09:00 block go by without
-pressing START, then open Chat. It should greet you with the block, "Due N min
-ago. Not started.", and "What's in the way?". Type something and you will get a
-proposal card with a named button.
-
-**What is on your phone in the morning: six notifications, two ladders.**
-
-| Task | Nudges |
-|---|---|
-| "Hi" | block at 08:00, no ladder (armed before the alarm fix) |
-| "Alarm wiring check" | 09:00, 09:10, 09:25 |
-| "Negotiate wiring check" | 09:30, 09:40, 09:55 |
-
-Confirmed from the plugin's own store, not from `dumpsys` (issue 12). Still
-`inexactAllowWhileIdle`, so they land near those times rather than on them
-until you grant the alarm permission from the banner.
-
-### Seventh run, ~03:40, the schema migration
-
-The whole point of this run was that the phone was holding a v1 database with
-58 real events, and the migration had to be right.
-
-- **First attempt:** column added, 18 rows backfilled, 0 disagreeing with their
-  payload, no rows lost — and **no index**. See 5d.
-- **After v3:** `user_version` 3, `idx_events_session` present, 59 events, and
-  `EXPLAIN QUERY PLAN` reports a `SEARCH ... USING INDEX` rather than a scan.
-
-**Not verified, and cannot be here:** the legacy launcher PNGs. The S25 is API
-36, so it draws the adaptive icon and will never load them. They were confirmed
-by rendering and reading the output, and there is a test that decodes each one
-and checks the corner pixel is the brand green rather than Flutter's white.
-
-**Unchanged from the sixth run: six notifications, two ladders**, at 09:00,
-09:10, 09:25 ("Alarm wiring check") and 09:30, 09:40, 09:55 ("Negotiate wiring
-check"). Both survived tonight's four reinstalls.
-
-### Eighth run, ~04:00, the local model channel
-
-- **The Kotlin compiles and attaches.** App boots, no crashes, nothing from
-  `LocalLlmPlugin` in logcat.
-- **The app now boots through the config path** and records zero routing
-  warnings, so `assets/inference_config.json` resolves cleanly against the two
-  backends `main.dart` can build.
-- Nothing calls the model, because the config routes every capability to
-  `none` — which is the shipped configuration and a working one.
-
-**Not verified, and cannot be until an engine exists:** any actual generation.
-`MissingEngine` is what answers today, so the device confirms the channel is
-reachable and correctly reports "unavailable", and nothing more than that.
-
-**Unchanged: six notifications, two ladders**, at 09:00, 09:10, 09:25 and
-09:30, 09:40, 09:55. They have now survived nine reinstalls.
-
-### Ninth run, ~04:30, prompts from the bundle
-
-Short and specific: after moving the prompts into assets, the app had to load
-them from the bundle rather than from disk, and a prompt that exists in the
-repo but is missing from the build would fail only on a real device, at the
-first model call.
-
-Installed, launched, no `Unable to load asset` in logcat, no crash. There is
-also a test asserting `assets/prompts/` is declared in `pubspec.yaml`, since
-that is the single line that decides whether they ship.
-
-**Unchanged: six notifications, two ladders**, at 09:00, 09:10, 09:25 and
-09:30, 09:40, 09:55. Ten reinstalls now.
+Two findings were important enough to keep here rather than in the appendix:
+sections 5c and 5d below.
 
 ---
 
@@ -866,394 +657,9 @@ evidence from real use.
 
 ## 8. Unattended session log
 
-Newest first. Each entry is one overnight loop iteration, written from a cold
-context; see `docs/OVERNIGHT.md` for the standing brief.
-
-### 21 August 2026, overnight — the last two issues on the board
-
-**Finished.** Every item in the `OVERNIGHT.md` work queue was already done, so
-this was queue item 6: pick what is valuable. The two remaining issues an agent
-could close alone.
-
-*Issue 13* (`61e3e72`), and the halves needed opposite treatment. "next week"
-was simply not parsed — no deadline at all, so the work was never late. Fixed,
-along with "this week" and "in N weeks", and both resolve to seven days out
-rather than the end of the coming week, because Van schedules against deadlines
-and the vaguer reading lets work sit for nine days without being late.
-
-The all-caps case I closed the *other* way, as deliberate. Van cannot tell
-shouting from acronyms, so any rule turning `TIDY THE DESK` into `Tidy the
-desk` also turns `FIX API DOCS` into `Fix api docs`. The first is merely loud;
-the second is lossy. The golden now specifies preservation.
-
-*Issue 11* (`86ce1ec`): all three prompts are assets now. Section 3f explains
-why this is more than tidiness — the deterministic fallback never reads the
-prompt, so a renamed placeholder would ship a literal `{task}` to the model and
-every test would stay green. There is now a test that builds each request and
-asserts no slot survives.
-
-475 to 492 tests.
-
-**A number to read carefully.** `extract_task` now scores 29/29 on the golden
-set, up from 26/28. That is one real fix, one specification, and one case
-added — not three cases of improvement. And a golden set whose author keeps it
-green proves less than one written by someone else. I would not lean on it as
-evidence the parser is finished.
-
-**What I would do next: nothing.** Everything on the board that does not need
-you is done. The remaining items are three device checks, a drum that needs
-human ears, and WP-6 — whose case has got *weaker* tonight, since a parser
-answering every golden case correctly does not need a model. If nudge wording
-goes stale after a week of real use, that is the argument, and it points at
-`compose_nudge` and `negotiate` rather than `extract_task`.
-
-**What I need from you.** The four checks in next steps, and then a week of
-actually using it.
-
-### 21 August 2026, overnight — WP-6 groundwork, and a config that was never read
-
-**Finished.** OVERNIGHT work queue item 5, the last item on the list.
-
-The Kotlin `LocalLlm` channel, `GemmaBackend`, a 28-case golden set, and
-`tool/run_goldens.dart`. Code only: no model downloaded, no benchmark run, and
-nothing claims otherwise. Section 3e says exactly what exists, what does not,
-and the two edits that would finish it. Commit `ca5df7e`. 425 to 475 tests.
-
-**The one measured number: the deterministic parser scores 26/28, 92.9%.**
-That, not the 80% floor, is what a candidate model has to beat for
-`extract_task` — routing to something that scored 85% would be a downgrade
-dressed as progress.
-
-**Two of the three golden failures are real parser gaps and stay failing on
-purpose.** "next week" is not parsed at all, and an all-caps sentence keeps its
-shouting. Issue 13. A set trimmed to what already passes is a change detector,
-not a measurement. The third failure was my own wrong expectation — "tonight"
-resolves to the evening rather than end of day, which is deliberate and better
-— and I corrected the golden rather than the parser.
-
-**The thing I did not expect.** `assets/inference_config.json` has never been
-read by anything. Four comments across the codebase claim that swapping a
-backend is "a config change and one class"; it was a `main.dart` edit, and
-`GemmaBackend` would have been born unreachable. That is the third time this
-week a claim in the docs described behaviour that did not exist — issues 7 and
-10 were the others — so I fixed it rather than filing it. `InferenceConfig`
-reads the asset now, and there is a test asserting the shipped file resolves
-cleanly against what `main.dart` can build.
-
-**What I would do next.** Nothing, for a week. Every queue item in
-`OVERNIGHT.md` is now done. WP-6's remaining work is real but should wait for
-evidence that nudge wording is the problem — and note issue 14: the golden
-harness cannot reach `GemmaBackend`, so the gate cannot actually be evaluated
-until there is a way to run the set on the phone.
-
-**What I need from you.** Nothing blocking. Next-step 5 is the judgement call:
-whether WP-6 is worth it at all, once you have used this for a week.
-
-### 21 August 2026, overnight — the two chores, and a migration lesson
-
-**Finished.** OVERNIGHT work queue item 4: STATUS issues 4 and 6, both closed.
-
-*Issue 4* (`890d8a7`, `da1209c`): `EventRepo.forSession` loaded every row in the
-log and filtered in Dart. `sessionId` is now a nullable indexed column,
-backfilled from the payload by a migration. Section 5d is the part worth
-reading — I got the migration wrong twice, and both mistakes were the kind that
-pass every test and fail on the phone.
-
-*Issue 6* (`d2abb52`): the legacy launcher PNGs were still Flutter's logo,
-untouched since the project was scaffolded. `tool/generate_launcher_icons.py`
-renders them from the vector drawable, so the mark has one source of truth.
-
-412 to 425 tests.
-
-**The lesson, because it will apply again.** My migration test asserted that
-`forSession` returned the right events after upgrading. It passed. It would
-also have passed on a database with no indexes at all — which is exactly what
-the migration produced, because `addColumn` does not create declared indexes.
-The device found it in thirty seconds via `EXPLAIN QUERY PLAN`. **A migration
-test that only asserts query results is not testing the migration.** Assert the
-schema.
-
-The first mistake was worse and caught earlier: `json_extract` raises on
-malformed JSON and aborts the whole `UPDATE`, so one bad payload anywhere would
-have failed the migration and left the app unable to open. The test I wrote
-for it failed on the first run, which is the only reason it is not shipping.
-
-**What I could not verify.** The launcher PNGs: the S25 is API 36 and draws the
-adaptive icon, so it will never load them. Rendered and read the output
-instead, and there is a test that decodes each PNG and checks the corner pixel.
-
-**What I need from you.** Nothing blocking, and nothing obvious left to build.
-Every open issue is now small or deliberately accepted. Next-step 4 is the real
-one: use it.
-
-### 21 August 2026, overnight — the conversation, finally
-
-**Finished.** Issue 10, in two halves, and with it the last piece of the loop.
-
-*The service* (`01d24ed`): `negotiate` asks what to do about a stalled block
-and returns a proposal; `applyNegotiation` carries one out. Nothing changes in
-between, which is what makes AGENTS.md rule 3 real rather than decorative — the
-model proposes, the domain disposes, and the gap between them is a method
-boundary you can see. The gate runs on the way in *and* on the way out, because
-a proposal can sit on screen while the block gets started or swept.
-
-*The chat side* (`a4a6cd8`): chat opens the conversation when a block has
-stalled, and the composer hint changes so a reply is an answer rather than a
-task called "too tired". Van asks once per block — reopening the same question
-on every resume would be notification fatigue wearing a different hat. Section
-3d has the details worth knowing before touching it.
-
-393 to 412 tests.
-
-**Three bugs I wrote and then found.** All three were caught by tests I wrote
-against the behaviour rather than the implementation, which is the argument for
-writing them that way. `applyNegotiation` forgot the user's reason and so
-recomputed a lower level and refused Van's own proposal. `hold` called
-`_settleLadder`, which stands unfired rungs down — the exact opposite of what
-holding means. And a `reason` response was recorded with no text, which
-`NudgeResponse` rightly asserts against.
-
-**What I could not verify on hardware, and why.** The stall conversation needs
-a block that is already past due, and there is no way to make one through the
-UI — capture always schedules forwards, and moving the device clock would be
-changing your system settings. Eight widget tests cover it against the real
-service and a real database. You can settle it in a minute: ignore the 09:00
-block, then open Chat. Next-step 3.
-
-**What I need from you.** Nothing blocking. The loop is complete as of tonight,
-so the honest next step is to use it and let real annoyance pick the next task.
-
-### 21 August 2026, overnight — the chat screen, and a cancel that never worked
-
-**Finished.** Work queue item 3, and the answer to the question STATUS left
-open: build the trigger rather than label a finished capability as groundwork.
-
-*The chat screen* (`9e08ef3`), with the plan shown as an approval card. Undo is
-what makes it an approval rather than a receipt: it removes the task, its
-blocks and its armed nudges, and the card stays struck through and marked
-Removed rather than vanishing, because deleting it would make the conversation
-lie about what was asked for.
-
-*The flat task list*, deadline order, swipe right to finish. No folders, no
-labels, no projects. Those turn a list you act on into a system you maintain.
-
-*Two service calls* (`9a57658`) underneath: `completeTask` stands remaining
-blocks down as skipped rather than completed, and settles any nudge that had
-already fired as engagement - finishing the work late must not build fatigue
-against you. `undoCapture` deletes rather than marking `abandoned`, because
-`abandoned` means you gave up and this means Van misread a sentence.
-
-WP-7 is now complete rather than reduced. 365 to 393 tests.
-
-**The thing to actually read: section 5c.** While chasing what turned out to be
-a false alarm, I found that `cancelForSession` has never worked across app
-restarts. It looked ids up in an in-memory map filled only by the process that
-did the scheduling - and the response to a nudge always arrives in a later
-process. So START, snooze, not-today, the sweep and both new methods all
-silently failed to stand nudges down. Press START, get chased anyway. Fixed by
-deriving ids instead of remembering them, and verified across processes.
-
-The test fake had been hiding it by matching on a field the real canceller
-cannot see. That is the second time this week a fake passed while the device
-could not work, and it is worth a standing suspicion: **when a fake takes a
-shortcut the real implementation cannot take, it is not a fake, it is a
-fiction.**
-
-**Tried, and got wrong.** I read `dumpsys alarm` as a list of pending alarms
-and reported a leak that did not exist. It is a cancellation *history* section;
-cancelling adds lines to it. I had two further wrong theories before I stopped
-guessing and read the plugin's own store. Issue 12 records the right command so
-nobody repeats it, and I amended the commit message that had stated the false
-finding.
-
-**What I need from you.** Nothing blocking. Next-step 4 is the interesting one:
-`negotiate` now has a home and wiring it is the last piece of the conversation
-Van was designed around.
-
-### 21 August 2026, overnight — a small wrongness, and `negotiate`
-
-**Finished.** Two things.
-
-*Issue 9* (`37de632`): the Now screen showed the same task twice - once on the
-card, once in "After that" below it. The list was built as `_open.skip(1)`,
-which assumes the first open task is the one the card is showing. Usually it
-is, which is why this survived. But the card is ordered by which session starts
-soonest and the list by deadline, so the moment those disagree it hides an
-unrelated task and repeats the one already on screen. The regression test
-builds that disagreement deliberately and has a guard that fails if the two
-orderings happen to agree, so it cannot quietly stop testing anything. Verified
-on the phone.
-
-*Work queue item 2* (`889f23f`): the `negotiate` capability, declared in config
-since WP-5 with no class behind it. Section 3c explains the design; the short
-version is that it is the only capability whose output is an action rather than
-text, so the model proposes and the domain disposes. An l0 prompt cannot cancel
-your afternoon even if the model asks it to. 320 to 365 tests.
-
-It is also the first prompt to live in `assets/prompts/` rather than inline in
-Dart, which AGENTS.md has required from the start while that directory sat
-empty.
-
-**Decided on your behalf** - `DECISIONS_PENDING.md` D13-D15. D13 is the one to
-read: the fallback concedes by halving rather than releasing, on the grounds
-that a wrong hold costs a notification and a wrong release loses the work.
-
-**Flagged rather than hidden.** `negotiate` is built and **nothing calls it**.
-Its trigger is the user telling Van why, which is the chat screen and does not
-exist. That is the same shape as issue 7, where a well-tested class sat
-unreachable for weeks, so it is issue 10 on the board rather than a line in a
-commit message. My recommendation is in next-step 4: do not build a fourth
-capability before something calls one.
-
-**Tried, and learned from.** One of my own new tests asserted the built prompt
-contained no opening brace - but the prompt ends with a JSON example that
-legitimately has them. The assertion now names the eight placeholders and
-checks none of them survived, which is what I actually meant.
-
-**What I need from you.** Nothing blocking. The `negotiate` question in
-next-step 4 is the one that would change what I do next.
-
-### 21 August 2026, overnight — ask once, then inform
-
-**Finished.** Issue 8, the settings screen that opened on every cold start.
-Commit `02e045e`. 303 → 320 tests.
-
-A persisted latch in the `settings` table stops the nagging. On its own that
-would have replaced nagging with something worse — decline once and Van goes
-quiet forever, never nudging and never explaining why, which is the same shape
-as the bug found two nights ago. So the latch ships with the thing that makes
-declining safe: a standing banner on the Now screen for as long as a grant is
-missing, which reopens the permission screen when tapped. Ask once, then
-inform, never nag.
-
-The banner distinguishes the two failures, because they are not the same and
-conflating them would train you to ignore it. No notification permission means
-Van is a task list and it says so. Missing exact alarms only means a nudge
-lands somewhere in the following hour, so it says that instead. That required
-`hasPermission()`'s boolean to become `NudgePermissions` — a single bool could
-never have told you which of two problems you had.
-
-Verified on the phone: first launch asked once, a clean relaunch stayed in Van,
-and the banner is showing the correct understated variant.
-
-**Decided on your behalf** — `DECISIONS_PENDING.md` D10–D12, all cheap to
-reverse. D10 is the one worth a look: declining permission is now a supported
-state rather than something Van keeps pushing back on.
-
-**Tried, and learned from.** One of my own widget tests asserted the banner
-could be tapped to grant permission on a fresh install — but `_FirstRun` grants
-it first, so the banner is never there to tap. The test premise was wrong, not
-the code; it now sets the latch first, which is also the realistic scenario.
-Separately, `dumpsys window` returned a stale focused window straight after a
-transition and made it look briefly as though the fix had failed.
-
-**Found while looking.** Issue 9: the "After that" list can repeat the task
-already shown in the NEXT card. Small, real, and visible in the screenshot from
-tonight.
-
-**What I would do next.** Tap the banner to grant the alarm permission, then
-watch one nudge land and press START. That is the last unobserved part of the
-loop.
-
-**What I need from you.** Nothing blocking.
-
-### 21 August 2026, overnight — making the fatigue logic reachable
-
-**Finished.** Issue 7, and it turned out to be larger than its title.
-
-`NudgeRepo` never being constructed was the symptom. The cause: pre-scheduling
-the ladder removed the live tick that used to run the suppression gate, and
-nothing replaced it, so `NudgeEngine`, `SuppressionPolicy` and
-`ImportanceScorer` appeared nowhere in `lib/` at all. Forty-seven core tests
-covering behaviour that could not happen on the phone. Van would have fired the
-same three-rung ladder at someone who had ignored the last nine.
-
-The gate now runs at arm time, evaluated against the instant each rung will
-*fire* rather than the instant it is armed. Section 3b explains why that
-distinction is the whole trick, and which inputs are deliberately left out
-because they are genuinely unknowable in advance. Every rung is now recorded
-whether or not it goes out, with its real score and, when held back, the
-reason. Commit `c0ba269`. 294 → 303 tests.
-
-Net behaviour: **ignore two full ladders and Van stops chasing.** The opening
-prompt still fires; the +10 and +25 follow-ups are held back. That falls out of
-`SuppressionPolicy.dismissalLimit`, already tuned in WP-3 — I did not invent a
-new number.
-
-Verified on the phone: the `nudges` table is populated for the first time, with
-real scores.
-
-**Decided on your behalf** — `DECISIONS_PENDING.md` D7–D9, all cheap to
-reverse. The one to look at is D7: a replacement block now counts as
-*continuing* its parent's conversation rather than starting a new one.
-
-**Tried, and learned from.** My first version measured nudge spacing from the
-moment a rung was armed rather than the moment it fires. It silenced the
-replacement ladder after a snooze — you ask for a reminder in ten minutes, and
-Van suppresses it because it nudged you twelve minutes ago. An existing test
-caught it, which is the argument for the end-to-end loop tests in one line.
-Two of my own new tests also asserted the wrong thing and were wrong, not the
-code; both are fixed and the reasoning is in the commit.
-
-**What I would do next.** Grant the alarm permission, watch one nudge land and
-press START — that is the last unobserved part of the loop. Then fix issue 8,
-found tonight: the exact-alarm settings screen now ambushes you on every cold
-start until the grant is given.
-
-**What I need from you.** Nothing blocking. Over coffee: whether two ignored
-ladders is the right point to back off, and whether a replacement landing five
-minutes from now is helpful or infuriating.
-
-### 21 August 2026, overnight — the sweep, and why nudges never fired
-
-**Finished.**
-
-*Work queue item 1, completely.* `StaleSessionSweep` in the pure core,
-`VanService.sweepStaleSessions()`, the app-open and resume triggers, a
-Now-screen message so you are told when your plan changed, 17 core unit tests,
-8 end-to-end tests through the real database, and 6 simulation scenarios
-including a multi-day one. Commit `74cb226`. Suite went 263 → 294 tests.
-
-*Device verification, and the defect it uncovered.* Section 5a has the detail.
-The short version: **no nudge had ever been able to fire on your phone.** The
-manifest declared no permissions, so every `zonedSchedule` threw
-`exact_alarms_not_permitted`, and `hasPermission()` only checked notifications
-so the app could never ask for the missing grant. `dumpsys alarm` showed 190
-alarms on the device and none belonging to Van. The event log had been saying
-it since the 19th — `sessionPlanned` on every session, `nudgeScheduled` on
-none — and nobody had looked. Fixed and verified on hardware in `3085a06`;
-three real alarms are now registered at 09:00, 09:10 and 09:25.
-
-This is the thing to take from tonight. The sweep was the planned work and it
-is good work, but it was fixing a hole in a loop whose last step was silently
-broken the whole time. **Verify on the device earlier.**
-
-**Decided on your behalf** — full reasoning in `DECISIONS_PENDING.md` D1–D6,
-all cheap to reverse:
-
-- Rescued blocks are marked `rescheduled`, not `skipped` as the brief said, so
-  the event log can tell rescued work from abandoned work.
-- The sweep stops rescuing a block after 5 moves. Not in the brief, and the one
-  I would most like you to look at — D2 says why a cap has to exist.
-- The sweep is triggered by app open and resume, not a background isolate.
-- The Now screen tells you when work was moved rather than doing it silently.
-- `schedule()` falls back to an inexact alarm rather than throwing when the
-  exact-alarm grant is missing.
-- I did **not** grant the exact-alarm permission. The settings screen opened
-  and I backed out without touching it — see D6.
-
-**Tried, and learned from.** Two false alarms worth recording so the next
-iteration does not repeat them. A completely black screenshot looked like a
-crash on the new build; it was the 15-second screen timeout, exactly as
-`OVERNIGHT.md` warns — logcat showed `windowStopped`, no Dart error. And I read
-the device database assuming IST and got a schedule that made no sense; the
-phone is on `America/Los_Angeles`. Both cost about ten minutes each.
-
-**What I would do next.** Grant Van "Alarms & reminders" (one tap), confirm a
-nudge is delivered and START round-trips, then wire up `NudgeRepo` — issue 7,
-found tonight: the fatigue logic that stops Van nagging has no data source in
-the real app. Then live with it for a week.
-
-**What I need from you.** Nothing blocking. Worth a minute over coffee: the
-five-move cap, whether a replacement landing five minutes from now is helpful
-or infuriating, and whether to grant the exact-alarm permission.
+Moved to **`docs/NIGHT_LOG.md`** on 21 August, when this file passed 1,200
+lines and the five things needing a human had sunk to line 839. A handover
+nobody finishes reading is not a handover.
+
+The log itself is unchanged and still worth reading before assuming any of
+tonight's decisions were arbitrary.
