@@ -166,10 +166,19 @@ class VanService {
        _notifications = notifications,
        _templates = templates,
        _prompts = prompts,
+       // Both `policy` and `rules` have to reach Negotiate, not just policy.
+       // Negotiate uses the rules twice - to tell the model which actions its
+       // level permits, and as the floor its own deterministic fallback
+       // shrinks to - while the gate below rejects against this class's copy.
+       // Left unpassed they were two different rule sets that happened to be
+       // equal, and any caller overriding `rules` would have got a fallback
+       // Van then refused: the user accepts Van's own proposal and nothing
+       // happens.
        _negotiate = Negotiate(
          prompt: prompts.negotiate,
          templates: templates,
          policy: policy,
+         rules: rules,
        ),
        _clock = clock,
        _ids = ids,

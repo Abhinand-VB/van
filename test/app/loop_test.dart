@@ -616,6 +616,85 @@ void main() {
     });
   });
 
+  group('the rule set reaches every part of the negotiation', () {
+    /// A service whose negotiation floor is 30 minutes rather than the
+    /// default 15.
+    VanService serviceWith(NegotiationRules rules) => VanService(
+      tasks: TaskRepo(db),
+      sessions: sessions,
+      events: events,
+      nudges: nudges,
+      router: InferenceRouter(defaultBackend: const NullBackend()),
+      notifications: notifications,
+      templates: NudgeTemplates.fromJson(
+        File('assets/nudge_templates/templates.json').readAsStringSync(),
+      ),
+      prompts: testPrompts(),
+      clock: clock,
+      ids: SequentialIds('r'),
+      waking: const WakingHours(utcOffset: Duration.zero),
+      rules: rules,
+    );
+
+    /// Stalls a 40-minute block on [svc] and negotiates with a reason given,
+    /// which is what puts the ladder on l3Shrink.
+    Future<(NegotiationOutcome, WorkSession)> stalledAndAsked(
+      VanService svc,
+    ) async {
+      final result = await svc.capture('write the report 40 minutes');
+      final session = result.sessions.first;
+      expect(session.plannedMinutes, 40, reason: 'one block, not split');
+      clock.advanceTo(session.plannedStart.add(const Duration(minutes: 30)));
+
+      final outcome = await svc.negotiate(session.id, reason: 'too tired');
+      expect(outcome, isNotNull);
+      expect(outcome!.level, InterventionLevel.l3Shrink);
+      return (outcome, session);
+    }
+
+    test('Van never proposes what it will then refuse', () async {
+      // The bug this closes. VanService threaded `policy` into Negotiate and
+      // not `rules`, so Negotiate halved against the default floor of 15
+      // while the gate rejected against this 30. A 40-minute block produced a
+      // shrink to 20, which applyNegotiation then refused - the user accepts
+      // Van's own proposal and nothing happens.
+      final svc = serviceWith(const NegotiationRules(minimumBlockMinutes: 30));
+      final (outcome, session) = await stalledAndAsked(svc);
+
+      expect(
+        outcome.proposal.shrinkToMinutes,
+        isNot(20),
+        reason: 'halving 40 lands under this floor, so it must not be offered',
+      );
+      expect(
+        await svc.applyNegotiation(
+          session.id,
+          outcome.proposal,
+          reason: 'too tired',
+        ),
+        isNotNull,
+        reason: 'a proposal Van made must be one Van accepts',
+      );
+    });
+
+    test('and the default floor still shrinks where it always did', () async {
+      final (outcome, session) = await stalledAndAsked(
+        serviceWith(const NegotiationRules()),
+      );
+
+      expect(outcome.proposal.action, NegotiationAction.shrink);
+      expect(outcome.proposal.shrinkToMinutes, 20);
+      expect(
+        await service.applyNegotiation(
+          session.id,
+          outcome.proposal,
+          reason: 'too tired',
+        ),
+        isNotNull,
+      );
+    });
+  });
+
   group('negotiating a stalled block', () {
     /// Captures a task and puts the clock [late] minutes past its block.
     Future<WorkSession> stall(String sentence, {int late = 30}) async {
