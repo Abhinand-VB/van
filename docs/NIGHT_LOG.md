@@ -275,6 +275,61 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — the log nobody could read
+
+**Finished.** Phone still locked, tree green at 545. This one is not a defect
+hunt, and the justification matters more than usual because `OVERNIGHT.md`
+item 6 asks for it: *anything else you judge valuable, justify it in STATUS.*
+
+**The gap.** Van's design principle is that the append-only log is the app's
+memory. Every decision is recorded — what was suppressed and why, what was
+moved and why, which proposals the gate refused. None of it could be read back
+without hand-written SQL against a database pulled off the phone.
+
+That was survivable while every question could be answered by reading the
+code. It stops being survivable at exactly the point section 7 has now reached:
+*use it for a week, then adjust three dials.* The replacement lead, the
+dismissal limit, whether halving is the right first concession — all three are
+questions about what actually happened, and with no reader the only way to
+answer them is by feel.
+
+**Built as a pure core type plus a tool.** `WeekReview` takes events and
+returns numbers, so it is testable without a database, and it lives in
+`van_core` where `check_layers` keeps it honest. The tool is the consumer —
+deliberately, because a mechanism with no caller is precisely the pattern
+section 3k catalogues, and I was not going to add a fifth entry to that table
+by my own hand.
+
+**I read every payload key off its append site rather than guessing.** There
+are about fifteen of them and they are not uniform — `sessionMissed` carries
+`reason` and sometimes `skipReason`, `rescheduleApplied` carries `reason` with
+a different vocabulary, `interventionSelected` carries `source` and `refused`.
+A report citing fields that do not exist would be worse than no report.
+
+**The number I would actually look at first** is `moved, then missed again`:
+replacements that were themselves missed. It counts the times Van moved work
+and moving it did not help, which is the honest test of whether any of the
+rescheduling behaviour earns its place.
+
+**Verified rather than assumed.** I generated a real database by driving
+`VanService` through a capture, a start, a completion and a sweep, then ran the
+tool against it: 22 events, and the numbers matched the scripted scenario. Then
+I ran it against a file containing an event type this build does not know, to
+check it skips the row instead of dying — it does, on the same reasoning
+`eventFromRow` already uses for a malformed payload.
+
+**Two formatting decisions that are really honesty decisions.** A rate with no
+denominator prints nothing rather than "0%", because a week with no blocks is a
+question with no answer and not a week of total failure. And an empty group
+prints "none", because a heading with nothing under it reads like the tool
+broke — and "no suppressions" versus "broken report" is the exact distinction
+someone tuning a limit cannot afford to guess at.
+
+**What I did not do.** No fourth screen. It would be more useful day to day,
+and it would be an unverified UI change landing on a phone the owner is about
+to start relying on, with the keyguard up and no way to check it. The tool
+needs nothing installed and cannot break the app.
+
 ### 21 August 2026, overnight — one isolate, two operations
 
 **Finished.** Phone still locked. Tree green at 544 before starting. This

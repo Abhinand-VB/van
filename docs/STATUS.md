@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **545 tests, all green,
+Van is finished as far as an agent can take it alone. **561 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -31,6 +31,18 @@ on a phone that runs.** Four things need you, and they are small:
    only part of the negotiation loop never reached on hardware.
 4. **Listen to the drum.** Nobody ever has. Your ringer was muted every time
    I looked, so unmute first.
+
+**After a week, run this.** It prints what the log actually says — how many
+blocks you started, what Van held back and why, and how often moving work
+helped:
+
+```
+adb exec-out run-as dev.van.app cat /data/data/dev.van.app/app_flutter/van.sqlite > build/van.sqlite
+dart run tool/week_report.dart build/van.sqlite
+```
+
+It is read-only and never touches the phone's copy. Section 3o says which
+numbers answer which question.
 
 Then use it for a week and let real annoyance decide what comes next. There is
 no obvious next feature, and section 7 argues the case for WP-6 got *weaker*
@@ -67,7 +79,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **545 tests passing** — 238 in `packages/van_core` (pure Dart), 307 in the app.
+- **561 tests passing** — 249 in `packages/van_core` (pure Dart), 312 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -106,6 +118,7 @@ working configuration, not a degraded one.
 | App: timezone | 6 |
 | App: negotiation rule set | 2 |
 | App: capture failure paths | 6 |
+| App: week report rendering | 5 |
 | App: ladder ids | 9 |
 | Core: negotiation rules | 19 |
 
@@ -130,6 +143,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+a6530a6  Make the event log readable
 2eed1fb  Serialise the two operations that choose a time
 25cde26  Stop deriving persisted notification ids from String.hashCode
 f2e736b  Do not lose a capture because an alarm failed
@@ -808,6 +822,42 @@ using it.
 Worth remembering generally: *a `Future` created at construction time carries a
 zone with it*, and in this codebase construction and use are routinely in
 different ones.
+
+---
+
+## 3o. Reading the log back
+
+Van's design principle is that the append-only log is the app's memory. Until
+21 Aug it was **write-only in practice** — everything was recorded and none of
+it could be read without hand-written SQL against a pulled database.
+
+That was fine while the answer to every question was "look at the code". It
+stops being fine the moment section 7's advice kicks in: use it for a week,
+then adjust three dials. All three are questions about what happened.
+
+`WeekReview` (in `van_core`, pure) counts events; `tool/week_report.dart`
+prints them. **Which number answers which dial:**
+
+| Question | Look at |
+|---|---|
+| Is the five-minute replacement lead right? | `moved, then missed again` — replacements that were themselves missed |
+| Is `dismissalLimit` set right? | `held back` grouped by reason, especially `dismissalLimit` |
+| Is halving the right first concession? | Negotiation actions, and how many were `refused` |
+| Is Van reaching you at all? | `REFUSED BY ANDROID`, which only prints when it is non-zero |
+
+Two decisions inside it worth keeping:
+
+**Rates are null, not zero, with no denominator.** A week with no blocks
+planned has no start rate; printing "0%" would read as a week of total failure
+rather than a week of no data. The report simply omits the percentage.
+
+**An empty group prints `none`.** A heading with nothing under it reads like
+the report broke, and "no suppressions" versus "the tool is broken" is exactly
+the distinction someone tuning a limit cannot afford to guess at.
+
+Every field is derived from a payload key that is actually written in
+`VanService` — read off the append sites rather than assumed. A report citing
+fields that do not exist would be worse than no report at all.
 
 ---
 
