@@ -275,6 +275,54 @@ Newest first. Each entry is one loop iteration, written from a cold context.
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
 
+### 21 August 2026, overnight — what a capture leaves behind when it fails
+
+**Finished.** Phone still locked (`isKeyguardShowing=true`, `Dozing`), DND
+confirmed off (`zen_mode=0`), nothing on the board closable without the owner.
+3k's mechanical search was run to exhaustion last iteration, so this needed a
+genuinely new question. Every pass so far had asked about the path where things
+work. This one asked what a capture leaves behind when it does not.
+
+**The answer was bad at two layers, which is what made it worth the
+iteration.**
+
+`Notifications.schedule` handles exactly one refusal — the exact-alarm
+permission — and rethrows the rest, under a comment promising it would "never
+let a failed alarm take the capture down with it". Everything else did exactly
+that. The exception went out through `_armLadder`, `_planFor` and `capture()`,
+abandoning a task and a block that were already committed. I confirmed it by
+reverting the fix and watching the test blow up inside `_armLadder` at line
+442.
+
+Then the screen. `_send` clears the composer and sets `_busy` *before* the
+await, so any failure from `capture` took the user's typed sentence with it,
+left `_busy` true — disabling the composer for the rest of the session — and
+left an orphaned transcript line above a task that was silently in the database
+anyway. Four bad outcomes from one missing `try`.
+
+**A choice worth recording: a new event type rather than reusing
+`nudgeSuppressed`.** It was tempting, and it would have been wrong.
+`_armLadder`'s own comment says the suppression record exists to tell a quiet
+day from a broken scheduler; putting a platform failure into it would destroy
+the one distinction it is for. Same reasoning for leaving `wasSuppressed:
+false` on the nudge row after a failed schedule — Van *did* decide to send it.
+That record is still true. What Android did about it is a different fact and
+belongs in a different place.
+
+**A test I had to throw away.** My first version of the screen test closed the
+database to make `capture` fail. It failed for the wrong reason: the
+fire-and-forget inference observer (open issue 5) also writes to that database,
+so killing it produced unrelated async errors that the test framework caught
+before my `catch` ever ran. Replaced with a `VanService` subclass whose
+`capture` throws and nothing else does. **The cause is not what is under test —
+the screen is.**
+
+**The general form is the part to keep.** A failure *between* two commits is
+not the same as a failure before either one. `capture` writes a task, then
+events, then sessions, then alarms; anything throwing after the first write has
+already changed the user's data. Finish, or say plainly what happened. Never
+unwind silently, and never let the exception pick.
+
 ### 21 August 2026, overnight — running the recipe I had just written down
 
 **Finished.** The previous iteration ended by writing a search into section 3k

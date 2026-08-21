@@ -13,7 +13,7 @@ plan and is largely superseded by this file.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **535 tests, all green,
+Van is finished as far as an agent can take it alone. **541 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -58,7 +58,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **535 tests passing** — 238 in `packages/van_core` (pure Dart), 297 in the app.
+- **541 tests passing** — 238 in `packages/van_core` (pure Dart), 303 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -96,6 +96,7 @@ working configuration, not a degraded one.
 | App: focus screen | 17 |
 | App: timezone | 6 |
 | App: negotiation rule set | 2 |
+| App: capture failure paths | 6 |
 | Core: negotiation rules | 19 |
 
 ---
@@ -119,6 +120,7 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+f2e736b  Do not lose a capture because an alarm failed
 9702dfa  Give Negotiate the same rule set the gate judges by
 6b1f4b3  Parse deadlines in the user's timezone, not UTC
 04c31da  Guard the last two methods that could rewrite a closed block
@@ -678,6 +680,50 @@ parameter — or nobody wired it.
 
 ---
 
+## 3l. What happens when the platform says no
+
+Every review pass until 21 Aug asked about the *successful* path. This one
+asked what a capture leaves behind when something fails partway through, and
+found the same defect at two layers.
+
+**`Notifications.schedule` only absorbs one refusal.** The exact-alarm
+permission is handled — it drops to an inexact alarm, which is right, because a
+rung that fires late beats a rung that never fires. Everything else rethrows,
+under a comment promising it would *"never let a failed alarm take the capture
+down with it"*. Everything else did precisely that: out through `_armLadder`,
+`_planFor` and `capture()`, abandoning a task and block already committed.
+
+`_armLadder` now catches, appends `nudgeScheduleFailed`, and moves to the next
+rung.
+
+**Why that is a new event type and not `nudgeSuppressed`.** Suppression is Van
+choosing silence; this is Android refusing. The whole value of the suppression
+record is telling a quiet day from a broken scheduler, and folding a platform
+failure into it would destroy exactly that. For the same reason the nudge row
+keeps `wasSuppressed: false` after a failed schedule — Van *did* decide to send
+it, and that record is still true. What happened next lives in the event log.
+
+**The screen half was the worse one.** `ChatScreen._send` cleared the composer
+and set `_busy` before its `await`. Any exception from `capture` therefore:
+
+- took the user's typed sentence with it, unrecoverably
+- left `_busy` true, disabling the composer for the rest of the session
+- left an orphaned transcript line with no reply
+- left the task in the database anyway, so a retype would duplicate it
+
+For an app whose entire promise is that telling it something is enough, that is
+the worst available shape. It now restores the text, removes the orphan line,
+and says so.
+
+**The general form, and it is worth carrying:** *a failure between two commits
+is not the same as a failure before either.* Van's `capture` writes a task,
+then events, then sessions, then alarms. Anything that throws after the first
+write has already changed the user's data, so the only honest options are to
+finish or to say clearly what happened — never to unwind silently, and never to
+let the exception decide.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -703,6 +749,7 @@ than this file.**
 | 15 | **Snooze and Not today need the app to open** | Fixed the cheap way on 21 Aug (`59e063d`): all three actions are now `showsUserInterface`, so Android launches Van and the response arrives through `consumeLaunchAction`. That works, and it is intrusive — pressing "Not today" opens the app to dismiss something. The real fix is handling actions in the background isolate, which needs its own database connection; until then this is honest rather than silent. **Notifications armed before the fix keep the old flags**, so the six pending for this morning still lose Snooze and Not today. |
 | 18 | ~~Deadlines were parsed in UTC, not the user's timezone~~ | **Done, 21 Aug 2026** (`6b1f4b3`). `TemporalParser` takes a `utcOffset`, `ExtractTask` defaults it to zero, and `VanService` never passed one — so on a UTC-7 phone every typed deadline was seven hours early. The planner had the right offset the whole time, so the two disagreed about what day it was. **Existing rows keep their wrong deadlines**; nothing back-fills them. |
 | 19 | **The timezone offset is read once, at startup** | `main.dart` computes `DateTime.now().timeZoneOffset` and hands it to `WakingHours`; `VanService` holds it in a `final` field and derives the parser and the suppression policy from it. Nothing recomputes it, so a process alive across a DST change or a flight keeps the old offset — the same class of bug as issue 18, an hour wide instead of seven, until Van is restarted. **Next US transition is 1 Nov 2026**, so there is time to do it properly. Fix is a composition-root change: rebuild the service when the offset moves, off the `resumed` lifecycle callback the three screens already use. Not attempted overnight — it needs device verification, and the phone was locked. |
+| 20 | ~~A failed alarm destroyed the whole capture~~ | **Done, 21 Aug 2026** (`f2e736b`). See section 3l. Both layers: `_armLadder` records `nudgeScheduleFailed` and carries on, and `ChatScreen._send` gives the typed sentence back instead of eating it. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 
