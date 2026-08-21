@@ -56,22 +56,37 @@ class _TaskListScreenState extends State<TaskListScreen>
     });
   }
 
-  Future<void> _complete(Task task) async {
-    // Removed from the list first so the swipe does not snap back while the
-    // write happens. The reload afterwards is the source of truth.
-    setState(() => _open = [..._open]..removeWhere((t) => t.id == task.id));
-    await widget.service.completeTask(task.id);
-    if (!mounted) return;
+  /// Writes the completion, and reports whether it actually happened.
+  ///
+  /// Handed to `confirmDismiss` rather than done in `onDismissed`, and that is
+  /// the whole fix. `onDismissed` fires after the row is already gone, so the
+  /// old version removed it optimistically and had nowhere to put it back if
+  /// the write failed - re-inserting the same key does not revive a dismissed
+  /// `Dismissible`, so the list went on claiming a task was done that the
+  /// database still had open. `confirmDismiss` gets to say no, and the row
+  /// animates back on its own.
+  ///
+  /// It also means the framework awaits this. The old call site was
+  /// `unawaited`, so a failed write landed on the zone as an unhandled error
+  /// rather than on the user as a message. See STATUS 3s.
+  Future<bool> _complete(Task task) async {
+    try {
+      await widget.service.completeTask(task.id);
+    } on Object {
+      _say('Could not finish "${task.title}" - still on your list.');
+      return false;
+    }
+    _say('Finished "${task.title}".');
+    return true;
+  }
 
+  void _say(String message) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
-        SnackBar(
-          content: Text('Finished "${task.title}".'),
-          duration: const Duration(seconds: 2),
-        ),
+        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
       );
-    await _refresh();
   }
 
   @override
@@ -95,7 +110,22 @@ class _TaskListScreenState extends State<TaskListScreen>
                     key: ValueKey(task.id),
                     direction: DismissDirection.startToEnd,
                     background: const _CompleteBackground(),
-                    onDismissed: (_) => unawaited(_complete(task)),
+                    confirmDismiss: (_) => _complete(task),
+                    onDismissed: (_) {
+                      // Only reached once _complete has confirmed, so this is
+                      // the success path: drop the row, then reconcile with
+                      // the database. A failed reload leaves a stale list and
+                      // nothing worse, but `unawaited` catches nothing on its
+                      // own, so it still gets a handler.
+                      setState(
+                        () =>
+                            _open = [..._open]
+                              ..removeWhere((t) => t.id == task.id),
+                      );
+                      unawaited(
+                        _refresh().catchError((Object _, StackTrace _) {}),
+                      );
+                    },
                     child: _TaskRow(task: task, now: widget.clock.now()),
                   );
                 },

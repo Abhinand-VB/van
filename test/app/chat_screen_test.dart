@@ -23,6 +23,28 @@ import '../support/prompts.dart';
 /// Closing the database would also do it, but that additionally makes the
 /// fire-and-forget inference observer throw into the void (open issue 5), and
 /// the screen's behaviour is what is under test - not the cause.
+/// A service whose [completeTask] always fails, for testing what the swipe
+/// does about it.
+class _FailingComplete extends VanService {
+  _FailingComplete({
+    required super.tasks,
+    required super.sessions,
+    required super.events,
+    required super.nudges,
+    required super.router,
+    required super.notifications,
+    required super.templates,
+    required super.prompts,
+    required super.clock,
+    required super.ids,
+    super.waking,
+  });
+
+  @override
+  Future<Task?> completeTask(String taskId) async =>
+      throw Exception('the write failed');
+}
+
 class _FailingCapture extends VanService {
   _FailingCapture({
     required super.tasks,
@@ -48,6 +70,7 @@ void main() {
   late FakeNotifications notifications;
   late VanService service;
   late VanService failing;
+  late VanService failingComplete;
   late FakeClock clock;
 
   /// Wednesday 19 August 2026, 09:00 UTC.
@@ -71,6 +94,22 @@ void main() {
       prompts: testPrompts(),
       clock: clock,
       ids: SequentialIds('f'),
+      waking: const WakingHours(utcOffset: Duration.zero),
+    );
+
+    failingComplete = _FailingComplete(
+      tasks: TaskRepo(db),
+      sessions: SessionRepo(db),
+      events: events,
+      nudges: NudgeRepo(db),
+      router: InferenceRouter(defaultBackend: const NullBackend()),
+      notifications: notifications,
+      templates: NudgeTemplates.fromJson(
+        File('assets/nudge_templates/templates.json').readAsStringSync(),
+      ),
+      prompts: testPrompts(),
+      clock: clock,
+      ids: SequentialIds('c'),
       waking: const WakingHours(utcOffset: Duration.zero),
     );
 
@@ -368,12 +407,17 @@ void main() {
   });
 
   group('the task list', () {
-    Future<void> showList(WidgetTester tester) async {
+    Future<void> showList(WidgetTester tester, {VanService? using}) async {
       await tester.pumpWidget(
         MaterialApp(
-          home: TaskListScreen(service: service, clock: clock),
+          home: TaskListScreen(service: using ?? service, clock: clock),
         ),
       );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> swipe(WidgetTester tester, String title) async {
+      await tester.drag(find.text(title), const Offset(500, 0));
       await tester.pumpAndSettle();
     }
 
@@ -405,6 +449,44 @@ void main() {
       final reloaded = await TaskRepo(db).byId(captured.task.id);
       expect(reloaded!.status, TaskStatus.done);
       expect(find.text('Nothing open.'), findsOneWidget);
+    });
+
+    testWidgets('a failed finish puts the row back and says so', (
+      tester,
+    ) async {
+      // The row is removed optimistically so the swipe does not snap back
+      // mid-write. If the write then fails, the list claims the task is done
+      // while the database still has it open - the swipe silently loses the
+      // user's action, which is worse than refusing it.
+      await service.capture('pay the invoice 30 minutes');
+      await showList(tester, using: failingComplete);
+
+      await swipe(tester, 'Pay the invoice');
+
+      expect(find.textContaining('Could not finish'), findsOneWidget);
+      expect(
+        find.text('Pay the invoice'),
+        findsOneWidget,
+        reason: 'the database still has it open, so the list must show it',
+      );
+      expect(
+        (await service.openTasks()).single.title,
+        'Pay the invoice',
+        reason: 'and nothing was actually completed',
+      );
+    });
+
+    testWidgets('a failed finish does not escape into the zone', (
+      tester,
+    ) async {
+      await service.capture('pay the invoice 30 minutes');
+      await showList(tester, using: failingComplete);
+
+      await swipe(tester, 'Pay the invoice');
+
+      // onDismissed is a void callback, so the future is unawaited and an
+      // uncaught failure would land on the zone rather than the caller.
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('finishing a task stands its nudges down', (tester) async {
