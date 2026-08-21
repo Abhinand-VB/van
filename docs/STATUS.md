@@ -19,7 +19,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **294 tests passing** — 211 in `packages/van_core` (pure Dart), 83 in the app.
+- **303 tests passing** — 211 in `packages/van_core` (pure Dart), 92 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -36,6 +36,7 @@ working configuration, not a degraded one.
 | App: repositories | 39 |
 | App: inference | 27 |
 | App: end-to-end loop | 17 |
+| App: nudge record and fatigue | 9 |
 
 ---
 
@@ -58,6 +59,8 @@ working configuration, not a degraded one.
 ### Commits
 
 ```
+c0ba269  Make the fatigue logic real instead of well-tested and unreachable
+3085a06  Fix the reason no nudge has ever fired on the device
 74cb226  Move abandoned work instead of losing it (stale-session sweep)
 b442280  WP-4, WP-7, WP-8: notifications, Now/Focus screens, composition root
 312a2d6  WP-5: inference abstraction with deterministic fallbacks
@@ -151,6 +154,50 @@ Three things to know before changing it:
 
 ---
 
+## 3b. Where the nudge decision actually happens
+
+Worth reading before touching `_armLadder`, because the answer is not what
+`docs/ARCHITECTURE.md` describes.
+
+The architecture assumes a live `NudgeEngine.tick` that evaluates
+`SuppressionPolicy` and `ImportanceScorer` at the moment of interrupting. WP-4
+replaced that with a pre-scheduled ladder and **nothing took over the gate**.
+Until 21 Aug those three classes appeared nowhere in `lib/` at all: 47 core
+tests, none of them reaching the phone. Van would fire the same three-rung
+ladder at someone who had ignored the last nine.
+
+The gate now runs at **arm time, evaluated against the instant each rung will
+fire**. That distinction is the whole trick:
+
+- **Knowable in advance, so used:** quiet hours (the rung's own fire time), the
+  spacing between rungs, the dismissal streak so far.
+- **Not knowable, so left out rather than guessed:** whether a focus session
+  will be running, and whether the phone will be in do-not-disturb. The OS
+  enforces DND itself, and an answered session cancels its own remaining rungs.
+
+Three consequences to keep in mind:
+
+1. **Delivery is inferred, not observed.** Android has no "notification was
+   shown" callback. A rung whose instant has passed and which was never
+   cancelled is treated as having reached the user. The entire fatigue count
+   rests on that inference, which is why it is made in exactly one place —
+   `_settleLadder`.
+2. **Only the sweep can record an ignore.** An ignore is the absence of an
+   action, so nothing the user does can report one. `_settleLadder(...,
+   ResponseType.ignored)` from `sweepStaleSessions` is the sole producer of the
+   signal the whole fatigue mechanism consumes.
+3. **The fatigue threshold is not a new number.** Ignore two full ladders and
+   `SuppressionPolicy.dismissalLimit` (3) stops the follow-up rungs being armed
+   at all — the opening prompt still fires, the +10 and +25 chases do not. That
+   falls out of the constants already tuned in WP-3. The test is called *"two
+   ignored ladders and Van stops chasing"*.
+
+Suppressed rungs are still written to the `nudges` table with their reason.
+Knowing what Van decided *not* to say is the only way to tell a quiet day from
+a broken scheduler.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -165,7 +212,8 @@ than this file.**
 | 4 | `EventRepo.forSession` is a table scan | `sessionId` lives in the JSON payload, so filtering happens in Dart. Fine at single-user volume. Fix later with a nullable indexed column or SQLite `json_extract`. |
 | 5 | Inference logging is fire-and-forget | `EventLogInferenceObserver` uses `unawaited` so a slow write never delays the call it describes. A crash can therefore lose the last few inference events. Accepted; the alternative is making every model call wait on a database write. Tests must `flushLog()` before asserting. |
 | 6 | Legacy launcher icons are Flutter's default | `mipmap-*/ic_launcher.png` still show the Flutter logo below API 26. The adaptive icon covers everything at or above it. |
-| 7 | **`NudgeRepo` is never constructed in production** | It exists, it is tested, and nothing in `lib/` uses it. The `nudges` table on the device is empty. That means `SuppressionPolicy`'s `consecutiveDismissals` input has no data source in the real app: the fatigue logic that stops Van nagging after repeated ignores is dead code on hardware, even though it is well covered in the simulation. Worth fixing before living with it for a week, since the week is meant to test exactly that. |
+| 7 | ~~`NudgeRepo` is never constructed in production~~ | **Done, 21 Aug 2026** (`c0ba269`). See section 3b. |
+| 8 | **The exact-alarm settings screen opens on every cold start** | `hasPermission()` now correctly requires both the notification and exact-alarm grants, and `_FirstRun` requests whatever is missing on first paint. Until the grant is given, that means being thrown into system settings every single launch. `_FirstRun`'s own doc comment claims it asks "once and never nags", which was never true and is now visibly untrue. Needs a persisted "already asked" flag — the `settings` table exists and is unused. |
 
 ---
 
@@ -284,6 +332,40 @@ fallback instead, with a one-hour window (`WL=3600000` in `dumpsys`), so they
 will land *near* those times rather than on them. Grant "Alarms & reminders"
 for Van in system settings and they become exact.
 
+### Second run, ~01:50, after wiring up the nudge record
+
+Same conditions: awake, unlocked, `zen_mode` `0`, no system setting changed.
+
+- **The `nudges` table is populated on the device for the first time.** Three
+  rows for the new session, each with its level, template id, scheduled instant
+  and a real score from `ImportanceScorer` (6 for `sessionStart`, 7 for
+  `sessionMissed` — the baselines, correct with no deadline and no prior
+  moves). `was_suppressed` false, `delivered_utc` null, because nothing has
+  fired yet. `nudge_responses` is correctly empty.
+- Six `RTC_WAKEUP` alarms are now registered against `dev.van.app`. Reinstalling
+  did **not** clear the previous ladder.
+- Confirmed the annoyance now filed as issue 8: the exact-alarm settings screen
+  opens on every single cold start while the grant is missing.
+
+**Revised: what is on your phone in the morning.** Three tasks, and **six
+notifications between 09:00 and 09:55**:
+
+| Task | Nudges |
+|---|---|
+| "Hi" | block at 08:00, no ladder (armed before the alarm fix) |
+| "Alarm wiring check" | 09:00, 09:10, 09:25 |
+| "Fatigue wiring check" | 09:30, 09:40, 09:55 |
+
+That is more noise than I would choose to leave you, and it is deliberate:
+each ladder is the evidence for a different fix, and deleting them would delete
+the proof. Press START on any one of them and you close the last device gap in
+issue 3. Ignore them all and the sweep will demonstrate the fatigue logic on
+itself, which is arguably the better test.
+
+They will fire *near* those times rather than on them — the exact-alarm grant
+is still withheld, so they are registered through the inexact fallback with a
+one-hour window.
+
 ---
 
 ## 6. Product decisions on record
@@ -311,19 +393,20 @@ for Van in system settings and they become exact.
 
 ## 7. Suggested next steps, in order
 
-1. **Grant Van "Alarms & reminders"** in system settings, then confirm the
-   armed nudges fire on time. That is one tap and it is the last thing standing
-   between Van and doing its actual job. Pressing START on a delivered nudge
-   also closes the round-trip gap in issue 3.
-2. **Wire up `NudgeRepo`** (issue 7). The fatigue logic that stops Van nagging
-   is dead code on hardware, and the whole point of step 3 is to test that.
-3. **Use it for a week.** The loop is functionally complete as of `74cb226`
-   and can actually reach you as of `3085a06`. Everything after this should be
-   driven by what annoys or fails in real use, not by the plan. In particular
-   the sweep's five-minute replacement lead (from
-   `Rescheduler.minimumLeadMinutes`) may feel too eager — "you missed 9am, so
-   start in five minutes" is a plausible thing to hate.
-4. Then either the `negotiate` capability, the chat screen, or WP-6
+1. **Grant Van "Alarms & reminders"** in system settings. One tap, it is the
+   last thing standing between Van and doing its job, and it also stops the
+   settings screen ambushing you on every launch until issue 8 is fixed.
+2. **Watch a nudge arrive and press START.** That closes the last gap in issue
+   3 and is the only part of the loop never yet observed end to end.
+3. **Fix issue 8** — a persisted "already asked" flag in the unused `settings`
+   table. Small, and it is the first thing you will resent otherwise.
+4. **Use it for a week.** The loop is functionally complete (`74cb226`), can
+   reach you (`3085a06`), and now backs off when ignored (`c0ba269`). Everything
+   after this should be driven by what annoys or fails in real use. Two things
+   I would watch: the sweep's five-minute replacement lead may feel too eager,
+   and the fatigue threshold of two ignored ladders may prove too twitchy or
+   too slow — it is `SuppressionPolicy.dismissalLimit`, one number.
+5. Then either the `negotiate` capability, the chat screen, or WP-6
    (on-device Gemma 4), depending on whether nudge quality or capture friction
    turns out to be the real problem.
 
@@ -333,6 +416,53 @@ for Van in system settings and they become exact.
 
 Newest first. Each entry is one overnight loop iteration, written from a cold
 context; see `docs/OVERNIGHT.md` for the standing brief.
+
+### 21 August 2026, overnight — making the fatigue logic reachable
+
+**Finished.** Issue 7, and it turned out to be larger than its title.
+
+`NudgeRepo` never being constructed was the symptom. The cause: pre-scheduling
+the ladder removed the live tick that used to run the suppression gate, and
+nothing replaced it, so `NudgeEngine`, `SuppressionPolicy` and
+`ImportanceScorer` appeared nowhere in `lib/` at all. Forty-seven core tests
+covering behaviour that could not happen on the phone. Van would have fired the
+same three-rung ladder at someone who had ignored the last nine.
+
+The gate now runs at arm time, evaluated against the instant each rung will
+*fire* rather than the instant it is armed. Section 3b explains why that
+distinction is the whole trick, and which inputs are deliberately left out
+because they are genuinely unknowable in advance. Every rung is now recorded
+whether or not it goes out, with its real score and, when held back, the
+reason. Commit `c0ba269`. 294 → 303 tests.
+
+Net behaviour: **ignore two full ladders and Van stops chasing.** The opening
+prompt still fires; the +10 and +25 follow-ups are held back. That falls out of
+`SuppressionPolicy.dismissalLimit`, already tuned in WP-3 — I did not invent a
+new number.
+
+Verified on the phone: the `nudges` table is populated for the first time, with
+real scores.
+
+**Decided on your behalf** — `DECISIONS_PENDING.md` D7–D9, all cheap to
+reverse. The one to look at is D7: a replacement block now counts as
+*continuing* its parent's conversation rather than starting a new one.
+
+**Tried, and learned from.** My first version measured nudge spacing from the
+moment a rung was armed rather than the moment it fires. It silenced the
+replacement ladder after a snooze — you ask for a reminder in ten minutes, and
+Van suppresses it because it nudged you twelve minutes ago. An existing test
+caught it, which is the argument for the end-to-end loop tests in one line.
+Two of my own new tests also asserted the wrong thing and were wrong, not the
+code; both are fixed and the reasoning is in the commit.
+
+**What I would do next.** Grant the alarm permission, watch one nudge land and
+press START — that is the last unobserved part of the loop. Then fix issue 8,
+found tonight: the exact-alarm settings screen now ambushes you on every cold
+start until the grant is given.
+
+**What I need from you.** Nothing blocking. Over coffee: whether two ignored
+ladders is the right point to back off, and whether a replacement landing five
+minutes from now is helpful or infuriating.
 
 ### 21 August 2026, overnight — the sweep, and why nudges never fired
 
