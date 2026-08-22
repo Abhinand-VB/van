@@ -12,21 +12,40 @@ largely superseded by this file.
 
 ## Does it work?
 
-**Yes. Checked on the phone, not inferred from tests.**
+**Yes — with one honest gap at the end of the run: the phone locked at 05:56,
+so the last install was verified by evidence rather than by eye.**
 
 | | |
 |---|---|
-| **Commit the phone is running** | `b347b41` — the tip of `master`. The last code change in it is `a796a6a`, "Stop fatigue from muting the day, and give it a way back"; anything committed after this line is documentation only and changes no code. |
-| **APK installed at** | **22 Aug 2026, 05:43:59** (device local, PDT) |
-| **Last launched and driven by me** | **22 Aug 2026, 05:44** — launched and the Now screen seen rendering; driven by hand at 05:39 on the build before it |
-| **What I did** | Typed "review the fatigue probe today 30 minutes" into Chat, watched Van plan a block at 11:10, then pulled the database and confirmed the task row, the session, and a full three-rung ladder with **nothing suppressed**. Reinstalled at the tip afterwards and confirmed the Now screen still renders, with that task listed on it. |
-| **Tests** | 582 green (330 app, 252 core), `dart analyze --fatal-infos` and `check_layers` clean |
+| **Commit the phone is running** | `1c54b0e` — "Let the timezone move under a running process", the tip of `master` |
+| **APK installed at** | **22 Aug 2026, 05:56:19** (device local, PDT) |
+| **Last launched** | **22 Aug 2026, 05:56:21** — `am start` delivered, the process is alive (pid 4377), and Van wrote an `appOpened` event two seconds after the install. **I did not see this build's UI**; the keyguard engaged at 05:56. |
+| **Last seen rendering** | **05:44**, on the build one commit earlier (`b347b41`). Now screen, task list and all. |
+| **Last driven by hand** | **05:39** — typed "review the fatigue probe today 30 minutes" into Chat, watched Van plan a block at 11:10, pulled the database and confirmed the task row, the session, and a full three-rung ladder with **nothing suppressed** |
+| **Tests** | 588 green (336 app, 252 core), `dart analyze --fatal-infos` and `check_layers` clean |
 
-**One caveat, stated plainly:** what I verified is capture, planning, arming
-and the UI. **A nudge actually firing, and START coming back, is still not
-verified on hardware** — that is issue 3 and it needs you awake when one
-arrives. Everything this section claims was watched; nothing in it is inferred
-from the test suite.
+**What that gap does and does not mean.** The code between `b347b41` (seen
+working) and `1c54b0e` is the timezone fix. It installed cleanly, the process
+started, and it reached its composition root far enough to write to the
+database — that is more than "the APK is present", but it is less than having
+watched the Now screen draw. If Van misbehaves this morning, `1c54b0e` is the
+only commit that has not been looked at, and reverting it is one command:
+
+```bash
+git revert 1c54b0e
+```
+
+**Device work stopped at 05:56, and not for the reason the brief predicts.**
+`isKeyguardShowing=true`, wakefulness `Dozing`. Per OVERNIGHT.md 3a that ends
+device work rather than being something to get past, so it was not. But note
+that iterations were **one to two minutes apart** with `KEYCODE_WAKEUP` sent
+throughout, and it locked anyway — so the standing advice that "iterations
+less than 30 minutes apart keep the keyguard away" is **wrong**. Waking the
+display is not the same as user activity, and it does not reset the lock
+timer. Section 5 has the detail.
+
+**Two things still unverified on hardware**, both needing you: a nudge firing
+with START coming back (issue 3), and this morning's build drawing its UI.
 
 **Yesterday's failure was that this section did not exist.** The phone spent
 21 August running an APK from 06:11 while the tip moved on without it, and
@@ -1187,7 +1206,7 @@ than this file.**
 | 14 | **`GemmaBackend` cannot be measured off-device** | It needs the platform channel and a model file, so `tool/run_goldens.dart` deliberately has no flag for it. Measuring a candidate model means running the golden set on the phone, which needs a small debug screen or an integration test. Nothing built yet; the WP-6 gate cannot be evaluated until it is. |
 | 15 | **Snooze and Not today need the app to open** | Fixed the cheap way on 21 Aug (`59e063d`): all three actions are now `showsUserInterface`, so Android launches Van and the response arrives through `consumeLaunchAction`. That works, and it is intrusive — pressing "Not today" opens the app to dismiss something. The real fix is handling actions in the background isolate, which needs its own database connection; until then this is honest rather than silent. **Notifications armed before the fix keep the old flags**, so the six pending for this morning still lose Snooze and Not today. |
 | 18 | ~~Deadlines were parsed in UTC, not the user's timezone~~ | **Done, 21 Aug 2026** (`6b1f4b3`). `TemporalParser` takes a `utcOffset`, `ExtractTask` defaults it to zero, and `VanService` never passed one — so on a UTC-7 phone every typed deadline was seven hours early. The planner had the right offset the whole time, so the two disagreed about what day it was. **Existing rows keep their wrong deadlines**; nothing back-fills them. |
-| 19 | **The timezone offset is read once, at startup** | `main.dart` computes `DateTime.now().timeZoneOffset` and hands it to `WakingHours`; `VanService` holds it in a `final` field and derives the parser and the suppression policy from it. Nothing recomputes it, so a process alive across a DST change or a flight keeps the old offset — the same class of bug as issue 18, an hour wide instead of seven, until Van is restarted. **Next US transition is 1 Nov 2026**, so there is time to do it properly. Fix is a composition-root change: rebuild the service when the offset moves, off the `resumed` lifecycle callback the three screens already use. Not attempted overnight — it needs device verification, and the phone was locked. |
+| 19 | ~~The timezone offset is read once, at startup~~ | **Done, 22 Aug 2026** (`1c54b0e`). `VanService.refreshTimezone(Duration)` rebuilds the three things that derive from the offset — the waking window, the suppression gate and the temporal parser — and `TimezoneWatcher` calls it on every resume from the composition root. All three move together on purpose: a mutation that rebuilt only the parser put a block at 02:00 local, and the planner test catches exactly that. The suppression policy is *copied* (`withWaking`) so composition-root tuning survives; waking **hours** do not move with the user, only the offset they resolve against. A move is recorded as the new `EventType.timezoneChanged`, because a day of blocks an hour out is otherwise indistinguishable from a scheduling bug. **Installed but not observed on the phone** — the offset has not moved, so the correct on-device signal is the *absence* of a `timezoneChanged` row, which is what the database shows. Next US transition is 1 Nov 2026. |
 | 20 | ~~A failed alarm destroyed the whole capture~~ | **Done, 21 Aug 2026** (`f2e736b`). See section 3l. Both layers: `_armLadder` records `nudgeScheduleFailed` and carries on, and `ChatScreen._send` gives the typed sentence back instead of eating it. |
 | 21 | ~~Notification ids came from `String.hashCode`~~ | **Done, 21 Aug 2026** (`25cde26`). See section 3m. Explicit FNV-1a, pinned by tests, and the mask widened from 22 to 28 bits — the old one had 2 real collisions in 5000 session ids. **One-time cost:** rungs armed by an older build carry old ids and cannot be cancelled by a newer one. Section 0 says to reinstall after the 09:30–09:55 nudges have fired. |
 | 22 | ~~A capture during a sweep could double-book a slot~~ | **Done, 21 Aug 2026** (`2eed1fb`). See section 3n. `capture` and `sweepStaleSessions` now run one at a time; reproduced first, with both blocks landing at 12:05Z. |
@@ -1207,6 +1226,19 @@ Snapdragon 8 Elite, ~10.9 GB RAM. Serial `<device-serial>`. **Timezone
 `America/Los_Angeles`** — not IST, whatever the example in `WakingHours` says.
 Convert `planned_start_utc` with that offset or every hand-read of the schedule
 comes out half a day wrong.
+
+**`KEYCODE_WAKEUP` does not stop the phone locking.** It locked at 05:56 on
+22 Aug with iterations one to two minutes apart and a wakeup sent at the top
+of each. Waking the display is not user activity and does not reset the lock
+timer, so the advice that frequent iterations keep the keyguard away is
+wrong — it only ever keeps the *screen* on. Plan device work as if the
+keyguard can engage at any moment: do the thing that needs the screen first,
+and leave read-only checks for afterwards, because those keep working.
+
+**What still works once it has locked:** `adb install`, `am start`, `pidof`,
+`logcat`, and pulling the database with `run-as`. None needs the screen. On 22
+Aug that was enough to show a fresh build had launched — an `appOpened` row
+timestamped two seconds after the install — without seeing a pixel of it.
 
 **A bare "no devices/emulators found" is not proof the phone locked.** It
 happened once at 05:35 on 22 Aug: `adb devices` listed nothing at all, and
@@ -1274,6 +1306,19 @@ keyguard away; this one ran long.
 ```bash
 dart format . && dart analyze --fatal-infos && dart run tool/check_layers.dart && flutter test
 ```
+
+**Do not pipe the gate's steps through `tail` and trust the result.** On 22
+Aug `dart run tool/check_layers.dart 2>&1 | tail -1` printed a blank line and
+the `&&` chain carried on to the tests, which passed — so the run looked green
+while the layer guard was failing. A pipeline reports the *last* command's
+status, not the guard's. Run each step so its own exit code is visible, or use
+`set -e` without pipes.
+
+**`check_layers` allows the wall clock in two named files, not in
+`lib/platform/` generally** — `lib/platform/system_clock.dart` and
+`lib/main.dart`. A new file under `lib/platform/` that calls `DateTime.now()`
+fails the build, which is why `SystemClock` grew a `utcOffset()` rather than
+`TimezoneWatcher` reading the clock itself.
 
 ```bash
 cd packages/van_core && dart test
@@ -1399,10 +1444,13 @@ EXPLAIN QUERY PLAN SELECT * FROM events WHERE session_id = ?
 
 ## 7. Suggested next steps, in order
 
-Every item in `docs/OVERNIGHT.md`'s work queue is done, and every open issue
-that an agent could close alone is closed. What is left needs you, or needs
-evidence from real use.
+Every item in `docs/OVERNIGHT.md`'s work queue is done except the calendar
+work package, and every open issue that an agent could close alone is closed.
+What is left needs you, or needs evidence from real use.
 
+0. **Unlock the phone and open Van once.** Ten seconds. It locked at 05:56
+   and the last build — the timezone fix, `1c54b0e` — was never seen drawing
+   its UI. Everything else below assumes this came up clean.
 1. **Grant Van "Alarms & reminders"** - tap the banner on the Now screen.
 2. **Watch a nudge arrive and press START.** This closes the last gap in
    issue 3 and is still the one thing open since the first night. **As of

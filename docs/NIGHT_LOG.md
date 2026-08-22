@@ -1583,3 +1583,58 @@ first time. A failed capture is not evidence the app is broken until a tap
 somewhere known has been shown to land. The send button also moves when the
 keyboard dismisses, and tapping its old position just closes the keyboard —
 which looks identical to a dead button.
+
+### Later the same morning — issue 19, and losing the phone at 05:56
+
+**The timezone fix.** The offset was read once in `main.dart` and frozen into
+three separate places at construction. Fixing one of them would have been
+worse than fixing none: a parser in the new zone and a waking window in the
+old one is issue 18 wearing a different hat, and it would have looked correct
+in every test that only checks deadlines.
+
+That is not a hypothetical. I mutated the fix to rebuild the parser and *not*
+the waking window, and the planner test failed with a block placed at **02:00
+local** — outside waking hours, in the middle of the night. Which is the
+useful form of the old-code check here: for a brand-new method, running the
+tests against the unfixed code only ever produces "method not defined", and a
+compile error proves nothing about whether the test measures behaviour. The
+mutation does.
+
+**`check_layers` is stricter than I assumed**, and it was right to be. I put
+`DateTime.now()` in a new file under `lib/platform/`, reasoning that the whole
+directory was the platform boundary. The rule allows the wall clock in exactly
+two named files. `SystemClock` already had the doc comment claiming to be "the
+one place in Van allowed to read the wall clock", so the offset reading went
+there and `TimezoneWatcher` asks it.
+
+**I nearly shipped that failure as green.** The gate was being run as one
+`&&` chain with each step piped through `tail`, and a pipeline's exit status
+is the *last* command's — so `check_layers` exited 1, `tail` exited 0, and the
+chain carried on to a passing test suite. It looked green. It was red. The
+only reason I caught it was reading the output text rather than trusting the
+chain. Recorded in section 5 of STATUS; the fix is to let each step's own exit
+code show.
+
+**Then the phone locked, at 05:56.** `isKeyguardShowing=true`, wakefulness
+`Dozing`, five minutes after the previous successful screenshot and with
+iterations running one to two minutes apart. Every one of them had sent
+`KEYCODE_WAKEUP` first, exactly as the brief instructs.
+
+So the standing advice is wrong, and worth correcting rather than repeating:
+**waking the display is not user activity and does not reset the lock timer.**
+Frequent iterations keep the screen lit; they do not keep the keyguard away.
+The practical lesson is ordering — do the thing that needs the screen first,
+and leave the read-only checks for afterwards, because those survive.
+
+They did survive, and they carried more than I expected. With the keyguard up
+I could still install, start the activity, read `pidof`, and pull the
+database. The new build's `appOpened` row is timestamped **two seconds after
+the install**, which shows it launched and got far enough into its composition
+root to write. That is real evidence and it is not the same as having watched
+the UI draw, so STATUS says both things separately rather than rounding the
+second one up to the first.
+
+The pleasing part: the correct on-device signal for the timezone fix is a
+**zero**. The offset has not moved, so `refreshTimezone` returns false and no
+`timezoneChanged` row is written — and the database shows none. An absence is
+weak evidence on its own, but it is the right absence.
