@@ -51,40 +51,26 @@ iteration may have left something broken; do not build on top of it.
 
 ---
 
-## 3. Work queue
+## 3. What "done" means
 
-Finish each item completely — code, tests, docs, commit — before starting the
-next. A half-finished item at the end of an iteration is worse than an
-untouched one, because the next iteration cannot tell how far it got.
+**An item is done when it is installed on the phone and observed working. Not
+when the tests are green.**
 
-1. **Stale-session reschedule sweep** (STATUS open issue 1). `NudgeEngine`
-   stops nagging about a block an hour past its start, but nothing moves that
-   work, so abandoned sessions quietly vanish from the plan. Add a sweep that
-   marks stale planned sessions skipped, runs `Rescheduler`, arms the new
-   ladder, and emits `sessionMissed` + `rescheduleApplied`. Cover it in the
-   simulation harness. **This is the one functional hole in the loop.**
+This is the lesson of 21 August and it cost the whole night. That run produced
+73 commits and took the suite from 263 to 575 tests, all passing, every commit
+through the full gate. The owner picked up the phone at lunchtime and the app
+was unusable — silent, refusing to nudge, apparently dead. Two reasons, both
+avoidable:
 
-2. **The `negotiate` capability.** Declared in `assets/inference_config.json`
-   but has no implementation class. Input is the escalation context, output is
-   a proposed action plus a message; the fallback is the ladder lookup plus a
-   template. Follow the shape of `ExtractTask` and `ComposeNudge`.
+- **The APK on the phone was from 06:11.** Everything after it — the timezone
+  fix, the capture-failure fix, five more — was committed and never installed.
+  Work that does not reach the device did not happen.
+- **Nothing checked whether the app still behaved.** The suite tested every
+  unit and no one asked the only question that mattered: if I opened this
+  right now, would it work?
 
-3. **Chat screen and flat task list** — the part of WP-7 that was cut. Chat
-   sends text to `VanService.capture` and renders the plan as an approval card.
-   The task list is flat: no folders, no labels, no projects, swipe to
-   complete.
-
-4. **STATUS open issues 4 and 6.** The `EventRepo.forSession` table scan, and
-   the legacy launcher PNGs still showing Flutter's logo — generate those from
-   the existing vector drawable.
-
-5. **WP-6 groundwork, code only.** The Kotlin `LocalLlm` platform channel over
-   LiteRT-LM, the `LlmBackend` implementation for Gemma 4 E2B, the golden sets,
-   and `tool/run_goldens.dart`. Write the code and its tests against a fake.
-   **Do not download the model. Do not report benchmark numbers you did not
-   measure.**
-
-6. Anything else you judge valuable. Justify it in STATUS.
+So: green is the floor, not the goal. A commit that cannot be shown working on
+the device is a commit that has not been finished.
 
 ---
 
@@ -148,6 +134,84 @@ MSYS_NO_PATHCONV=1 adb exec-out run-as dev.van.app cat /data/data/dev.van.app/ap
 
 ---
 
+## 3b. Priority order, every iteration
+
+Work down this list. **Do not start an item while one above it is unresolved.**
+
+1. **Is the tree green?** If not, fixing it is the whole iteration.
+2. **Is the build on the phone current?** Check `lastUpdateTime` against
+   `git log -1`. If the phone is behind, build and install before anything
+   else. **Never end a run with an APK older than the tip.**
+3. **Does the app work right now?** Launch it, drive the main path — capture a
+   task, look at Now, check a nudge got armed. If it does not work, that is the
+   whole iteration, however small the queue item you were about to start.
+4. **Known-broken behaviour**, in the order it is listed below.
+5. **Anything else you judge valuable**, and justify it in STATUS.
+
+The failure mode to avoid is the one that happened: spending five hours on
+latent defects found by clever review while the app sat broken on the phone.
+Latent bugs are worth fixing. They are worth fixing *fourth*.
+
+---
+
+## 3c. Tonight's queue
+
+1. **The fatigue ratchet** (STATUS issue 26). Van muted itself for a whole day
+   and could not un-mute. Nine nudges fired while the phone was locked, the
+   sweep settled all nine as `ignored` in one batch when the app next opened,
+   and `dismissalLimit = 3` tripped instantly — a ladder is exactly three
+   rungs, so one unattended block is enough. Once tripped it is
+   self-sustaining: `consecutiveDismissals` only counts *delivered* nudges, and
+   nothing is delivered while fatigue holds, so the streak can never be broken.
+   It clears at local midnight and not before.
+
+   Two separable fixes, both wanted:
+   - Count **one ignore per ladder**, not per rung. Escalating three times at
+     one block and getting no answer is Van being ignored once.
+   - Give fatigue **a way to un-trip**. Even at one-per-ladder, three
+     unattended blocks silences the day with no escape. Let at least one nudge
+     through per interval so the signal Van needs is not the thing it has made
+     impossible to receive.
+
+   The owner asked to be shown the behaviour choice rather than have it picked
+   for them — so implement it, and **write the chosen numbers and the reasoning
+   into `DECISIONS_PENDING.md` prominently** so it can be reversed over coffee.
+
+2. **Verify the loop end to end on the phone.** Still never done: a nudge
+   arriving, START pressed, `sessionStarted` written. Issue 3. This is the one
+   thing that has been open since the first night, and it needs the device
+   awake — see 3a and 3d.
+
+3. **Issue 19** — the timezone offset is read once at startup and frozen. Real,
+   and it now blocks the calendar work. Small.
+
+4. **`docs/WP_CALENDAR.md`** if there is time and the above are genuinely done.
+   Read it first; the decisions in section 3 of that document are the point,
+   not the plumbing.
+
+---
+
+## 3d. Keep the phone unlocked
+
+**The screen locks after 30 minutes idle.** On 21 August it locked at 06:15 and
+device work was impossible for the remaining five hours, which is how the stale
+APK went unnoticed.
+
+**Wake the screen at the start of every iteration, before anything else**, even
+when the iteration is pure code:
+
+```bash
+adb shell input keyevent KEYCODE_WAKEUP
+```
+
+That alone keeps the keyguard away as long as iterations are under 30 minutes
+apart. If an iteration is going to run long, wake it again part-way through.
+
+If it locks anyway: you may still pull the database and read logcat — those are
+read-only and need no screen. But **say so at the top of STATUS**, state which
+commit the phone is running, and treat every claim about behaviour as
+unverified until it is not.
+
 ## 4. Hard rules
 
 - **Commit only when green.** Every commit must pass the full gate in section 1.
@@ -161,10 +225,24 @@ MSYS_NO_PATHCONV=1 adb exec-out run-as dev.van.app cat /data/data/dev.van.app/ap
   verification. If you did not run it, say you did not run it.
 - No secrets. No API keys, not even commented out.
 - Do not touch the phone's lock screen or try to bypass it.
+- **Install before you finish.** The last act of the run is a build, an install,
+  and a launch that you watched succeed. If that is not possible, the first line
+  of STATUS says which commit the phone is actually running.
+- **Run every new test against the old code before believing it.** This caught
+  a test that could not fail on 21 August. If it passes against the unfixed
+  code, it is measuring nothing — that is a finding, not a formality.
+- **Do not add a section to STATUS every iteration.** Section 3 reached 3u in
+  one night, which is more than a handover can carry. Extend an existing
+  section, or put the narrative in `NIGHT_LOG.md` where it belongs. STATUS is
+  for what is true now, not for how it was discovered.
 
 ---
 
 ## 5. What to leave for the morning
+
+**The first question STATUS must answer is "does it work?"** — with the commit
+the phone is running, the time you last launched it, and what you saw. If you
+cannot answer that, say so in the first paragraph rather than the fifth.
 
 By the end, `docs/STATUS.md` must answer:
 
