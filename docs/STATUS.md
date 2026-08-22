@@ -17,7 +17,7 @@ so the last install was verified by evidence rather than by eye.**
 
 | | |
 |---|---|
-| **Commit the phone is running** | `1c54b0e` — "Let the timezone move under a running process", the tip of `master` |
+| **Commit the phone is running** | `1c54b0e` — "Let the timezone move under a running process". That is the newest commit that changes code; anything after it on `master` is documentation only and does not alter the APK. |
 | **APK installed at** | **22 Aug 2026, 05:56:19** (device local, PDT) |
 | **Last launched** | **22 Aug 2026, 05:56:21** — `am start` delivered, the process is alive (pid 4377), and Van wrote an `appOpened` event two seconds after the install. **I did not see this build's UI**; the keyguard engaged at 05:56. |
 | **Last seen rendering** | **05:44**, on the build one commit earlier (`b347b41`). Now screen, task list and all. |
