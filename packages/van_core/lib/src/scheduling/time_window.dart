@@ -105,6 +105,14 @@ class WakingHours {
   /// Local time minus UTC. IST is `Duration(hours: 5, minutes: 30)`.
   final Duration utcOffset;
 
+  /// The same window, read in a different timezone.
+  ///
+  /// The hours are the user's preference and do not move with them: someone
+  /// who works 08:00-23:00 still works 08:00-23:00 after a flight, in the new
+  /// local time. Only the offset those hours are resolved against changes.
+  WakingHours withUtcOffset(Duration newOffset) =>
+      WakingHours(startHour: startHour, endHour: endHour, utcOffset: newOffset);
+
   /// Converts a UTC instant to the wall-clock time the user would read.
   DateTime toLocalWall(DateTime utc) => utc.add(utcOffset);
 

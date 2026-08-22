@@ -11,4 +11,12 @@ class SystemClock implements Clock {
 
   @override
   DateTime now() => DateTime.now().toUtc();
+
+  /// The device's current offset from UTC.
+  ///
+  /// Lives here rather than beside its only caller because this file is one
+  /// of exactly two allowed to read the wall clock, and `timeZoneOffset` is a
+  /// wall-clock read like any other. `TimezoneWatcher` asks this class rather
+  /// than asking Dart.
+  Duration utcOffset() => DateTime.now().timeZoneOffset;
 }

@@ -221,15 +221,15 @@ class VanService {
   final NudgeRepo _nudges;
   final InferenceRouter _router;
   final ImportanceScorer _scorer;
-  final SuppressionPolicy _suppression;
+  SuppressionPolicy _suppression;
   final Notifications _notifications;
   final NudgeTemplates _templates;
   final Prompts _prompts;
-  final ExtractTask _extractTask;
+  ExtractTask _extractTask;
   final Negotiate _negotiate;
   final Clock _clock;
   final IdGenerator _ids;
-  final WakingHours _waking;
+  WakingHours _waking;
   final InterventionPolicy _policy;
   final StaleSessionSweep _sweep;
   final NegotiationRules _rules;
@@ -273,6 +273,46 @@ class VanService {
   /// A renegotiated block never lands closer than this to now, so accepting
   /// a proposal does not fire a nudge in the same breath.
   static const _negotiatedLeadMinutes = 5;
+
+  /// The timezone offset Van is currently planning and parsing in.
+  Duration get utcOffset => _waking.utcOffset;
+
+  /// Re-reads the timezone offset, rebuilding everything derived from it.
+  ///
+  /// Returns whether anything actually moved, so a caller on a hot path -
+  /// every resume - can tell a no-op from a real change without comparing
+  /// offsets itself.
+  ///
+  /// The offset used to be read once in `main.dart` and frozen: a process
+  /// alive across a DST change or a flight kept planning in the old zone
+  /// while the phone had moved on, so the parser and the planner disagreed
+  /// about what day it was. That is issue 18 again - which was seven hours
+  /// wide - in a one-hour form, and it lasted until Van was restarted.
+  ///
+  /// Van cannot read the clock itself: `DateTime.now()` outside
+  /// `lib/platform/` and `main.dart` is a build failure, and deliberately so.
+  /// The offset therefore arrives as an argument, from the composition root.
+  ///
+  /// Three things derive from it and all three are rebuilt together, because
+  /// leaving any one behind reproduces the original bug in a narrower place:
+  /// quiet hours and free-slot finding through [WakingHours], the suppression
+  /// gate, and the temporal parser that turns "friday" into an instant. The
+  /// suppression policy is copied rather than reconstructed so tuning set by
+  /// the composition root survives - see [SuppressionPolicy.withWaking].
+  ///
+  /// Work already planned keeps the instants it was given. Those are correct
+  /// UTC instants; it is only the wall-clock reading of them that changes.
+  bool refreshTimezone(Duration offset) {
+    if (offset == _waking.utcOffset) return false;
+
+    _waking = _waking.withUtcOffset(offset);
+    _suppression = _suppression.withWaking(_waking);
+    _extractTask = ExtractTask(
+      prompt: _prompts.extractTask,
+      parser: TemporalParser(utcOffset: offset),
+    );
+    return true;
+  }
 
   /// Captures [text], plans it, stores it and arms the notifications.
   ///

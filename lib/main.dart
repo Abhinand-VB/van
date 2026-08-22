@@ -16,6 +16,8 @@ import 'package:van/inference/prompts.dart';
 import 'package:van/platform/local_llm.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/platform/system_clock.dart';
+import 'package:van/platform/timezone_watcher.dart';
+import 'package:van/ui/background.dart';
 import 'package:van/ui/shell.dart';
 import 'package:van_core/van_core.dart';
 
@@ -86,7 +88,10 @@ Future<void> main() async {
     });
   }
 
-  final waking = WakingHours(utcOffset: DateTime.now().timeZoneOffset);
+  // Read once here, then re-read on every resume by the watcher below. The
+  // offset moving under a running process - DST, a flight - used to leave the
+  // parser and the planner disagreeing about what day it was until restart.
+  final waking = WakingHours(utcOffset: const SystemClock().utcOffset());
 
   final service = VanService(
     tasks: tasks,
@@ -101,6 +106,19 @@ Future<void> main() async {
     ids: ids,
     waking: waking,
   );
+
+  // Deliberately after `service` exists: the watcher's whole job is to hand
+  // it a new offset, and wiring it before there is anything to hand it to is
+  // how this ends up silently doing nothing.
+  TimezoneWatcher((offset) {
+    if (service.refreshTimezone(offset)) {
+      inBackground(
+        events.append(EventType.timezoneChanged, {
+          'offsetMinutes': offset.inMinutes,
+        }),
+      );
+    }
+  }).start();
 
   await notifications.init(
     (sessionId, action) async => handleNudgeAction(service, sessionId, action),

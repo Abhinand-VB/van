@@ -64,6 +64,15 @@ enum EventType {
 
   /// The app went to the background.
   appBackgrounded,
+
+  /// The device's UTC offset moved under a running process - a DST change or
+  /// a flight - and Van rebuilt everything that derives from it.
+  ///
+  /// Worth recording because it retunes the parser, the planner's waking
+  /// window and the suppression gate at once. A day where blocks look an hour
+  /// out is otherwise indistinguishable from a scheduling bug, and this is
+  /// the row that tells them apart.
+  timezoneChanged,
 }
 
 /// One immutable fact, timestamped.

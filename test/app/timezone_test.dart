@@ -140,4 +140,93 @@ void main() {
       expect(captured.task.deadline, DateTime.utc(2026, 8, 21, 23, 59));
     });
   });
+
+  group('the offset can move under a running process', () {
+    // Issue 19. The offset was read once in main.dart and frozen into three
+    // places at construction, so a process alive across a DST change or a
+    // flight kept planning in the zone it launched in until restart.
+
+    test('nothing moves when the offset has not', () {
+      final service = serviceAt(pacific);
+      expect(service.refreshTimezone(pacific), isFalse);
+      expect(service.utcOffset, pacific);
+    });
+
+    test('the parser follows the device to a new zone', () async {
+      // Launched at UTC, then the phone moves to Pacific. "by friday" has to
+      // mean the end of Friday where the user now is, not where they were.
+      final service = serviceAt(Duration.zero);
+      expect(service.refreshTimezone(pacific), isTrue);
+      expect(service.utcOffset, pacific);
+
+      final captured = await service.capture('finish the report by friday');
+
+      expect(asLocalWall(captured.task.deadline!).hour, 23);
+      expect(captured.task.deadline, DateTime.utc(2026, 8, 22, 6, 59));
+    });
+
+    test('the planner follows too, so the two still agree', () async {
+      // The failure mode worth guarding is not "the offset is wrong" but
+      // "half of it moved" - a parser in one zone and a waking window in
+      // another is issue 18 wearing a different hat.
+      final service = serviceAt(Duration.zero);
+      service.refreshTimezone(pacific);
+
+      final captured = await service.capture('write the report 2 hours');
+
+      expect(captured.sessions, isNotEmpty);
+      for (final session in captured.sessions) {
+        final wall = asLocalWall(session.plannedStart);
+        expect(wall.hour, greaterThanOrEqualTo(8));
+        expect(wall.hour, lessThan(23));
+      }
+    });
+
+    test('an hour of DST is enough to matter', () async {
+      // Not a flight - the ordinary case, and the one that will actually
+      // happen. Next US transition is 1 Nov 2026.
+      final service = serviceAt(const Duration(hours: -8));
+      expect(service.refreshTimezone(const Duration(hours: -7)), isTrue);
+
+      final captured = await service.capture('email the landlord today');
+      expect(asLocalWall(captured.task.deadline!).hour, 23);
+    });
+  });
+
+  group('SuppressionPolicy.withWaking', () {
+    test('keeps every knob except the one being changed', () {
+      const tuned = SuppressionPolicy(
+        minimumGapMinutes: 45,
+        escalationGapMinutes: 9,
+        dismissalLimit: 5,
+        fatigueProbeMinutes: 60,
+        overrideGapAtImportance: 7,
+        overrideAllAtImportance: 9,
+      );
+
+      final moved = tuned.withWaking(const WakingHours(utcOffset: pacific));
+
+      expect(moved.waking.utcOffset, pacific);
+      expect(moved.minimumGapMinutes, 45);
+      expect(moved.escalationGapMinutes, 9);
+      expect(moved.dismissalLimit, 5);
+      expect(moved.fatigueProbeMinutes, 60);
+      expect(moved.overrideGapAtImportance, 7);
+      expect(moved.overrideAllAtImportance, 9);
+    });
+
+    test('the waking hours themselves do not move with the user', () {
+      const policy = SuppressionPolicy(
+        waking: WakingHours(startHour: 6, endHour: 22),
+      );
+
+      final moved = policy.withWaking(
+        policy.waking.withUtcOffset(const Duration(hours: 5, minutes: 30)),
+      );
+
+      expect(moved.waking.startHour, 6);
+      expect(moved.waking.endHour, 22);
+      expect(moved.waking.utcOffset, const Duration(hours: 5, minutes: 30));
+    });
+  });
 }

@@ -123,6 +123,10 @@ class WeekReview {
         case EventType.inferenceFallback:
         case EventType.appOpened:
         case EventType.appBackgrounded:
+        // Counted nowhere on purpose. A timezone move retunes the schedule
+        // rather than saying anything about the week's work, and rolling it
+        // into a total would make a flight look like activity.
+        case EventType.timezoneChanged:
           break;
       }
     }

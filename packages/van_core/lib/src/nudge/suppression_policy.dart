@@ -146,6 +146,23 @@ class SuppressionPolicy {
   /// hard commitment starting in minutes reaches this.
   final int overrideAllAtImportance;
 
+  /// The same policy, reading quiet hours in a different timezone.
+  ///
+  /// Exists because the offset can move under a running process - a flight, a
+  /// DST change - and the tuning knobs above must survive that. Rebuilding
+  /// the policy from scratch instead would silently reset whatever the
+  /// composition root had configured, which is a worse bug than the one being
+  /// fixed.
+  SuppressionPolicy withWaking(WakingHours newWaking) => SuppressionPolicy(
+    waking: newWaking,
+    minimumGapMinutes: minimumGapMinutes,
+    escalationGapMinutes: escalationGapMinutes,
+    dismissalLimit: dismissalLimit,
+    fatigueProbeMinutes: fatigueProbeMinutes,
+    overrideGapAtImportance: overrideGapAtImportance,
+    overrideAllAtImportance: overrideAllAtImportance,
+  );
+
   /// Decides whether [context] may interrupt.
   SuppressionDecision evaluate(SuppressionContext context) {
     final importance = context.type.baseImportance;
