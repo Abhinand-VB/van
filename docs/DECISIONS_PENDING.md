@@ -16,6 +16,43 @@ Any agent working unattended writes here instead of stopping to ask.
 
 ## Open
 
+### D69 — The fatigue numbers, issue 26. **Read this one first.**
+
+You asked to be shown the numbers rather than have them picked silently, so
+they are here rather than in the table. Both are one-line changes and both are
+cheap to reverse.
+
+**What was wrong.** Fatigue counted *rungs*. A ladder is exactly three rungs
+and `dismissalLimit` was 3, so a single unattended block tripped it by itself.
+Then it could not un-trip: the streak counts only *delivered* nudges, nothing
+is delivered while fatigue holds, so the streak stood until local midnight.
+Van made the signal it needed impossible to receive. The evidence is on the
+phone — 20 nudges suppressed as `dismissalFatigue`, off 5 recorded ignores,
+and all 5 were manufactured by the sweep rather than by anyone swiping.
+
+**The two numbers I chose:**
+
+| Number | Value | Where | Why this value |
+|---|---|---|---|
+| `dismissalLimit` | **3**, unchanged — but now three *ladders*, not three rungs | `SuppressionPolicy` | Left alone deliberately. The count was the bug, not the limit. Three separate blocks ignored is a real signal; three rungs at one block is one block. Changing both the unit and the threshold at once would have made the result impossible to attribute. |
+| `fatigueProbeMinutes` | **120** | `SuppressionPolicy` | After two hours with nothing delivered, one nudge goes through regardless of fatigue. Long enough that a genuinely fatigued day stays quiet — at most ~8 in a waking day, against the ~24 rungs Van would otherwise arm. Short enough that a wrongly-tripped mute costs you two hours, not eighteen. |
+
+**Reversing them.** `dismissalLimit: 4` makes Van slower to give up;
+`fatigueProbeMinutes: 60` makes it quicker to come back; `fatigueProbeMinutes`
+very large restores the old ratchet exactly. All three are constructor
+arguments on `SuppressionPolicy` with no other call sites.
+
+**What I deliberately did not do.** I did not gate the probe on importance.
+The trap caught ordinary `sessionStart` and `sessionMissed` nudges, and a rule
+like "only urgent nudges may probe" would have left precisely those trapped.
+
+**One consequence worth knowing.** Because rungs are spaced against the rung
+before them, only the *opening* rung of a fatigued ladder can be a probe; the
+follow-ups stay suppressed. A fatigued ladder therefore says one thing rather
+than three, which is the behaviour I wanted but is a design choice, not a
+side effect. Both halves are pinned by tests in `test/app/loop_test.dart`.
+
+
 | # | Question | What I did instead | Cost to reverse |
 |---|---|---|---|
 | D1 | Should a swept block be marked `skipped` or `rescheduled`? OVERNIGHT.md says "marks stale planned sessions skipped", but `snooze` already uses `markRescheduled()` for the same shape of move. | `rescheduled` when a replacement was placed, `skipped` only when the work genuinely had nowhere to go. Both count as resolved, so the loop behaves the same either way; the difference is whether the event log can tell later which blocks were rescued and which were abandoned. | **Cheap.** One line in `StaleSessionSweep.run`, plus the two tests that assert on the status. |

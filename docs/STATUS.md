@@ -1,19 +1,42 @@
 # Van — Project Status
 
-**Last updated:** 21 August 2026, after a night of unattended work. Update this
-file at the end of every session; it is the handover between sessions and
-between agents.
+**Last updated:** 22 August 2026, 05:40, during unattended overnight work.
+This file is the handover between sessions and between agents; it says what is
+true now. The narrative of how it got that way is in `docs/NIGHT_LOG.md`.
 
 Read order for a new session: this file, then `AGENTS.md`, then
-`docs/ARCHITECTURE.md`. `docs/NIGHT_LOG.md` is the appendix — reasoning and
-device runs, not needed to start work. `docs/AGENT_TASKS.md` is the original
-plan and is largely superseded by this file.
+`docs/ARCHITECTURE.md`. `docs/AGENT_TASKS.md` is the original plan and is
+largely superseded by this file.
+
+---
+
+## Does it work?
+
+**Yes. Checked on the phone, not inferred from tests.**
+
+| | |
+|---|---|
+| **Commit the phone is running** | `a796a6a` — "Stop fatigue from muting the day, and give it a way back", which is the tip of `master` |
+| **APK installed at** | **22 Aug 2026, 05:36:48** (device local, PDT) |
+| **Last launched and driven by me** | **22 Aug 2026, 05:39** — launched, driven, and checked against the on-device database |
+| **What I did** | Launched Van, typed "review the fatigue probe today 30 minutes" into Chat, watched it plan a block at 11:10, then pulled the database and confirmed the task row, the session, and a full three-rung ladder with **nothing suppressed** |
+| **Tests** | 582 green (330 app, 252 core), `dart analyze --fatal-infos` and `check_layers` clean |
+
+**Yesterday's failure was that this section did not exist.** The phone spent
+21 August running an APK from 06:11 while the tip moved on without it, and
+nothing checked whether the app still behaved. When this run began the phone
+was *still* on that 06:11 build — 18.5 hours behind — so the first act of the
+night was to build and install before touching the queue.
+
+The one thing still needing you is unchanged and small: **tap the banner on
+the Now screen and grant "Alarms & reminders"**, so nudges fire to the minute
+instead of within Android's inexact window. Detail in section 0 below.
 
 ---
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **575 tests, all green,
+Van is finished as far as an agent can take it alone. **582 tests, all green,
 on a phone that runs.** Four things need you, and they are small:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
@@ -112,7 +135,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **575 tests passing** — 249 in `packages/van_core` (pure Dart), 326 in the app.
+- **582 tests passing** — 252 in `packages/van_core` (pure Dart), 330 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -1165,7 +1188,7 @@ than this file.**
 | 23 | ~~Three armed nudges have no rows in the database~~ | **Explained and closed, 21 Aug 2026.** Not a defect. Session `hljn1mbedk2` was armed at **01:40:54**; `c0ba269` — the fix for issue 7, *`NudgeRepo` is never constructed in production* — landed at **01:53:22** and is what added `_nudges.save(...)` to `_armLadder`. Twelve minutes earlier, the build on the phone wrote `nudgeScheduled` events and no rows, because it had no `NudgeRepo`. The alarms are still registered with Android; `cancelForSession` derives its ids rather than reading them back, so Van can still cancel them — which is section 3m's decision paying for itself. See section 3q. |
 | 24 | ~~`unawaited` calls with no error handler~~ | **Done, 21 Aug 2026** (`c860476`, `8e030ba`, `fe933c2`). Twelve sites. One needed the call to stop being fire-and-forget at all (the swipe — section 3t); two are logging paths that can be swallowed honestly; the remaining eight are lifecycle and post-frame callbacks that return void, so nothing *can* await them, and they go through `inBackground` in `lib/ui/background.dart`. Every `unawaited` left in `lib/` is either that helper or already handled. |
 | 25 | ~~Nudge copy could contradict the action, and `templateId` was unreliable~~ | **Done, 21 Aug 2026** (`b7ad37d`). See section 3u. Five of the twelve type-level combinations have no template and fell back to `sessionMissed_l0Gentle` regardless of level, so Van could offer to shrink or concede a block while saying a gentle "not started yet?". Separately, `templateId` reported the key that was *requested* rather than the one that supplied the line, mislabelling every fallback in the event log. **No mislabelled rows on the phone** — the three keys its armed ladders used all exist, so no fallback ran. |
-| 26 | **Van mutes itself for a day and cannot un-mute** | **Found on the phone, 21 Aug lunchtime — this is why the app looked dead.** Nine nudges fired between 09:30 and 11:39 while the phone was locked. The sweep settled all nine as `ignored` in one batch when the app next opened, and `dismissalLimit = 3` tripped at once: a ladder is exactly three rungs, so **one unattended block is enough**. Then it self-sustains — `consecutiveDismissals` counts only *delivered, unsuppressed* nudges, and nothing is delivered while fatigue holds, so the streak cannot be broken. Pressing START does not clear it either (that only settles rungs which already fired). It clears at local midnight and not before. The policy comment says "someone who has dismissed three of these today has told Van something", which is false on this path: nothing was dismissed, and `ignored` is manufactured wholesale by the sweep. Fix is two parts — count one ignore per *ladder*, and give fatigue a way to un-trip. **Owner wants to see the numbers chosen rather than have them picked silently.** |
+| 26 | ~~Van mutes itself for a day and cannot un-mute~~ | **Done, 22 Aug 2026** (`a796a6a`). Two fixes. **Count ladders, not rungs:** `NudgeRepo.consecutiveUnansweredLadders` counts one ignore per session, so a ladder counts once however many rungs it has, and a ladder with any engaged rung counts zero. Under the old per-rung count one unattended block tripped a limit of three by itself. **A way to un-trip:** `SuppressionPolicy.fatigueProbeMinutes` (120) lets one nudge through when nothing has been delivered for two hours, which is the only way the streak can ever be broken — it counts delivered nudges, and fatigue prevented delivery. Because rungs are spaced against the rung before them, only the opening rung can be a probe, so a fatigued ladder says one thing rather than three. **The numbers and how to reverse them are in `DECISIONS_PENDING.md` D69**, at the top of the file. Both new tests were run against the unfixed code first and failed there. **Observed on the phone at 05:39 on 22 Aug:** the ladder armed by a fresh capture has all three rungs unsuppressed, and none of the day's 15 nudges is held by fatigue. The 20 `dismissalFatigue` rows from 21 Aug remain in the log as history. |
 | 17 | ~~"I'm stuck" overwrites the partial it just recorded~~ | **Done, 21 Aug 2026** (`87fe6f3`), and half of it was my own overstatement — `actualStart` always survived, so the row never stopped saying they got started. Checking which fields are actually read turned it into the real bug next to it: `snooze` and `notToday` accepted an action for work already closed. See section 3j. |
 | 16 | ~~The action that launched the app was never collected~~ | **Done, 21 Aug 2026** (`d104b1a`). Pressing START while Van was not running opened the app and did nothing: the `init` callback only exists while a Flutter engine does, and `getNotificationAppLaunchDetails` was never read. The comment claiming it was re-read on next open was simply untrue. |
 
@@ -1178,6 +1201,31 @@ Snapdragon 8 Elite, ~10.9 GB RAM. Serial `<device-serial>`. **Timezone
 `America/Los_Angeles`** — not IST, whatever the example in `WakingHours` says.
 Convert `planned_start_utc` with that offset or every hand-read of the schedule
 comes out half a day wrong.
+
+**A bare "no devices/emulators found" is not proof the phone locked.** It
+happened once at 05:35 on 22 Aug: `adb devices` listed nothing at all, and
+`kill-server`/`start-server` did not bring it back. **`adb reconnect offline`
+did**, immediately — it was a transient USB re-enumeration, not the keyguard.
+A locked phone still enumerates and still answers `dumpsys`; an empty device
+list means the USB link dropped. Try `adb reconnect offline` before writing
+off the rest of the session's device work.
+
+**Check the installed build against the tip every single iteration.** On 22
+Aug the phone was found running the 21 Aug 06:11 APK, 18.5 hours behind, which
+is the same failure that wasted 21 August:
+
+```bash
+adb shell dumpsys package dev.van.app | grep lastUpdateTime
+git log -1 --format='%h %cd' --date=format:'%Y-%m-%d %H:%M:%S'
+```
+
+**Driving the capture field needs care.** Taps at the Now screen's quick-add
+box silently missed twice on 22 Aug while taps elsewhere worked, so a failed
+capture is not evidence the app is broken — check a tap lands somewhere known
+first (the Chat tab is a good probe). The Chat screen's field was reliable.
+The send button also **moves when the keyboard dismisses**; tapping its
+keyboard-up position afterwards just closes the keyboard and looks like a
+no-op. Screenshot between every step rather than chaining taps.
 
 **`adb` is not on `PATH`** in the shell these sessions run in. It lives at
 `C:/Users/<user>/AppData/Local/Android/Sdk/platform-tools/adb.exe`; use the full
@@ -1350,16 +1398,24 @@ that an agent could close alone is closed. What is left needs you, or needs
 evidence from real use.
 
 1. **Grant Van "Alarms & reminders"** - tap the banner on the Now screen.
-2. **Watch a nudge arrive and press START.** Six are armed across two blocks.
-   This closes the last gap in issue 3.
-3. **Ignore the 09:00 block on purpose, then open Chat.** One minute, and it
-   is the only part of the negotiation loop never reached on hardware.
+2. **Watch a nudge arrive and press START.** This closes the last gap in
+   issue 3 and is still the one thing open since the first night. **As of
+   05:40 on 22 Aug the live ladders are:** three rungs at 08:00/08:10/08:25,
+   three at 09:00/09:10/09:25, three at 10:00/10:10/10:25, three at
+   10:25/10:35/10:50, and three at 11:10/11:20/11:35 — the last of those is
+   the block I captured while checking the app. None is suppressed. They may
+   arrive late until item 1 is done.
+3. **Ignore one block on purpose, then open Chat.** One minute, and it is the
+   only part of the negotiation loop never reached on hardware. Worth doing
+   *after* item 2 rather than before, so a real START is recorded first.
 4. **Listen to the drum** (issue 2). Never heard by a human. Note the ringer
    was muted every time I looked.
-5. **Use it for a week.** Then let real annoyance pick what comes next. Three
+5. **Use it for a week.** Then let real annoyance pick what comes next. Four
    dials worth watching, one number each: the sweep's five-minute replacement
-   lead, `SuppressionPolicy.dismissalLimit`, and whether halving a block is
-   the right first concession.
+   lead, `SuppressionPolicy.dismissalLimit`, the new
+   `SuppressionPolicy.fatigueProbeMinutes` (see D69 — it is the number I had
+   least evidence for), and whether halving a block is the right first
+   concession.
 6. **Consider the calendar before WP-6.** Van plans your day as if nothing else is
    on it, which is a correctness problem rather than a missing feature. Written up
    as `docs/WP_CALENDAR.md` — the domain work is genuinely small (one call site;

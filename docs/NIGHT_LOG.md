@@ -1486,3 +1486,100 @@ the real app. Then live with it for a week.
 five-move cap, whether a replacement landing five minutes from now is helpful
 or infuriating, and whether to grant the exact-alarm permission.
 
+
+---
+
+## Night of 21/22 August 2026 — the fatigue ratchet, and a phone 18 hours behind
+
+Two iterations, hours apart, because the loop only fires when the session is
+idle and it sat idle from about 01:10 to 05:35.
+
+### The phone was the story again
+
+The run opened by checking the installed APK against the tip, which is the
+check that did not exist yesterday. `lastUpdateTime` said **21 Aug 06:11:05**.
+The tip was `f5bc481`, committed 22 Aug 00:44. The phone was **18.5 hours
+behind** and carrying none of yesterday's fixes — the timezone fix, the
+capture-failure fix, the ladder-id fix, all of it committed and none of it
+installed. Exactly the failure OVERNIGHT.md was rewritten around, still in
+place, waiting to waste a second day.
+
+So nothing from the queue was touched until a build was installed and the app
+had been driven by hand. Capture through the UI produced "Scheduled 1 block",
+the row landed in the database, and three rungs were armed. That took about
+fifteen minutes and it is the only reason anything below can be believed.
+
+### What the database said before anything was changed
+
+Pulling `van.sqlite` before writing code turned issue 26 from a described bug
+into a measured one:
+
+- **20 nudges** suppressed as `dismissalFatigue`.
+- **5** ignore responses in the entire table.
+- Every one of those 5 had a latency between **4771 and 11039 seconds** — an
+  hour and a quarter to three hours. Nobody swipes a notification away three
+  hours late. The sweep manufactured all of them in a batch when the app next
+  opened.
+
+Twenty silences bought with five machine-written ignores. The policy comment
+said "someone who has dismissed three of these today has told Van something",
+and on this path nobody had told Van anything at all.
+
+### Why the ratchet could not be undone
+
+`consecutiveDismissals` counts only *delivered, unsuppressed* nudges. Fatigue
+prevents delivery. So once tripped, the streak has no source of new evidence
+and cannot fall — Van had made the one signal it needed to hear impossible to
+receive. It cleared at local midnight and not before.
+
+That is the part worth remembering: the bug was not the threshold. It was that
+the feedback loop was cut. Any limit, however generous, ratchets shut if the
+only thing that can reopen it is the thing it blocks.
+
+### The two fixes, and the number I had to choose
+
+Counting ladders instead of rungs was forced — a ladder is exactly three rungs
+and the limit was three, so the unit was simply wrong. No judgement needed.
+
+The probe interval was a real choice and there was nothing in the repository to
+derive it from. 120 minutes, reasoned in `DECISIONS_PENDING.md` D69. The short
+version: at most ~8 probes across a waking day against the ~24 rungs Van would
+otherwise arm, so a genuinely fatigued day stays quiet, and a wrongly-tripped
+mute costs two hours rather than eighteen.
+
+I deliberately did not gate the probe on importance. The trap caught ordinary
+`sessionStart` and `sessionMissed` nudges, so "only urgent nudges may probe"
+would have left exactly the wrong ones stuck.
+
+### The old-code check earned its place again
+
+Both new tests were run against the unfixed source before being believed. The
+ladder count came back **3 where it should be 1** — the bug, reproduced by the
+test that was meant to catch it — and the two probe cases failed outright.
+
+It also caught something I would have got wrong. The existing test
+*"two ignored ladders and Van stops chasing"* was written for per-rung
+counting, where two ladders meant six rungs. Under ladder counting two is
+below the limit, so the test needed a third ladder. Then it failed again, and
+that second failure was the fix working: blocks move on in 90-minute steps,
+90 is inside the 120-minute probe window, so the whole ladder stays silent
+rather than leaving the opening rung armed. The test's old assertion had
+quietly become wrong. It is now two tests — one for fatigue holding inside the
+window, one for the probe reopening it after — which is what it should have
+been.
+
+### Two device traps worth not rediscovering
+
+**`adb devices` returned nothing at 05:35.** Not `unauthorized`, not
+`offline` — an empty list, and `kill-server`/`start-server` did not help. It
+looked exactly like the phone had locked and the session's device work was
+over. `adb reconnect offline` fixed it instantly. A locked phone still
+enumerates; an empty list is a dropped USB link, not a keyguard.
+
+**Taps on the Now screen's quick-add box silently missed, twice**, on a screen
+that was awake and focused. Tapping the Chat tab worked immediately, which is
+how I knew input was reaching the app at all. Capture through Chat then worked
+first time. A failed capture is not evidence the app is broken until a tap
+somewhere known has been shown to land. The send button also moves when the
+keyboard dismisses, and tapping its old position just closes the keyboard —
+which looks identical to a dead button.
