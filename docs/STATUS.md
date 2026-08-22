@@ -16,11 +16,17 @@ largely superseded by this file.
 
 | | |
 |---|---|
-| **Commit the phone is running** | `a796a6a` — "Stop fatigue from muting the day, and give it a way back", which is the tip of `master` |
-| **APK installed at** | **22 Aug 2026, 05:36:48** (device local, PDT) |
-| **Last launched and driven by me** | **22 Aug 2026, 05:39** — launched, driven, and checked against the on-device database |
-| **What I did** | Launched Van, typed "review the fatigue probe today 30 minutes" into Chat, watched it plan a block at 11:10, then pulled the database and confirmed the task row, the session, and a full three-rung ladder with **nothing suppressed** |
+| **Commit the phone is running** | `b347b41` — the tip of `master`. The last code change in it is `a796a6a`, "Stop fatigue from muting the day, and give it a way back"; anything committed after this line is documentation only and changes no code. |
+| **APK installed at** | **22 Aug 2026, 05:43:59** (device local, PDT) |
+| **Last launched and driven by me** | **22 Aug 2026, 05:44** — launched and the Now screen seen rendering; driven by hand at 05:39 on the build before it |
+| **What I did** | Typed "review the fatigue probe today 30 minutes" into Chat, watched Van plan a block at 11:10, then pulled the database and confirmed the task row, the session, and a full three-rung ladder with **nothing suppressed**. Reinstalled at the tip afterwards and confirmed the Now screen still renders, with that task listed on it. |
 | **Tests** | 582 green (330 app, 252 core), `dart analyze --fatal-infos` and `check_layers` clean |
+
+**One caveat, stated plainly:** what I verified is capture, planning, arming
+and the UI. **A nudge actually firing, and START coming back, is still not
+verified on hardware** — that is issue 3 and it needs you awake when one
+arrives. Everything this section claims was watched; nothing in it is inferred
+from the test suite.
 
 **Yesterday's failure was that this section did not exist.** The phone spent
 21 August running an APK from 06:11 while the tip moved on without it, and
