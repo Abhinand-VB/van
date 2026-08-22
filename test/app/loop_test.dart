@@ -361,7 +361,7 @@ void main() {
       await service.sweepStaleSessions();
 
       expect(
-        await nudges.consecutiveDismissals(
+        await nudges.consecutiveUnansweredLadders(
           NudgeType.sessionMissed,
           DateTime.utc(2026, 8, 19),
         ),
@@ -369,18 +369,24 @@ void main() {
       );
     });
 
-    test('two ignored ladders and Van stops chasing', () async {
-      // The payoff. Ignore everything twice and the follow-up rungs stop
-      // being armed at all - Van still says the block is due, but it no
-      // longer chases you about it.
+    test('three ignored ladders and Van stops chasing', () async {
+      // The payoff. Ignore everything at three separate blocks and the
+      // follow-up rungs stop being armed at all - Van still says the block is
+      // due, but it no longer chases you about it.
+      //
+      // Three, not two: a ladder counts once however many rungs it has, so
+      // reaching a limit of three now takes three separate blocks. Under the
+      // old per-rung count a single unattended ladder got there by itself,
+      // which is what muted Van for a day on 21 August.
       await abandon('read the paper 45 minutes');
-      final first = await service.sweepStaleSessions();
-
-      clock.advanceTo(
-        first.moved.single.plannedStart.add(const Duration(minutes: 90)),
-      );
-      final second = await service.sweepStaleSessions();
-      final survivor = second.moved.single;
+      var swept = await service.sweepStaleSessions();
+      for (var ladder = 0; ladder < 2; ladder++) {
+        clock.advanceTo(
+          swept.moved.single.plannedStart.add(const Duration(minutes: 90)),
+        );
+        swept = await service.sweepStaleSessions();
+      }
+      final survivor = swept.moved.single;
 
       final armed = await nudges.forSession(survivor.id);
       final chases = armed
@@ -399,14 +405,58 @@ void main() {
         );
       }
 
-      // Held back means not handed to the OS, not merely logged.
+      // Held back means not handed to the OS, not merely logged. Blocks are
+      // moved on in ninety-minute steps here, inside the two-hour probe
+      // window, so the opening prompt is held back too and the ladder is
+      // silent. The test below is the other half of that: once the window has
+      // passed, one rung comes back.
       expect(
         notifications.scheduled.where((n) => n.sessionId == survivor.id),
-        hasLength(1),
-        reason: 'only the opening prompt should still be armed',
+        isEmpty,
+        reason: 'a fatigued ladder inside the probe window says nothing',
       );
       expect(await eventTypes(), contains('nudgeSuppressed'));
     });
+
+    test(
+      'fatigue lets the opening prompt back through after two hours',
+      () async {
+        // Fatigue used to be a ratchet: the streak counts only delivered
+        // nudges, and nothing is delivered while fatigue holds, so it could not
+        // be broken before local midnight. The probe is the way out, and this
+        // is the test that it exists.
+        await abandon('read the paper 45 minutes');
+        var swept = await service.sweepStaleSessions();
+        for (var ladder = 0; ladder < 2; ladder++) {
+          clock.advanceTo(
+            swept.moved.single.plannedStart.add(const Duration(minutes: 90)),
+          );
+          swept = await service.sweepStaleSessions();
+        }
+
+        // Quiet for long enough that Van owes them one.
+        clock.advanceTo(
+          swept.moved.single.plannedStart.add(const Duration(hours: 3)),
+        );
+        final after = await service.sweepStaleSessions();
+        final survivor = after.moved.single;
+
+        final armed = await nudges.forSession(survivor.id);
+        final opening = armed.firstWhere(
+          (n) => n.type == NudgeType.sessionStart,
+        );
+        expect(
+          opening.wasSuppressed,
+          isFalse,
+          reason: 'the probe must reach the user, or the streak never breaks',
+        );
+        expect(
+          notifications.scheduled.where((n) => n.sessionId == survivor.id),
+          hasLength(1),
+          reason: 'one rung through, not the whole ladder',
+        );
+      },
+    );
 
     /// Records [count] delivered, unanswered nudges of [type] on [day].
     ///
@@ -441,7 +491,7 @@ void main() {
       // before it ever had a chance to fire.
       await buildStreak(NudgeType.sessionMissed, DateTime.utc(2026, 8, 19));
       expect(
-        await nudges.consecutiveDismissals(
+        await nudges.consecutiveUnansweredLadders(
           NudgeType.sessionMissed,
           DateTime.utc(2026, 8, 19),
         ),
@@ -501,11 +551,17 @@ void main() {
       final yesterday = DateTime.utc(2026, 8, 18);
       final tomorrow = DateTime.utc(2026, 8, 20);
       expect(
-        await nudges.consecutiveDismissals(NudgeType.sessionMissed, yesterday),
+        await nudges.consecutiveUnansweredLadders(
+          NudgeType.sessionMissed,
+          yesterday,
+        ),
         greaterThan(0),
       );
       expect(
-        await nudges.consecutiveDismissals(NudgeType.sessionMissed, tomorrow),
+        await nudges.consecutiveUnansweredLadders(
+          NudgeType.sessionMissed,
+          tomorrow,
+        ),
         0,
         reason: "yesterday's swipes must not silence Van this morning",
       );
@@ -560,7 +616,7 @@ void main() {
       final replies = await nudges.responsesFor(fired.last.id);
       expect(replies.single.response, ResponseType.started);
       expect(
-        await nudges.consecutiveDismissals(
+        await nudges.consecutiveUnansweredLadders(
           NudgeType.sessionMissed,
           DateTime.utc(2026, 8, 19),
         ),

@@ -332,13 +332,44 @@ void main() {
 
     test('stops after repeated dismissals, whatever the importance', () {
       expect(
-        policy.evaluate(ctx(dismissals: 3)).reason,
+        policy.evaluate(ctx(dismissals: 3, since: 30)).reason,
         SuppressionReason.dismissalFatigue,
       );
       expect(
         policy
-            .evaluate(ctx(type: NudgeType.deadlineTomorrow, dismissals: 3))
+            .evaluate(
+              ctx(type: NudgeType.deadlineTomorrow, dismissals: 3, since: 30),
+            )
             .reason,
+        SuppressionReason.dismissalFatigue,
+      );
+    });
+
+    test('fatigue lets one through once the probe interval has passed', () {
+      // The ratchet: at 119 minutes Van is still quiet, at 120 it speaks.
+      // Without this the streak counts only delivered nudges, nothing is
+      // delivered, and the streak can never be broken before midnight.
+      expect(
+        policy.evaluate(ctx(dismissals: 3, since: 119)).reason,
+        SuppressionReason.dismissalFatigue,
+      );
+      expect(
+        policy.evaluate(ctx(dismissals: 3, since: 120)).suppressed,
+        isFalse,
+      );
+    });
+
+    test('fatigue with nothing delivered at all is not a trap', () {
+      // A null gap is the trapped state itself - no delivery means no chance
+      // to answer. It must open the gate rather than close it.
+      expect(policy.evaluate(ctx(dismissals: 9)).suppressed, isFalse);
+    });
+
+    test('a probe does not open the gate for the rest of the ladder', () {
+      // Rungs are spaced against the rung before them, so the ten-minute gap
+      // that follows a probe still reads as fatigued.
+      expect(
+        policy.evaluate(ctx(dismissals: 3, since: 10, continues: true)).reason,
         SuppressionReason.dismissalFatigue,
       );
     });

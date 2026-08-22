@@ -107,6 +107,7 @@ class SuppressionPolicy {
     this.minimumGapMinutes = 20,
     this.escalationGapMinutes = 8,
     this.dismissalLimit = 3,
+    this.fatigueProbeMinutes = 120,
     this.overrideGapAtImportance = 8,
     this.overrideAllAtImportance = 10,
   });
@@ -122,8 +123,21 @@ class SuppressionPolicy {
   /// rule silently swallowing it.
   final int escalationGapMinutes;
 
-  /// Consecutive dismissals after which Van stops raising this type today.
+  /// Consecutive unanswered *ladders* after which Van stops raising this type
+  /// today. Counted per ladder, not per rung: escalating three times at one
+  /// block and getting no answer is Van being ignored once, not three times.
   final int dismissalLimit;
+
+  /// How long fatigue may hold before one nudge is let through anyway.
+  ///
+  /// Fatigue used to be a ratchet. The streak counts only *delivered* nudges,
+  /// and nothing is delivered while fatigue holds, so once tripped it could
+  /// not be un-tripped before local midnight - Van made the signal it needed
+  /// impossible to receive. The probe is the escape: after this long without
+  /// a delivered nudge, the gate opens for one, and engaging with it clears
+  /// the streak. Spacing still applies to the rungs behind it, so a fatigued
+  /// ladder speaks once rather than three times.
+  final int fatigueProbeMinutes;
 
   /// Base importance that may ignore the spacing rule.
   final int overrideGapAtImportance;
@@ -154,9 +168,14 @@ class SuppressionPolicy {
     }
 
     // Fatigue is checked before the spacing rule and cannot be overridden by
-    // importance: someone who has dismissed three of these today has told
-    // Van something, and repeating it louder is the wrong answer.
-    if (context.consecutiveDismissals >= dismissalLimit) {
+    // importance: someone who has let three of these ladders go unanswered
+    // today has told Van something, and repeating it louder is the wrong
+    // answer. Quieter, though, is not the same as silent - see
+    // [fatigueProbeMinutes]. The probe is deliberately *not* gated on
+    // importance, because the ratchet trapped ordinary nudges and an
+    // importance test would have left them trapped.
+    if (context.consecutiveDismissals >= dismissalLimit &&
+        !_probeIsDue(context)) {
       return const SuppressionDecision.suppress(
         SuppressionReason.dismissalFatigue,
       );
@@ -173,6 +192,17 @@ class SuppressionPolicy {
     }
 
     return const SuppressionDecision.allow();
+  }
+
+  /// Whether fatigue has held long enough to owe the user one nudge.
+  ///
+  /// A null gap means nothing has been delivered at all in the window the
+  /// caller is measuring, which is precisely the trapped state: no delivery
+  /// means no chance to answer, and no answer means the streak stands. That
+  /// case must open the gate, not close it.
+  bool _probeIsDue(SuppressionContext context) {
+    final since = context.minutesSinceLastNudge;
+    return since == null || since >= fatigueProbeMinutes;
   }
 
   bool _isQuietHours(DateTime now) {

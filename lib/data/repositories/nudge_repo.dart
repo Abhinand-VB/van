@@ -101,12 +101,23 @@ class NudgeRepo {
           .map(responseFromRow)
           .get();
 
-  /// How many nudges of [type] were dismissed or ignored in a row, most
-  /// recently, at or after [since].
+  /// How many *ladders* of [type] went unanswered in a row, most recently, at
+  /// or after [since].
   ///
-  /// Drives the fatigue penalty: a person who has swiped away three of these
-  /// today has told Van something, and it should listen.
-  Future<int> consecutiveDismissals(NudgeType type, DateTime since) async {
+  /// Drives the fatigue penalty. Counted per ladder rather than per nudge,
+  /// because a ladder is exactly three rungs: counting rungs meant one
+  /// unattended block tripped a limit of three all by itself, which is what
+  /// muted Van for a day on 21 August. Escalating three times at one block
+  /// and getting no answer is Van being ignored once.
+  ///
+  /// A ladder counts as ignored only when *no* rung of it was engaged with,
+  /// so answering late - at L2, after letting L0 and L1 pass - still clears
+  /// it. Nudges with no session (hydration, stand) have no ladder to belong
+  /// to and count individually.
+  Future<int> consecutiveUnansweredLadders(
+    NudgeType type,
+    DateTime since,
+  ) async {
     final cutoff = since.toUtc().millisecondsSinceEpoch;
     final nudges =
         await (_db.select(_db.nudges)
@@ -121,6 +132,7 @@ class NudgeRepo {
             .get();
 
     var streak = 0;
+    final counted = <String>{};
     for (final nudge in nudges) {
       final replies = await responsesFor(nudge.id);
       final engaged = replies.any(
@@ -128,8 +140,20 @@ class NudgeRepo {
             r.response != ResponseType.dismissed &&
             r.response != ResponseType.ignored,
       );
-      if (engaged) break;
-      streak++;
+      final sessionId = nudge.sessionId;
+      if (engaged) {
+        // Walking newest-first, an engaged rung can appear *after* a later
+        // rung of the same ladder has already been counted - L0 answered,
+        // L1 armed and ignored. The ladder was answered, so take the count
+        // back before stopping.
+        if (sessionId != null && counted.remove(sessionId)) streak--;
+        break;
+      }
+      if (sessionId == null) {
+        streak++;
+      } else if (counted.add(sessionId)) {
+        streak++;
+      }
     }
     return streak;
   }

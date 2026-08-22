@@ -397,7 +397,7 @@ class VanService {
         NudgeType.sessionStart,
         NudgeType.sessionMissed,
       ])
-        type: await _nudges.consecutiveDismissals(type, fatigueSince),
+        type: await _nudges.consecutiveUnansweredLadders(type, fatigueSince),
     };
 
     // Spacing is measured to the instant a rung will *fire*, not the instant

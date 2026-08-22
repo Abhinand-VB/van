@@ -315,49 +315,133 @@ void main() {
       expect(replies.single.latencySeconds, 120);
     });
 
-    test('consecutiveDismissals counts the unbroken recent streak', () async {
+    /// Saves a delivered nudge with a settled response, which is the shape
+    /// every fatigue case below is made of.
+    Future<void> settled(
+      String id, {
+      required String? sessionId,
+      required ResponseType response,
+      required int minute,
+    }) async {
+      await nudges.save(
+        makeNudge(id: id, sessionId: sessionId, delivered: at(19, minute)),
+      );
+      await nudges.saveResponse(
+        NudgeResponse(
+          id: 'r_$id',
+          nudgeId: id,
+          response: response,
+          respondedAt: at(19, minute),
+          latencySeconds: 3,
+        ),
+      );
+    }
+
+    test('a whole ignored ladder counts once, not once per rung', () async {
+      // The 21 August bug exactly: three rungs of one block, all swept as
+      // ignored, tripping a limit of three by themselves.
       for (var i = 1; i <= 3; i++) {
-        await nudges.save(makeNudge(id: 'n$i', delivered: at(19, 9 + i)));
-        await nudges.saveResponse(
-          NudgeResponse(
-            id: 'r$i',
-            nudgeId: 'n$i',
-            response: ResponseType.dismissed,
-            respondedAt: at(19, 9 + i),
-            latencySeconds: 3,
-          ),
+        await settled(
+          'n$i',
+          sessionId: 's1',
+          response: ResponseType.ignored,
+          minute: 9 + i,
         );
       }
       expect(
-        await nudges.consecutiveDismissals(NudgeType.sessionMissed, at(19, 0)),
+        await nudges.consecutiveUnansweredLadders(
+          NudgeType.sessionMissed,
+          at(19, 0),
+        ),
+        1,
+      );
+    });
+
+    test('separate ignored ladders each count', () async {
+      for (var i = 1; i <= 3; i++) {
+        await settled(
+          'n$i',
+          sessionId: 's$i',
+          response: ResponseType.ignored,
+          minute: 9 + i,
+        );
+      }
+      expect(
+        await nudges.consecutiveUnansweredLadders(
+          NudgeType.sessionMissed,
+          at(19, 0),
+        ),
         3,
       );
     });
 
-    test('an engaged reply breaks the dismissal streak', () async {
-      await nudges.save(makeNudge(delivered: at(19, 10)));
-      await nudges.saveResponse(
-        NudgeResponse(
-          id: 'r1',
-          nudgeId: 'n1',
+    test(
+      'an engaged reply breaks the streak at the ladder before it',
+      () async {
+        await settled(
+          'n1',
+          sessionId: 's1',
           response: ResponseType.started,
-          respondedAt: at(19, 10),
-          latencySeconds: 4,
-        ),
-      );
-      await nudges.save(makeNudge(id: 'n2', delivered: at(19, 11)));
-      await nudges.saveResponse(
-        NudgeResponse(
-          id: 'r2',
-          nudgeId: 'n2',
+          minute: 10,
+        );
+        await settled(
+          'n2',
+          sessionId: 's2',
           response: ResponseType.dismissed,
-          respondedAt: at(19, 11),
-          latencySeconds: 2,
-        ),
-      );
+          minute: 11,
+        );
+        expect(
+          await nudges.consecutiveUnansweredLadders(
+            NudgeType.sessionMissed,
+            at(19, 0),
+          ),
+          1,
+        );
+      },
+    );
+
+    test(
+      'answering late clears the ladder its earlier rungs belong to',
+      () async {
+        // L0 answered, then L1 armed and left. The ladder was engaged with, so
+        // it must not be held against the user by its own later rung.
+        await settled(
+          'n1',
+          sessionId: 's1',
+          response: ResponseType.started,
+          minute: 10,
+        );
+        await settled(
+          'n2',
+          sessionId: 's1',
+          response: ResponseType.ignored,
+          minute: 11,
+        );
+        expect(
+          await nudges.consecutiveUnansweredLadders(
+            NudgeType.sessionMissed,
+            at(19, 0),
+          ),
+          0,
+        );
+      },
+    );
+
+    test('nudges with no ladder count individually', () async {
+      for (var i = 1; i <= 2; i++) {
+        await settled(
+          'n$i',
+          sessionId: null,
+          response: ResponseType.ignored,
+          minute: 9 + i,
+        );
+      }
       expect(
-        await nudges.consecutiveDismissals(NudgeType.sessionMissed, at(19, 0)),
-        1,
+        await nudges.consecutiveUnansweredLadders(
+          NudgeType.sessionMissed,
+          at(19, 0),
+        ),
+        2,
       );
     });
   });
