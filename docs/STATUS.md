@@ -18,19 +18,19 @@ largely superseded by this file.
 
 ## Does it work?
 
-**Yes. The build on the phone was watched drawing its UI, including the new
-calendar screen — but Van has not yet been given permission to read the
-calendar, so the feature is installed and unexercised against real data.**
+**Yes, and the calendar is now real.** The permission was granted on 6
+September, and the Schedule view was watched drawing this phone's actual
+events — a public holiday, three flights — beside Van's own blocks.
 
 | | |
 |---|---|
-| **Commit the phone is running** | `dcffd43` — "Show the calendar, not just its shape". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
+| **Commit the phone is running** | `2f1306e` — "Show the calendar, not just its shape". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
 | **APK installed at** | **6 Sep 2026, 00:53:55** (device local, PDT), debug build, phone `<device-serial>` |
 | **Last launched** | **6 Sep 2026, 00:54** — `am start` delivered, process alive (pid 30090) |
-| **Last seen rendering** | **6 Sep 2026, 01:08, this build.** The Calendar tab drawing today's real blocks on a timeline — "Why is not working" at 08:00 and "Negotiate wiring check" after it — plus the four-tab nav and the Calendars settings page. Screenshotted. |
-| **Last driven by hand** | **6 Sep 2026, 01:08** — tapped through to the Calendar tab and read the day off the timeline. |
-| **Calendar permission** | **Not granted.** `READ_CALENDAR` is declared and sits at the platform default. Until you tap Allow, Van plans exactly as it did before — this is the one thing WP-11 still needs from you. |
-| **Tests** | 666 green (397 app, 269 core), `dart analyze --fatal-infos` and `check_layers` clean |
+| **Last seen rendering** | **6 Sep 2026, 01:35, this build.** The Schedule view drawing real calendar events (Labor Day, three flights) beside Van's own blocks, the day timeline, the view menu, and the Calendars page listing this phone's calendars. Screenshotted. |
+| **Last driven by hand** | **6 Sep 2026, 01:35** — switched views through the app bar menu and read the fortnight off the schedule. |
+| **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has now run against the real provider: the settings page lists this phone's calendars (eight Google accounts, Samsung birthdays, Coursera) and the Schedule view draws real events. The least-proved code in the repository is no longer unproved. |
+| **Tests** | 680 green (411 app, 269 core), `dart analyze --fatal-infos` and `check_layers` clean |
 
 **What that gap does and does not mean.** The calendar UI was watched drawing
 on this build, and the whole feature is covered by tests against a fake
@@ -65,7 +65,7 @@ which is the only way any of WP-11 gets exercised. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **666 tests, all green,
+Van is finished as far as an agent can take it alone. **680 tests, all green,
 on a phone that runs.** Five things need you, and they are small — the newest
 is last, because it is the only one that was not already here yesterday:
 
@@ -113,12 +113,12 @@ is last, because it is the only one that was not already here yesterday:
    only part of the negotiation loop never reached on hardware.
 4. **Listen to the drum.** Nobody ever has. Your ringer was muted every time
    I looked, so unmute first.
-5. **Grant the calendar.** Tap the calendar icon in the Now screen's app bar,
-   then Allow. Until you do, WP-11 is installed and doing nothing: Van still
-   plans your day as if nothing else is on it. Afterwards, the page lists your
-   calendars and you can untick any that turn out to be noise. Van reads them
-   at planning time, never writes to them, and never reads an event's name —
-   section 3v says exactly what it records instead.
+5. ~~**Grant the calendar.**~~ **Done, 6 Sep.** What is left is a judgement
+   only you can make: open the Calendar tab, look at a week, and decide whether
+   any of those calendars are noise. Eight Google accounts are on this phone
+   and everything on them is included by default; untick from the tune icon.
+   Van reads them at planning time and never writes to them. Event names are
+   shown on that screen and recorded nowhere — section 3v and D71.
 
 **After a week, run this.** It prints what the log actually says — how many
 blocks you started, what Van held back and why, and how often moving work
@@ -171,7 +171,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **666 tests passing** — 269 in `packages/van_core` (pure Dart), 397 in the app.
+- **680 tests passing** — 269 in `packages/van_core` (pure Dart), 411 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -218,7 +218,7 @@ working configuration, not a degraded one.
 | App: calendar planning | 20 |
 | App: calendar settings screen | 12 |
 | App: calendar preferences | 8 |
-| App: calendar screen and timeline | 17 |
+| App: calendar screen, four views | 31 |
 | App: timezone (calendar cases added) | +4 |
 
 ---
@@ -1262,13 +1262,24 @@ phone next month counts without Van being told. That default only works because
 of the transparency rule — birthdays and holidays are all-day and free, so they
 do not block — and changing either without the other will make Van look broken.
 
-**The Calendar tab, added 6 September.** A day timeline reached from the
-bottom nav: Van's own blocks drawn on a clock, coloured by status, with the
-calendar's claimed time behind them as shaded bands. Van's blocks carry their
-task titles because they are Van's; the bands say `Busy` and nothing else,
-because that is the entire truth of what Van knows about a meeting. That is
-not a placeholder for a title that failed to load, and a future contributor
-who "fixes" it will be undoing D70 rather than completing it.
+**The Calendar tab, added 6 September, four views.** Day and week are the plan
+on a clock; month is a grid answering "which days are already full"; schedule
+is the list a person would read aloud. One `_Timeline` widget serves day and
+week, because two implementations of a timeline eventually place the same
+block at two different heights.
+
+Van's blocks are coloured by status. Calendar events are drawn quieter and
+**with their real names** — filled when they block, outlined and marked `free`
+when they do not, struck through when declined, which is exactly what the
+planner concluded about each. All-day entries sit above the clock rather than
+stretched down it, because a birthday does not happen at a time.
+
+**Titles are read now, and D70's first entry was reversed within the day.**
+The boundary moved rather than disappearing: titles reach the screen and stop
+there. `CalendarFilter.commitments` still yields nameless commitments, so the
+planner and the log have nothing to write down, and a test plants a
+deliberately sensitive event title, runs a planning pass, and greps the
+serialised log for it. See D71 for what that trades away.
 
 Drawing a day is not planning, and the screen is careful about the difference:
 `VanService.calendarBusy` reads without writing a `calendarRead` row (a row
@@ -1279,12 +1290,17 @@ calendar settings page moved to this tab's app bar; the Now banner still
 reaches it, because being told the calendar is unreadable is only useful next
 to the list of calendars.
 
-**What has not been proved on hardware.** Everything above is tested and the
-screen was watched drawing, but `READ_CALENDAR` has never been granted on this
-phone, so no line of `CalendarPlugin.kt` has ever run against a real provider.
-The Kotlin is the least-exercised code in the repository. First thing to check
-after granting: that the Calendars page lists real calendars, and that a
-`calendarRead` row appears in the log with a non-zero `entries` count.
+**Proved on hardware, 6 September.** The grant was given, the Calendars page
+listed this phone's real calendars, and the Schedule view drew real events.
+`CalendarPlugin.kt` has run against the provider.
+
+**And the first thing real data showed was a defect no fixture would have.**
+Eight Google accounts means eight holiday calendars, so Labor Day arrived
+eight times and filled a screen with one word. Identical events are now
+collapsed in the view — same name, same minutes, drawn once. The planner
+needed no fix: `FreeSlotFinder` merges overlapping commitments, so eight
+copies of a holiday always cost what one copy costs. This is the standing
+argument for getting a build onto the phone, in miniature.
 
 ---
 
@@ -1539,6 +1555,11 @@ EXPLAIN QUERY PLAN SELECT * FROM events WHERE session_id = ?
   in `van_core` or `lib/ui/`.
 - **Android only for now**, but the domain core stays platform-free so the
   proactive engine could move server-side for an iOS port later.
+- **Van reads event titles for display and records none of them (6 Sep 2026).**
+  Reversed inside a day, on the owner's instruction, after the alternative was
+  seen on a real phone: a calendar that can only say "Busy" is unreadable. The
+  privacy rule survived the reversal in a stronger form — a boundary with a
+  test on it, rather than an absence. D70, then D71.
 - **The shell has four tabs, at the owner's request (6 Sep 2026).** The rule
   in `shell.dart` used to be that three was the ceiling and a fourth tab was
   the beginning of a productivity system. That still reads correctly as a
