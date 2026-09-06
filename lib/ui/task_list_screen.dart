@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/ui/background.dart';
+import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
 
 /// Everything still open, in one flat list.
@@ -70,23 +71,75 @@ class _TaskListScreenState extends State<TaskListScreen>
   /// It also means the framework awaits this. The old call site was
   /// `unawaited`, so a failed write landed on the zone as an unhandled error
   /// rather than on the user as a message. See STATUS 3s.
-  Future<bool> _complete(Task task) async {
+  Future<bool> _complete(Task task, {required String from}) async {
     try {
-      await widget.service.completeTask(task.id);
+      await widget.service.completeTask(task.id, source: from);
     } on Object {
       _say('Could not finish "${task.title}" - still on your list.');
       return false;
     }
-    _say('Finished "${task.title}".');
+    _say('Finished "${task.title}".', undo: task);
     return true;
   }
 
-  void _say(String message) {
+  /// Finishes from the tick rather than the swipe.
+  ///
+  /// The swipe stays - it is faster once you know it exists - but it is a
+  /// gesture with no affordance, and a list of tasks whose only completion
+  /// route is invisible reads as a list you cannot complete anything from.
+  Future<void> _tick(Task task) async {
+    if (!await _complete(task, from: 'task_list_tick')) return;
+    if (!mounted) return;
+    setState(
+      () => _open = [..._open]..removeWhere((t) => t.id == task.id),
+    );
+    await _refresh();
+  }
+
+  Future<void> _reopen(Task task) async {
+    await widget.service.reopenTask(task.id);
+    await _refresh();
+    _say('Put "${task.title}" back and replanned it.');
+  }
+
+  /// Opens the estimate editor and applies what comes back.
+  Future<void> _editEstimate(Task task) async {
+    final minutes = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => EstimateSheet(
+        title: task.title,
+        initialMinutes:
+            task.estimatedMinutes ?? widget.service.defaultEstimateMinutes,
+        isAssumed: task.estimatedMinutes == null,
+      ),
+    );
+    if (minutes == null || !mounted) return;
+
+    final result = await widget.service.answerDuration(task.id, '$minutes');
+    await _refresh();
+    _say(switch (result.outcome) {
+      AnswerOutcome.replanned => 'Replanned "${task.title}".',
+      AnswerOutcome.notUnderstood => 'That did not look like a length.',
+      AnswerOutcome.tooLate => 'That one has already started; leaving it.',
+    });
+  }
+
+  void _say(String message, {Task? undo}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context)
       ..clearSnackBars()
       ..showSnackBar(
-        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+        SnackBar(
+          content: Text(message),
+          duration: Duration(seconds: undo == null ? 2 : 5),
+          action: undo == null
+              ? null
+              : SnackBarAction(
+                  label: 'Undo',
+                  onPressed: () => inBackground(_reopen(undo)),
+                ),
+        ),
       );
   }
 
@@ -111,7 +164,8 @@ class _TaskListScreenState extends State<TaskListScreen>
                     key: ValueKey(task.id),
                     direction: DismissDirection.startToEnd,
                     background: const _CompleteBackground(),
-                    confirmDismiss: (_) => _complete(task),
+                    confirmDismiss: (_) =>
+                        _complete(task, from: 'task_list_swipe'),
                     onDismissed: (_) {
                       // Only reached once _complete has confirmed, so this is
                       // the success path: drop the row, then reconcile with
@@ -125,7 +179,16 @@ class _TaskListScreenState extends State<TaskListScreen>
                       );
                       inBackground(_refresh());
                     },
-                    child: _TaskRow(task: task, now: widget.clock.now()),
+                    child: _TaskRow(
+                      task: task,
+                      now: widget.clock.now(),
+                      estimate: estimateLabel(
+                        task.estimatedMinutes,
+                        widget.service.defaultEstimateMinutes,
+                      ),
+                      onTick: () => inBackground(_tick(task)),
+                      onEditEstimate: () => inBackground(_editEstimate(task)),
+                    ),
                   );
                 },
               ),
@@ -191,10 +254,22 @@ class _CompleteBackground extends StatelessWidget {
 }
 
 class _TaskRow extends StatelessWidget {
-  const _TaskRow({required this.task, required this.now});
+  const _TaskRow({
+    required this.task,
+    required this.now,
+    required this.estimate,
+    required this.onTick,
+    required this.onEditEstimate,
+  });
 
   final Task task;
   final DateTime now;
+
+  /// Already-formatted, and never empty - an unstated estimate shows Van's
+  /// assumption rather than nothing, because a blank invites no correction.
+  final String estimate;
+  final VoidCallback onTick;
+  final VoidCallback onEditEstimate;
 
   @override
   Widget build(BuildContext context) {
@@ -202,21 +277,25 @@ class _TaskRow extends StatelessWidget {
     final overdue = task.isOverdue(now);
 
     return ListTile(
-      leading: const Icon(Icons.circle_outlined, size: 18),
+      leading: IconButton(
+        icon: const Icon(Icons.circle_outlined, size: 20),
+        tooltip: 'Finish "${task.title}"',
+        onPressed: onTick,
+      ),
       title: Text(task.title),
-      subtitle: task.deadline == null && task.estimatedMinutes == null
+      subtitle: task.deadline == null
           ? null
           : Text(
-              [
-                if (task.deadline != null)
-                  'due ${_shortDate(task.deadline!.toLocal())}',
-                if (task.estimatedMinutes != null)
-                  '${task.estimatedMinutes} min',
-              ].join(' · '),
+              'due ${_shortDate(task.deadline!.toLocal())}',
               style: theme.textTheme.bodySmall?.copyWith(
                 color: overdue ? theme.colorScheme.error : null,
               ),
             ),
+      // The estimate moves out of the subtitle and becomes a control. It was
+      // read-only text that vanished entirely when nobody had stated one,
+      // which is the worst of both: no number to correct, and no sign that Van
+      // had picked one anyway.
+      trailing: TextButton(onPressed: onEditEstimate, child: Text(estimate)),
     );
   }
 }

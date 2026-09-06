@@ -41,7 +41,7 @@ class _FailingComplete extends VanService {
   });
 
   @override
-  Future<Task?> completeTask(String taskId) async =>
+  Future<Task?> completeTask(String taskId, {String source = 'task_list'}) =>
       throw Exception('the write failed');
 }
 
@@ -484,6 +484,49 @@ void main() {
 
       expect(find.text('Shrink it'), findsOneWidget);
       expect(find.text('OK'), findsNothing);
+    });
+  });
+
+  group('finishing from the task list', () {
+    Future<void> showList(WidgetTester tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: TaskListScreen(service: service, clock: clock),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('the tick finishes it, without needing the swipe', (
+      tester,
+    ) async {
+      // The swipe stays because it is faster once you know it is there. It
+      // is also a gesture with no affordance, and a list whose only route to
+      // done is invisible reads as a list you cannot finish anything from.
+      await service.capture('write the report 45 minutes');
+
+      await showList(tester);
+      await tester.tap(find.byTooltip('Finish "Write the report"'));
+      await tester.pumpAndSettle();
+
+      expect(await service.openTasks(), isEmpty);
+    });
+
+    testWidgets('a row carries an editable estimate, never a blank', (
+      tester,
+    ) async {
+      await service.capture('finish the assignment');
+
+      await showList(tester);
+
+      expect(find.text('1h (assumed)'), findsOneWidget);
+
+      await tester.tap(find.text('1h (assumed)'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ActionChip, '45m'));
+      await tester.pumpAndSettle();
+
+      expect((await service.openTasks()).single.estimatedMinutes, 45);
     });
   });
 

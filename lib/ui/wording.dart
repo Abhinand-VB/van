@@ -120,3 +120,130 @@ class ClarifyBar extends StatelessWidget {
     );
   }
 }
+
+/// How an estimate reads on a card, with a default when nobody has said.
+///
+/// **It never renders as blank or as "unknown".** A card that says nothing
+/// about how long the work is invites no correction, and the whole point of
+/// showing this is that correcting a number is far easier than inventing one.
+/// So an unstated estimate shows the planner's own assumption, marked as one.
+String estimateLabel(int? stated, int fallback) {
+  final minutes = stated ?? fallback;
+  final text = minutes % 60 == 0 && minutes >= 60
+      ? '${minutes ~/ 60}h'
+      : minutes > 60
+      ? '${minutes ~/ 60}h ${minutes % 60}m'
+      : '${minutes}m';
+  return stated == null ? '$text (assumed)' : text;
+}
+
+/// Edits how long a task is expected to take.
+///
+/// A sheet rather than an inline field, because an inline field on a card
+/// fights the keyboard for the card it is editing. Opens pre-filled and with
+/// the presets people actually pick, so the common case is one tap and the
+/// uncommon one is still typeable.
+class EstimateSheet extends StatefulWidget {
+  /// Creates the sheet.
+  const EstimateSheet({
+    required this.title,
+    required this.initialMinutes,
+    required this.isAssumed,
+    super.key,
+  });
+
+  /// The task being estimated, named so the sheet cannot be about the wrong
+  /// one.
+  final String title;
+
+  /// What to open with. Never zero and never blank - see [estimateLabel].
+  final int initialMinutes;
+
+  /// Whether [initialMinutes] is Van's assumption rather than the user's
+  /// figure, which is worth saying out loud on the one screen that can fix it.
+  final bool isAssumed;
+
+  @override
+  State<EstimateSheet> createState() => _EstimateSheetState();
+}
+
+class _EstimateSheetState extends State<EstimateSheet> {
+  late final _field = TextEditingController(text: '${widget.initialMinutes}');
+
+  /// The lengths a person actually picks. Not a scale - a shortlist.
+  static const _presets = [15, 25, 45, 60, 90, 120, 180];
+
+  @override
+  void dispose() {
+    _field.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final minutes = int.tryParse(_field.text.trim());
+    // Refusing zero here rather than downstream, so the sheet stays open with
+    // the bad value visible instead of closing and silently changing nothing.
+    if (minutes == null || minutes <= 0) return;
+    Navigator.of(context).pop(minutes);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(
+        20,
+        0,
+        20,
+        20 + MediaQuery.viewInsetsOf(context).bottom,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(widget.title, style: theme.textTheme.titleMedium),
+          const SizedBox(height: 4),
+          Text(
+            widget.isAssumed
+                ? 'Nobody said how long, so Van assumed this.'
+                : 'How long you said it would take.',
+            style: theme.textTheme.bodySmall,
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 8,
+            children: [
+              for (final preset in _presets)
+                ActionChip(
+                  label: Text(estimateLabel(preset, preset)),
+                  onPressed: () => Navigator.of(context).pop(preset),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _field,
+                  autofocus: true,
+                  keyboardType: TextInputType.number,
+                  textInputAction: TextInputAction.done,
+                  onSubmitted: (_) => _save(),
+                  decoration: const InputDecoration(
+                    labelText: 'Minutes',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton(onPressed: _save, child: const Text('Save')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}

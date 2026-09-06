@@ -206,12 +206,89 @@ void main() {
       expect(row.payload['taskId'], captured.task.id);
     });
 
+    test(
+      'an edited estimate and a typed answer are the same operation',
+      () async {
+        // The Now card's estimate chip and the typed answer both route here, so
+        // there is one replan, one event type, and no way for the two to drift.
+        final captured = await service.capture('finish the assignment');
+
+        await service.answerDuration(captured.task.id, '90');
+
+        expect((await tasks.byId(captured.task.id))?.estimatedMinutes, 90);
+        expect(await eventTypes(), contains('clarificationAnswered'));
+      },
+    );
+
     test('an answer that was not understood is not recorded as one', () async {
       final captured = await service.capture('finish the assignment');
 
       await service.answerDuration(captured.task.id, 'dunno');
 
       expect(await eventTypes(), isNot(contains('clarificationAnswered')));
+    });
+  });
+
+  group('finishing and unfinishing', () {
+    test('finishing records which surface it came from', () async {
+      final captured = await service.capture('write the report 45 minutes');
+
+      await service.completeTask(captured.task.id, source: 'now_card');
+
+      final row = (await events.all()).lastWhere(
+        (e) => e.type == EventType.taskUpdated,
+      );
+      expect(row.payload['source'], 'now_card');
+      expect(row.payload['status'], 'done');
+    });
+
+    test('the default source is still the task list', () async {
+      final captured = await service.capture('write the report 45 minutes');
+
+      await service.completeTask(captured.task.id);
+
+      final row = (await events.all()).lastWhere(
+        (e) => e.type == EventType.taskUpdated,
+      );
+      expect(row.payload['source'], 'task_list');
+    });
+
+    test('reopening puts the task back and plans it again', () async {
+      final captured = await service.capture('write the report 45 minutes');
+      await service.completeTask(captured.task.id, source: 'now_card');
+      expect(await service.openTasks(), isEmpty);
+
+      final back = await service.reopenTask(captured.task.id);
+
+      expect(back?.status, TaskStatus.active);
+      expect((await service.openTasks()).single.id, captured.task.id);
+      // Planned again rather than sitting there with nothing scheduled.
+      final live = (await sessions.forTask(
+        captured.task.id,
+      )).where((s) => !s.isResolved);
+      expect(live, isNotEmpty);
+    });
+
+    test('the blocks that were stood down stay stood down', () async {
+      // Not a true undo, and it does not pretend to be: those blocks really
+      // were skipped, and the log is append-only.
+      final captured = await service.capture('write the report 45 minutes');
+      final original = captured.sessions.single.id;
+      await service.completeTask(captured.task.id);
+
+      await service.reopenTask(captured.task.id);
+
+      final old = (await sessions.forTask(
+        captured.task.id,
+      )).firstWhere((s) => s.id == original);
+      expect(old.status, SessionStatus.skipped);
+    });
+
+    test('reopening something that is not finished does nothing', () async {
+      final captured = await service.capture('write the report 45 minutes');
+
+      expect(await service.reopenTask(captured.task.id), isNull);
+      expect(await service.reopenTask('no-such-task'), isNull);
     });
   });
 }

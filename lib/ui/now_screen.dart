@@ -214,6 +214,95 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
     });
   }
 
+  /// Finishes [task], with a way back.
+  ///
+  /// The undo is not decoration. Finishing used to be a swipe on another
+  /// screen, which nobody does by accident; it is now a tap on the main one,
+  /// next to the thing you are reading. A one-tap irreversible action in that
+  /// position needs an exit, and `reopenTask` is it.
+  Future<void> _finish(Task task, {required String from}) async {
+    setState(() => _busy = true);
+    try {
+      await widget.service.completeTask(task.id, source: from);
+    } on Object {
+      if (!mounted) return;
+      setState(() {
+        _busy = false;
+        _message = 'Could not finish "${task.title}" - still on your list.';
+      });
+      return;
+    }
+    await _refresh();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _message = null;
+    });
+
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('Finished "${task.title}".'),
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Undo',
+            onPressed: () => inBackground(_reopen(task)),
+          ),
+        ),
+      );
+  }
+
+  Future<void> _reopen(Task task) async {
+    await widget.service.reopenTask(task.id);
+    await _refresh();
+    if (!mounted) return;
+    // Said plainly, because it is not a true undo: the task is planned again
+    // from now, so its blocks are not the ones it had a moment ago.
+    setState(() => _message = 'Put "${task.title}" back and replanned it.');
+  }
+
+  /// Opens the estimate editor for [task] and applies whatever comes back.
+  Future<void> _editEstimate(Task task) async {
+    final minutes = await showModalBottomSheet<int>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => EstimateSheet(
+        title: task.title,
+        // Pre-filled with the number the planner already used, so this is a
+        // correction rather than an invention. That is the whole difference
+        // between an editable field and an empty one.
+        initialMinutes:
+            task.estimatedMinutes ?? widget.service.defaultEstimateMinutes,
+        isAssumed: task.estimatedMinutes == null,
+      ),
+    );
+    if (minutes == null || !mounted) return;
+
+    setState(() => _busy = true);
+    // The same call the typed answer to Van's question goes through, so both
+    // routes replan identically and write one kind of row.
+    final result = await widget.service.answerDuration(task.id, '$minutes');
+    await _refresh();
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      // Editing an estimate is answering the question, so a standing question
+      // about this task is now answered and must not keep asking.
+      if (result.outcome == AnswerOutcome.replanned &&
+          _asking?.taskId == task.id) {
+        _asking = null;
+      }
+      _message = switch (result.outcome) {
+        AnswerOutcome.replanned =>
+          'Replanned into ${result.sessions.length} '
+              '${result.sessions.length == 1 ? "block" : "blocks"}.',
+        AnswerOutcome.notUnderstood => 'That did not look like a length.',
+        AnswerOutcome.tooLate => 'That one has already started; leaving it.',
+      };
+    });
+  }
+
   Future<void> _start() async {
     final next = _next;
     if (next == null) return;
@@ -305,7 +394,10 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
                 session: next.session,
                 task: next.task,
                 now: widget.clock.now(),
+                defaultEstimateMinutes: widget.service.defaultEstimateMinutes,
                 onStart: _start,
+                onEditEstimate: () => _editEstimate(next.task),
+                onFinish: () => _finish(next.task, from: 'now_card'),
               ),
             const SizedBox(height: 32),
             if (rest.isNotEmpty) ...[
@@ -316,15 +408,35 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
                 style: theme.textTheme.titleSmall,
               ),
               const SizedBox(height: 8),
+              // The circle used to be an `Icon`. It looked exactly like a
+              // checkbox, sat where a checkbox sits, and did nothing at all -
+              // which is most of why finishing a task felt impossible, since
+              // the only real way to do it was an undiscoverable swipe on
+              // another tab. It is now the thing it always looked like.
               for (final task in rest)
                 ListTile(
                   dense: true,
                   contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.circle_outlined, size: 16),
+                  leading: IconButton(
+                    icon: const Icon(Icons.circle_outlined, size: 20),
+                    tooltip: 'Finish "${task.title}"',
+                    onPressed: _busy
+                        ? null
+                        : () => inBackground(_finish(task, from: 'now_list')),
+                  ),
                   title: Text(task.title),
                   subtitle: task.deadline == null
                       ? null
                       : Text('due ${_shortDate(task.deadline!.toLocal())}'),
+                  trailing: TextButton(
+                    onPressed: _busy ? null : () => _editEstimate(task),
+                    child: Text(
+                      estimateLabel(
+                        task.estimatedMinutes,
+                        widget.service.defaultEstimateMinutes,
+                      ),
+                    ),
+                  ),
                 ),
             ],
           ],
@@ -399,13 +511,22 @@ class _NextCard extends StatelessWidget {
     required this.session,
     required this.task,
     required this.now,
+    required this.defaultEstimateMinutes,
     required this.onStart,
+    required this.onEditEstimate,
+    required this.onFinish,
   });
 
   final WorkSession session;
   final Task task;
   final DateTime now;
+
+  /// What the planner assumes when nobody has said. Shown, marked as an
+  /// assumption, rather than left blank.
+  final int defaultEstimateMinutes;
   final VoidCallback onStart;
+  final VoidCallback onEditEstimate;
+  final VoidCallback onFinish;
 
   @override
   Widget build(BuildContext context) {
@@ -438,6 +559,19 @@ class _NextCard extends StatelessWidget {
                     '${_shortTime(session.plannedStart.toLocal())}',
           style: theme.textTheme.bodyMedium,
         ),
+        const SizedBox(height: 12),
+        // The estimate, editable, and always carrying a number. This is the
+        // one figure the whole plan is built from and until now there was no
+        // way to correct it after capture - so a task Van had guessed an hour
+        // for stayed an hour for ever, and nothing about the card said a guess
+        // had been made.
+        ActionChip(
+          avatar: const Icon(Icons.timer_outlined, size: 18),
+          label: Text(
+            estimateLabel(task.estimatedMinutes, defaultEstimateMinutes),
+          ),
+          onPressed: onEditEstimate,
+        ),
         const SizedBox(height: 20),
         SizedBox(
           width: double.infinity,
@@ -445,6 +579,14 @@ class _NextCard extends StatelessWidget {
           child: FilledButton(
             onPressed: onStart,
             child: Text(running ? 'RESUME' : 'START'),
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: onFinish,
+            icon: const Icon(Icons.check, size: 18),
+            label: const Text('Mark done'),
           ),
         ),
       ],

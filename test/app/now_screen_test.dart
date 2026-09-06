@@ -78,6 +78,125 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  group('finishing a task', () {
+    testWidgets('the circle in the list is a real tick, not a picture', (
+      tester,
+    ) async {
+      await service.capture('write the report 45 minutes');
+      await service.capture('call the bank 30 minutes');
+
+      await show(tester);
+      await tester.tap(find.byTooltip('Finish "Call the bank"'));
+      await tester.pumpAndSettle();
+
+      // It looked like a checkbox, sat where a checkbox sits, and did
+      // nothing - so the only way to finish anything was a swipe on another
+      // tab that nothing on screen mentions.
+      expect(
+        (await service.openTasks()).map((t) => t.title),
+        isNot(contains('Call the bank')),
+      );
+    });
+
+    testWidgets('the card can finish the thing it is showing', (tester) async {
+      await service.capture('write the report 45 minutes');
+
+      await show(tester);
+      await tester.tap(find.text('Mark done'));
+      await tester.pumpAndSettle();
+
+      expect(await service.openTasks(), isEmpty);
+      expect(find.textContaining('Finished'), findsOneWidget);
+    });
+
+    testWidgets('finishing offers a way back out of it', (tester) async {
+      // One tap, on the main screen, next to what you were reading. Without
+      // an exit that is a trap.
+      await service.capture('write the report 45 minutes');
+
+      await show(tester);
+      await tester.tap(find.text('Mark done'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Undo'));
+      await tester.pumpAndSettle();
+
+      final open = await service.openTasks();
+      expect(open.map((t) => t.title), contains('Write the report'));
+      // And it is planned again rather than sitting there with no blocks.
+      expect(await service.next(), isNotNull);
+    });
+  });
+
+  group('the estimate on the card', () {
+    testWidgets('always shows a number, and says when it is a guess', (
+      tester,
+    ) async {
+      await service.capture('finish the assignment');
+
+      await show(tester);
+
+      // The card used to say nothing at all about how long the work was when
+      // nobody had stated it, which is the worst case: no figure to correct
+      // and no sign that Van had picked one anyway.
+      expect(find.text('1h (assumed)'), findsWidgets);
+    });
+
+    testWidgets('shows the stated figure plainly when there is one', (
+      tester,
+    ) async {
+      await service.capture('finish the assignment, 2 hours');
+
+      await show(tester);
+
+      expect(find.text('2h'), findsWidgets);
+      expect(find.textContaining('assumed'), findsNothing);
+    });
+
+    testWidgets('tapping it opens an editor prefilled with that number', (
+      tester,
+    ) async {
+      await service.capture('finish the assignment');
+
+      await show(tester);
+      await tester.tap(find.text('1h (assumed)').first);
+      await tester.pumpAndSettle();
+
+      // Prefilled, so this is a correction rather than an invention.
+      expect(find.widgetWithText(TextField, '60'), findsOneWidget);
+      expect(find.textContaining('Van assumed this'), findsOneWidget);
+    });
+
+    testWidgets('picking a length replans the task', (tester) async {
+      await service.capture('finish the assignment');
+
+      await show(tester);
+      await tester.tap(find.text('1h (assumed)').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ActionChip, '3h'));
+      await tester.pumpAndSettle();
+
+      expect((await service.openTasks()).single.estimatedMinutes, 180);
+      expect(find.textContaining('Replanned'), findsOneWidget);
+    });
+
+    testWidgets('editing it answers the standing question too', (tester) async {
+      // Both routes are the same operation, so using one must close the
+      // other - otherwise Van goes on asking about a task you just told it
+      // the length of.
+      await show(tester);
+      await type(tester, 'finish the assignment');
+      expect(find.textContaining('Roughly how long'), findsWidgets);
+
+      await tester.tap(find.text('1h (assumed)').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ActionChip, '1h 30m'));
+      await tester.pumpAndSettle();
+
+      expect((await service.openTasks()).single.estimatedMinutes, 90);
+      expect(find.textContaining('Roughly how long'), findsNothing);
+    });
+  });
+
   group('a deep task on the Now card', () {
     testWidgets('opens with a short block, named for what it is for', (
       tester,

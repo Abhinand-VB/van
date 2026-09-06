@@ -383,6 +383,15 @@ class VanService {
   /// Decides whether a captured sentence left Van guessing.
   static const _questions = CaptureQuestions();
 
+  /// The duration Van uses when nobody has said how long.
+  ///
+  /// Exposed so a screen offering to *edit* an estimate can pre-fill the same
+  /// number the planner already used, rather than showing an empty box. An
+  /// empty box asks the user to invent a figure; a filled one asks them to
+  /// correct Van's, which is a far easier question and the reason this is on
+  /// the card at all.
+  int get defaultEstimateMinutes => _constraints.defaultEstimateMinutes;
+
   /// Operations that pick a time by reading the current plan, run one at a
   /// time.
   ///
@@ -1341,11 +1350,10 @@ class VanService {
     return SweepReport(moved: moved, dropped: dropped);
   }
 
-  /// Marks [taskId] done from the task list, standing its blocks down.
+  /// Marks [taskId] done, standing its blocks down.
   ///
-  /// The list is flat and the gesture is a swipe, so this has to be safe to
-  /// invoke on a task with blocks still planned - which is the common case,
-  /// because work usually finishes somewhere other than where it was
+  /// Safe to invoke on a task with blocks still planned - which is the common
+  /// case, because work usually finishes somewhere other than where it was
   /// scheduled. Those blocks are marked skipped rather than completed: they
   /// genuinely never ran, and pretending otherwise would corrupt the record of
   /// what this person actually does.
@@ -1354,7 +1362,15 @@ class VanService {
   /// work is the opposite of ignoring the ask, and letting those rungs rot
   /// unanswered would build fatigue against someone who did exactly what Van
   /// wanted.
-  Future<Task?> completeTask(String taskId) async {
+  ///
+  /// [source] names the surface it was finished from. It used to be the
+  /// string `task_list` because a swipe on that screen was the only way to
+  /// finish anything; there are now three, and which one people actually use
+  /// is worth knowing before deciding which to keep.
+  Future<Task?> completeTask(
+    String taskId, {
+    String source = 'task_list',
+  }) async {
     final task = await _tasks.byId(taskId);
     if (task == null) return null;
 
@@ -1373,11 +1389,41 @@ class VanService {
     await _events.append(EventType.taskUpdated, {
       'taskId': taskId,
       'status': TaskStatus.done.name,
-      'source': 'task_list',
+      'source': source,
       'blocksStoodDown': open.length,
     });
     return done;
   }
+
+  /// Puts a finished task back on the list and plans it again.
+  ///
+  /// Exists because finishing is now one tap on the main screen rather than a
+  /// deliberate swipe, and a one-tap irreversible action next to a list of
+  /// tasks is a trap. This is the way back out.
+  ///
+  /// **It is not a true undo and does not pretend to be.** The blocks that
+  /// were stood down stay skipped - the log is append-only and they really
+  /// were skipped - and the task is planned afresh, so it comes back at
+  /// whatever times are free *now* rather than the ones it had before. That is
+  /// honest and it is also usually what someone wants: they finished it by
+  /// accident a moment ago, and the plan around it has not moved.
+  ///
+  /// Serialised, because it picks times.
+  Future<Task?> reopenTask(String taskId) => _serialised(() async {
+    final task = await _tasks.byId(taskId);
+    if (task == null || task.status != TaskStatus.done) return null;
+
+    final active = task.copyWith(status: TaskStatus.active);
+    await _tasks.save(active);
+    await _events.append(EventType.taskUpdated, {
+      'taskId': taskId,
+      'status': TaskStatus.active.name,
+      'source': 'undo',
+    });
+
+    final planned = await _planFor(active, _clock.now());
+    return planned.task;
+  });
 
   /// Undoes a capture: removes the task, its blocks and its armed nudges.
   ///
