@@ -204,6 +204,77 @@ blocks are never collapsed - two identical sessions are two pieces of work.
 The planner never needed this: `FreeSlotFinder` merges overlapping commitments,
 so eight copies of a holiday always cost what one copy costs.
 
+### D72 — Six calls made building the month chips and WP-13a (6 Sep, overnight)
+
+**The month grid, and how many names fit.** The reference was Google's month
+widget: a chip per event carrying its name, coloured per calendar. What was
+not specified is what happens when four things are on one day and two will
+fit. Three choices, all cheap to reverse:
+
+| Question | What is in the code | Why |
+|---|---|---|
+| How many chips fit? | **Measured, not chosen.** The cell asks its own box how tall it is and divides by the height one chip needs at the user's text scale. On your S25 that is two; on a bigger font it is one; below one it falls back to a single dot. | Any constant would be wrong on some phone or some font size, and the failure mode of a constant that is too big is a clipped chip - unreadable, which is what this grid has already been twice. The first version *estimated* the height with slack in it and cost a whole chip; the chip is now given exactly the height that was counted. |
+| Where does the overflow count go? | **On the last chip that fits**, as a bold `+2`, not on a row of its own. | On a cell with room for one line, a row spent on "+3" is a name not shown. This way the maximum number of names is always drawn *and* the count is always visible. |
+| What colour is a chip? | The phone's own colour for that calendar, filled when the event blocks and outlined when it does not; Van's own blocks in Van's green. Text is black or white by the fill's luminance. | The entire point of a calendar colour is that it matches the one you already know that calendar by, so it has to come off the provider rather than out of Van's theme. `CalendarSource.colour` was being read and thrown away. |
+
+**The timeline cards were left alone.** Day, week and schedule still draw
+events in a neutral tone rather than the calendar's colour. That is a
+deliberate stop, not an oversight: the ask was about the month grid, the
+timeline already distinguishes blocking from free by fill and has room for the
+whole name, and colouring it too is a visual decision about the whole screen
+rather than a consequence of this one. Say the word and it is a few lines.
+
+**A calendar id now reaches the UI layer.** `CalendarOccurrence` carries
+`calendarId` so a chip can look up a colour. It goes exactly as far as the
+title does and no further - `CalendarFilter.commitments` still yields
+nameless, sourceless commitments, so the planner and the append-only log are
+untouched, and the test that plants a sensitive title and greps the serialised
+log still passes. See D71 for the argument this extends.
+
+---
+
+**WP-13a, "Van asks when it does not know".** Three decisions worth your
+attention, one of which I would most like you to overrule if you disagree.
+
+**Van captures first and asks second, rather than asking instead.** The work
+package says "never block capture on it", and the strongest reading of that is
+the one in the code: the task is stored, the blocks are planned and the ladder
+is armed *before* the question is shown. Ignoring the question therefore costs
+nothing at all, which is what makes it a question rather than a form. The
+weaker reading - hold the sentence, ask, and capture whatever comes back -
+would satisfy the same words while risking the one failure this app cannot
+have, which is a thought typed in and lost. **The cost:** Van does briefly
+schedule on a guess, and if you answer, the blocks it made are thrown away and
+replaced. That churn is visible in the log as a `clarificationAnswered` row
+with `blocksReplaced`.
+
+**A bare number in an answer means minutes.** "45" is minutes, "2" is two
+minutes and lands on the planner's fifteen-minute floor. Reading it as two
+*hours* would be the invisible mistake; two minutes is visibly wrong and
+costs a re-answer. The question's own wording steers this - it says "e.g. 45
+minutes, or 2 hours" for exactly this reason. The rule lives in
+`TemporalParser.durationIn` and is not used when reading a captured sentence,
+so "call flat 12" is still not a twelve-minute job.
+
+**Only duration is ever asked about.** A missing deadline is a silence Van can
+live with - work with no deadline is scheduled soon rather than wrongly -
+while a missing duration forces the planner to invent one. `TaskField` can
+carry `deadline` anyway, so a model that decides the deadline is the missing
+piece is not blocked behind a type change. That is the trap `WP_JUDGEMENT`
+section 1 is about, and it seemed worth one unused enum member to avoid
+walking into it again.
+
+**And the omission I am least comfortable with.** `clarificationAsked` and
+`clarificationAnswered` are in the event log and **not** in the week report.
+The precedent set by D70 is that adding a section changes what the report *is*
+and that is your call, not an agent's - but unlike the calendar rows, these
+two are behaviour toward you rather than bookkeeping, and they are the only
+way to answer the question this feature has to answer: does Van asking earn
+the interruption, or is it a dialog you learned to dismiss? **Two counters in
+`WeekReview` and one line in the renderer.** Say yes and it is ten minutes.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner
