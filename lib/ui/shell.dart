@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/platform/calendars.dart';
+import 'package:van/platform/model_file.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/platform/speech.dart';
 import 'package:van/ui/calendar_screen.dart';
@@ -33,6 +34,7 @@ class VanShell extends StatefulWidget {
     required this.calendars,
     required this.calendarPreferences,
     this.speech = const UnsupportedSpeech(),
+    this.modelFile = const UnsupportedModelFile(),
     super.key,
   });
 
@@ -53,6 +55,9 @@ class VanShell extends StatefulWidget {
 
   /// Passed to both composers for their microphone button.
   final Speech speech;
+
+  /// Passed to the Now screen for the on-device model page.
+  final ModelFile modelFile;
 
   @override
   State<VanShell> createState() => _VanShellState();
@@ -77,6 +82,7 @@ class _VanShellState extends State<VanShell> {
             calendars: widget.calendars,
             calendarPreferences: widget.calendarPreferences,
             speech: widget.speech,
+            modelFile: widget.modelFile,
           ),
           CalendarScreen(
             service: widget.service,

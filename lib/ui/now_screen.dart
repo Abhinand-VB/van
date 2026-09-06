@@ -4,11 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/platform/calendars.dart';
+import 'package:van/platform/model_file.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/platform/speech.dart';
 import 'package:van/ui/background.dart';
 import 'package:van/ui/focus_screen.dart';
 import 'package:van/ui/mic_button.dart';
+import 'package:van/ui/model_screen.dart';
 import 'package:van/ui/settings_screen.dart';
 import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
@@ -27,6 +29,7 @@ class NowScreen extends StatefulWidget {
     required this.calendars,
     required this.calendarPreferences,
     this.speech = const UnsupportedSpeech(),
+    this.modelFile = const UnsupportedModelFile(),
     super.key,
   });
 
@@ -48,6 +51,9 @@ class NowScreen extends StatefulWidget {
 
   /// Turns speech into text for the capture field, on the device only.
   final Speech speech;
+
+  /// The on-device model's weights, for the page behind the overflow menu.
+  final ModelFile modelFile;
 
   @override
   State<NowScreen> createState() => _NowScreenState();
@@ -122,6 +128,14 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
   /// from here as well because the banner has to lead somewhere: being told
   /// the calendar could not be read is only useful next to the screen that
   /// says which calendars there are.
+  Future<void> _openModel() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ModelScreen(modelFile: widget.modelFile),
+      ),
+    );
+  }
+
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -367,6 +381,19 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
             icon: const Icon(Icons.refresh),
             onPressed: _refresh,
             tooltip: 'Refresh',
+          ),
+          // An overflow rather than another icon. This is the only entry
+          // point Van has for anything that is not a tab, and it is here
+          // because the Now screen is where Van's own state is already
+          // reported.
+          PopupMenuButton<void>(
+            tooltip: 'More',
+            itemBuilder: (_) => [
+              PopupMenuItem<void>(
+                onTap: _openModel,
+                child: const Text('On-device model'),
+              ),
+            ],
           ),
         ],
       ),

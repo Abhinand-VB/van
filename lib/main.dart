@@ -16,6 +16,7 @@ import 'package:van/inference/config.dart';
 import 'package:van/inference/prompts.dart';
 import 'package:van/platform/calendars.dart';
 import 'package:van/platform/local_llm.dart';
+import 'package:van/platform/model_file.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/platform/speech.dart';
 import 'package:van/platform/system_clock.dart';
@@ -59,6 +60,7 @@ Future<void> main() async {
   // calendar and is the source of truth for it. See VanService._freeSlots.
   const calendars = MethodChannelCalendars();
   const speech = MethodChannelSpeech();
+  const modelFile = MethodChannelModelFile();
 
   final templates = NudgeTemplates.fromJson(
     await rootBundle.loadString('assets/nudge_templates/templates.json'),
@@ -155,6 +157,7 @@ Future<void> main() async {
       calendars: calendars,
       calendarPreferences: calendarPreferences,
       speech: speech,
+      modelFile: modelFile,
     ),
   );
 }
@@ -196,6 +199,7 @@ class VanApp extends StatelessWidget {
     required this.calendars,
     required this.calendarPreferences,
     this.speech = const UnsupportedSpeech(),
+    this.modelFile = const UnsupportedModelFile(),
     super.key,
   });
 
@@ -219,6 +223,9 @@ class VanApp extends StatelessWidget {
 
   /// On-device speech, for the microphone button on both composers.
   final Speech speech;
+
+  /// The on-device model's weights, for the page behind the Now overflow.
+  final ModelFile modelFile;
 
   @override
   Widget build(BuildContext context) {
@@ -246,6 +253,7 @@ class VanApp extends StatelessWidget {
           calendars: calendars,
           calendarPreferences: calendarPreferences,
           speech: speech,
+          modelFile: modelFile,
         ),
       ),
     );
