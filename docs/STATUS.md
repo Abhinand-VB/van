@@ -238,7 +238,9 @@ working configuration, not a degraded one.
 | WP-6 | On-device model backend | **Groundwork done, engine not wired** |
 | WP-9 | Cloud backends (Claude / OpenAI / Gemini) | Not started (phase 3) |
 | WP-10 | Usage-stats distraction detection | Not started (phase 4) |
-| WP-11 | Device calendar as a commitment source | **Done, ungranted on the phone** (see 3v) |
+| WP-11 | Device calendar as a commitment source | **Done, granted and proved on the phone** (see 3v) |
+| WP-12 | Speaking to Van — voice capture, spoken nudge answers | Not started (`docs/WP_VOICE.md`) |
+| WP-13 | Making the model earn its place — asking, depth, evidence, engine | Not started (`docs/WP_JUDGEMENT.md`) |
 
 ### Commits
 
@@ -1620,6 +1622,16 @@ What is left needs you, or needs evidence from real use.
    starts eating whole days, the transparency rule (3v) has met a provider
    that marks all-day entries busy, and the answer is to untick that calendar
    rather than to change the rule.**
+
+6b. **Two new work packages are written and queued** for the next unattended
+   run: `docs/WP_VOICE.md` (capture by voice, answer a nudge by voice) and
+   `docs/WP_JUDGEMENT.md` (Van asks when it does not know, task depth,
+   reschedule judgement on evidence, and the on-device engine). The owner's
+   diagnosis that opened them is worth keeping: *"it is not analysing task
+   depth, not analysing whether a reschedule is legitimate, and not asking
+   questions."* All three are true, none is a prompt problem, and two of them
+   cannot work at all until the capability contracts have somewhere to put the
+   answer. `docs/OVERNIGHT.md` 3c is the order.
 
 7. **Only then decide about WP-6** (section 3e). My honest read: the case for
    it has got weaker, not stronger. The parser now answers every golden case

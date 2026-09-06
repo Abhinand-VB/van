@@ -156,38 +156,56 @@ Latent bugs are worth fixing. They are worth fixing *fourth*.
 
 ## 3c. Tonight's queue
 
-1. **The fatigue ratchet** (STATUS issue 26). Van muted itself for a whole day
-   and could not un-mute. Nine nudges fired while the phone was locked, the
-   sweep settled all nine as `ignored` in one batch when the app next opened,
-   and `dismissalLimit = 3` tripped instantly — a ladder is exactly three
-   rungs, so one unattended block is enough. Once tripped it is
-   self-sustaining: `consecutiveDismissals` only counts *delivered* nudges, and
-   nothing is delivered while fatigue holds, so the streak can never be broken.
-   It clears at local midnight and not before.
+Written 6 Sep 2026, after a session with the owner present. Everything in the
+previous queue is done: the fatigue ratchet, issue 19, and `WP_CALENDAR.md`,
+which shipped along with a four-view calendar screen the owner asked for. The
+calendar permission has been granted and `CalendarPlugin.kt` has run against
+the real provider.
 
-   Two separable fixes, both wanted:
-   - Count **one ignore per ladder**, not per rung. Escalating three times at
-     one block and getting no answer is Van being ignored once.
-   - Give fatigue **a way to un-trip**. Even at one-per-ladder, three
-     unattended blocks silences the day with no escape. Let at least one nudge
-     through per interval so the signal Van needs is not the thing it has made
-     impossible to receive.
+**Read the work-package document before starting each item.** The decisions in
+them are the point; the plumbing is the easy half.
 
-   The owner asked to be shown the behaviour choice rather than have it picked
-   for them — so implement it, and **write the chosen numbers and the reasoning
-   into `DECISIONS_PENDING.md` prominently** so it can be reversed over coffee.
+1. **Month cells should name what is on them** (small, do it first — it is the
+   one thing the owner asked for that is unfinished). The month grid counts in
+   dots and lists only the selected day. The owner's reference is Google's own
+   month widget: a chip per event in the cell, carrying the name, coloured per
+   calendar, with a `+2` overflow when they do not fit. Van has the colour
+   already — `CalendarSource.colour` is read and thrown away. Keep the day list
+   underneath; the chips are for scanning, the list is for reading. Watch the
+   cell height: six rows of chips on a phone is how this becomes unreadable
+   again, so cap it and count the rest.
 
-2. **Verify the loop end to end on the phone.** Still never done: a nudge
-   arriving, START pressed, `sessionStarted` written. Issue 3. This is the one
-   thing that has been open since the first night, and it needs the device
-   awake — see 3a and 3d.
+2. **`docs/WP_JUDGEMENT.md` 13a — Van asks when it does not know.** The
+   sharpest defect in the product and it needs no model:
+   `session_planner.dart:116` silently substitutes a default duration for a
+   task nobody gave one for. Read section 2 of that document; the four rules
+   about *how* to ask matter more than the asking.
 
-3. **Issue 19** — the timezone offset is read once at startup and frozen. Real,
-   and it now blocks the calendar work. Small.
+3. **`docs/WP_JUDGEMENT.md` 13b — depth, and what the planner does with it.**
+   Depth that does not change behaviour is decoration. The behaviour is: a deep
+   task with no first step gets a short opening block, not a three-hour slab.
 
-4. **`docs/WP_CALENDAR.md`** if there is time and the above are genuinely done.
-   Read it first; the decisions in section 3 of that document are the point,
-   not the plumbing.
+4. **`docs/WP_VOICE.md` — speaking to Van.** Capture by voice first, answering
+   a nudge by voice second. Section 2.2 is a hard rule, not a preference: audio
+   never leaves the device and never touches disk, and if on-device recognition
+   is unavailable the button says so rather than falling back to a network
+   recogniser. If `van_core` changed, the microphone has leaked into the domain
+   and the work is wrong.
+
+5. **`docs/WP_JUDGEMENT.md` 13c — reschedule judgement on evidence.** Feed
+   `Negotiate` the move count, the start history and the calendar density that
+   the log already holds and the prompt never sees.
+
+6. **`docs/WP_JUDGEMENT.md` 13d — the engine.** On-device first, by the
+   owner's decision. **The weights are licence-gated and you cannot accept a
+   licence.** If the model file is not on the device, build the engine and the
+   download surface, leave the routing at `"none"`, record it in
+   `DECISIONS_PENDING.md`, and move on. Do not stall on it, and do not spend
+   the night hunting for a way around a licence.
+
+**If an item turns out to be bigger than it looked, finish the piece you are
+on and leave the next one clean.** Half of item 2 done well beats all of items
+2 to 6 done at speed, and `STATUS.md` is where you say which it was.
 
 ---
 
