@@ -24,7 +24,7 @@ events — a public holiday, three flights — beside Van's own blocks.
 
 | | |
 |---|---|
-| **Commit the phone is running** | `2f1306e` — "Show the calendar, not just its shape". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
+| **Commit the phone is running** | `b01e4ce` — "Give the month a day to read, not just dots". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
 | **APK installed at** | **6 Sep 2026, 00:53:55** (device local, PDT), debug build, phone `<device-serial>` |
 | **Last launched** | **6 Sep 2026, 00:54** — `am start` delivered, process alive (pid 30090) |
 | **Last seen rendering** | **6 Sep 2026, 01:35, this build.** The Schedule view drawing real calendar events (Labor Day, three flights) beside Van's own blocks, the day timeline, the view menu, and the Calendars page listing this phone's calendars. Screenshotted. |
