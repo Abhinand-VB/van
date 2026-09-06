@@ -374,6 +374,19 @@ class _Item {
   /// Whether Van planned this rather than merely reading it.
   bool get isVan => session != null;
 
+  /// Whether this should be drawn struck through.
+  ///
+  /// One rule, on the item, because it was two: the timeline card struck
+  /// skipped and moved blocks as well as declined events, and the month chip
+  /// struck only declined ones - so the same task was crossed out in the day
+  /// list and not in the grid above it. Anything that reads "this is not
+  /// happening" has to look the same everywhere or the calendar contradicts
+  /// itself on one screen.
+  bool get isStruck =>
+      session?.status == SessionStatus.skipped ||
+      session?.status == SessionStatus.rescheduled ||
+      attendance == Attendance.declined;
+
   /// Everything on [plan], earliest first, with duplicate events collapsed.
   ///
   /// **The duplicates are real and there are a lot of them.** A phone with
@@ -935,10 +948,7 @@ class _ItemCard extends StatelessWidget {
             : (Colors.transparent, colours.onSurfaceVariant, colours.outline),
     };
 
-    final struck =
-        session?.status == SessionStatus.skipped ||
-        session?.status == SessionStatus.rescheduled ||
-        item.attendance == Attendance.declined;
+    final struck = item.isStruck;
 
     final title = Text(
       item.title,
@@ -1338,7 +1348,7 @@ class _MonthChip extends StatelessWidget {
       _ => (Colors.transparent, colours.onSurfaceVariant, source),
     };
 
-    final struck = item.attendance == Attendance.declined;
+    final struck = item.isStruck;
 
     return Container(
       width: double.infinity,

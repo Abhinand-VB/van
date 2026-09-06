@@ -28,6 +28,7 @@ class SettingsScreen extends StatefulWidget {
     required this.calendars,
     required this.preferences,
     required this.modelFile,
+    this.onTryModel,
     super.key,
   });
 
@@ -39,6 +40,10 @@ class SettingsScreen extends StatefulWidget {
 
   /// The on-device model's weights.
   final ModelFile modelFile;
+
+  /// Opens the probe from the model page, when this build can reach the
+  /// engine.
+  final VoidCallback? onTryModel;
 
   @override
   State<SettingsScreen> createState() => _SettingsScreenState();
@@ -104,8 +109,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   : 'Not installed. Van works fully without it.',
             ),
             trailing: const Icon(Icons.chevron_right),
-            onTap: () =>
-                inBackground(_open(ModelScreen(modelFile: widget.modelFile))),
+            onTap: () => inBackground(
+              _open(
+                ModelScreen(
+                  modelFile: widget.modelFile,
+                  onTryIt: widget.onTryModel,
+                ),
+              ),
+            ),
           ),
           const Divider(height: 32),
           Padding(

@@ -25,10 +25,17 @@ import 'package:van/ui/background.dart';
 /// the better way to move two and a half gigabytes.
 class ModelScreen extends StatefulWidget {
   /// Creates the page.
-  const ModelScreen({required this.modelFile, super.key});
+  const ModelScreen({required this.modelFile, this.onTryIt, super.key});
 
   /// The weights on this device.
   final ModelFile modelFile;
+
+  /// Opens the probe, when this build can reach the engine.
+  ///
+  /// Null on a platform with no channel to it, which is every test and every
+  /// desktop build - so the button is simply absent there rather than
+  /// present and broken.
+  final VoidCallback? onTryIt;
 
   @override
   State<ModelScreen> createState() => _ModelScreenState();
@@ -183,6 +190,18 @@ class _ModelScreenState extends State<ModelScreen> {
                             'degraded one.',
                   style: theme.textTheme.bodyMedium,
                 ),
+                if (status.present && widget.onTryIt != null) ...[
+                  const SizedBox(height: 16),
+                  // The only way to find out whether any of this was worth
+                  // it. Nothing is routed to the model, so without a way to
+                  // ask it a question by hand there is no evidence on which
+                  // to route anything - see issue 14.
+                  OutlinedButton.icon(
+                    onPressed: widget.onTryIt,
+                    icon: const Icon(Icons.play_arrow, size: 18),
+                    label: const Text('Try the model'),
+                  ),
+                ],
                 const SizedBox(height: 24),
                 // One button, because "go and find a 2.6 GB file" is not an
                 // instruction anybody follows. The rule was never the

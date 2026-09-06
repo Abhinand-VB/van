@@ -22,6 +22,7 @@ import 'package:van/platform/speech.dart';
 import 'package:van/platform/system_clock.dart';
 import 'package:van/platform/timezone_watcher.dart';
 import 'package:van/ui/background.dart';
+import 'package:van/ui/model_probe.dart';
 import 'package:van/ui/model_screen.dart';
 import 'package:van/ui/shell.dart';
 import 'package:van_core/van_core.dart';
@@ -160,6 +161,11 @@ Future<void> main() async {
       speech: speech,
       modelFile: modelFile,
       usesModel: config.usesModel,
+      // Handed in only so the probe can ask the engine a question by hand.
+      // Nothing here routes a capability to it - that is the config asset's
+      // job and it still says "none".
+      localLlm: const MethodChannelLocalLlm(),
+      prompts: prompts,
     ),
   );
 }
@@ -203,6 +209,8 @@ class VanApp extends StatelessWidget {
     this.speech = const UnsupportedSpeech(),
     this.modelFile = const UnsupportedModelFile(),
     this.usesModel = false,
+    this.localLlm,
+    this.prompts,
     super.key,
   });
 
@@ -234,6 +242,13 @@ class VanApp extends StatelessWidget {
   /// what the first-run offer can honestly claim.
   final bool usesModel;
 
+  /// The channel to the on-device engine, when this platform has one. Used
+  /// only by the probe - nothing here routes anything to it.
+  final LocalLlm? localLlm;
+
+  /// The versioned prompt assets, so the probe asks what Van would ask.
+  final Prompts? prompts;
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -259,14 +274,29 @@ class VanApp extends StatelessWidget {
         // rather than absent, because a 2.6 GB download is not something to
         // spring on someone with no explanation either way.
         usesModel: usesModel,
-        child: VanShell(
-          service: service,
-          clock: clock,
-          notifications: notifications,
-          calendars: calendars,
-          calendarPreferences: calendarPreferences,
-          speech: speech,
-          modelFile: modelFile,
+        child: Builder(
+          builder: (context) => VanShell(
+            service: service,
+            clock: clock,
+            notifications: notifications,
+            calendars: calendars,
+            calendarPreferences: calendarPreferences,
+            speech: speech,
+            modelFile: modelFile,
+            // Only where there is a channel to reach. On a build without one
+            // the button is absent rather than present and broken.
+            onTryModel: localLlm == null || prompts == null
+                ? null
+                : () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => ModelProbe(
+                        llm: localLlm!,
+                        prompts: prompts!,
+                        clock: clock,
+                      ),
+                    ),
+                  ),
+          ),
         ),
       ),
     );

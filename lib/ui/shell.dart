@@ -36,6 +36,7 @@ class VanShell extends StatefulWidget {
     required this.calendarPreferences,
     this.speech = const UnsupportedSpeech(),
     this.modelFile = const UnsupportedModelFile(),
+    this.onTryModel,
     super.key,
   });
 
@@ -59,6 +60,9 @@ class VanShell extends StatefulWidget {
 
   /// Passed to the Now screen for the on-device model page.
   final ModelFile modelFile;
+
+  /// Opens the model probe, when this build can reach the engine.
+  final VoidCallback? onTryModel;
 
   @override
   State<VanShell> createState() => _VanShellState();
@@ -107,6 +111,7 @@ class _VanShellState extends State<VanShell> {
             calendarPreferences: widget.calendarPreferences,
             speech: widget.speech,
             modelFile: widget.modelFile,
+            onTryModel: widget.onTryModel,
             refreshOn: _pulses[0],
           ),
           CalendarScreen(

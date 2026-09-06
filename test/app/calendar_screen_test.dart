@@ -521,6 +521,42 @@ void main() {
       expect(find.text('Today thing'), findsOneWidget);
     });
 
+    testWidgets('a block that is crossed out is crossed out in the cell too', (
+      tester,
+    ) async {
+      // Reported from the phone: a task struck through in the day list was
+      // not struck through in the grid above it, because the two had separate
+      // copies of the rule and only one of them knew about skipped blocks.
+      await plan(
+        title: 'Abandoned thing',
+        start: localAt(14),
+        status: SessionStatus.skipped,
+      );
+
+      await show(tester, view: CalendarView.month);
+
+      final struck = tester
+          .widgetList<Text>(find.text('Abandoned thing'))
+          .where((t) => t.style?.decoration == TextDecoration.lineThrough);
+      // Both of them: the chip in the cell and the line in the list. Anything
+      // that reads "this is not happening" has to look the same everywhere,
+      // or the calendar contradicts itself on one screen.
+      expect(struck, hasLength(2));
+    });
+
+    testWidgets('a declined meeting is crossed out in the cell too', (
+      tester,
+    ) async {
+      event(localAt(10), localAt(11), attendance: Attendance.declined);
+
+      await show(tester, view: CalendarView.month);
+
+      final struck = tester
+          .widgetList<Text>(find.text('Standup with Priya'))
+          .where((t) => t.style?.decoration == TextDecoration.lineThrough);
+      expect(struck, hasLength(2));
+    });
+
     testWidgets('a cell counts only what it could not name', (tester) async {
       for (var i = 0; i < 6; i++) {
         event(

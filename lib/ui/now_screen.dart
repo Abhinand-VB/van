@@ -31,6 +31,7 @@ class NowScreen extends StatefulWidget {
     this.speech = const UnsupportedSpeech(),
     this.modelFile = const UnsupportedModelFile(),
     this.refreshOn,
+    this.onTryModel,
     super.key,
   });
 
@@ -58,6 +59,9 @@ class NowScreen extends StatefulWidget {
 
   /// Ticks when this tab becomes the visible one. See [TabPulse].
   final Listenable? refreshOn;
+
+  /// Opens the model probe, when this build can reach the engine.
+  final VoidCallback? onTryModel;
 
   @override
   State<NowScreen> createState() => _NowScreenState();
@@ -145,6 +149,7 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
           calendars: widget.calendars,
           preferences: widget.calendarPreferences,
           modelFile: widget.modelFile,
+          onTryModel: widget.onTryModel,
         ),
       ),
     );
