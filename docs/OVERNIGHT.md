@@ -156,6 +156,16 @@ Latent bugs are worth fixing. They are worth fixing *fourth*.
 
 ## 3c. Tonight's queue
 
+**Every item below was completed on 6 September 2026 and the queue is now
+empty.** Do not start it again. `docs/STATUS.md` sections 3w to 3aa say what
+each one became, and section 7 says why the next queue should be written from
+a week of the log rather than in advance. If you are an agent reading this
+with no newer queue underneath it, the right move is to check the tree, check
+the build on the phone, check the app still works, fix anything broken, and
+then stop and say so — not to invent work.
+
+---
+
 Written 6 Sep 2026, after a session with the owner present. Everything in the
 previous queue is done: the fatigue ratchet, issue 19, and `WP_CALENDAR.md`,
 which shipped along with a four-view calendar screen the owner asked for. The

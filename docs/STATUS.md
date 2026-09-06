@@ -2064,24 +2064,20 @@ What is left needs you, or needs evidence from real use.
    that marks all-day entries busy, and the answer is to untick that calendar
    rather than to change the rule.**
 
-6b. **Two of your three complaints are now answered in code.** The diagnosis
-   that opened `WP_JUDGEMENT.md` was: *"it is not analysing task depth, not
-   analysing whether a reschedule is legitimate, and not asking questions."*
-   Asking (13a) and depth (13b) are built, installed and described in section
-   3w; both needed no model, which was the argument for doing them first. What
-   is left of that queue, in `docs/OVERNIGHT.md` 3c order:
+6b. **All three of your complaints are now answered in code, and the queue is
+   empty.** The diagnosis that opened `WP_JUDGEMENT.md` was: *"it is not
+   analysing task depth, not analysing whether a reschedule is legitimate, and
+   it is not asking questions."* Asking is 13a, depth is 13b, reschedule
+   judgement is 13c — sections 3w and 3z. **None of the three needed a model**,
+   which was the whole argument for doing them before one existed. Voice
+   (WP-12, section 3y) and the engine (13d, section 3aa) followed.
 
-   - **`docs/WP_VOICE.md`** — capture by voice, answer a nudge by voice. Not
-     started. Section 2.2 of it is a hard rule: audio never leaves the device
-     and never touches disk.
-   - **13c, reschedule judgement on evidence.** Not started. `Negotiate` still
-     sees only the ladder rung; the move count, the start history and the
-     calendar density are all in the database and none of it reaches the
-     prompt.
-   - **13d, the engine.** Not started. Note the licence: an agent cannot
-     accept one, so the instruction standing in `OVERNIGHT.md` is to build the
-     engine and the download surface, leave the routing at `"none"`, and move
-     on.
+   **What that leaves is not another feature.** Every remaining item is either
+   yours to do — three permissions and two ten-second checks, listed in
+   section 0 — or needs a week of the app being used before anyone can say
+   what it should be. `docs/OVERNIGHT.md` 3c needs rewriting before the next
+   unattended run, and it should be rewritten from what a week of the log
+   says rather than from a plan made in advance.
 
 7. **Only then decide about WP-6** (section 3e). My honest read: the case for
    it has got weaker, not stronger. The parser now answers every golden case
