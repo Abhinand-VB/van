@@ -10,8 +10,8 @@ import 'package:van/platform/speech.dart';
 import 'package:van/ui/background.dart';
 import 'package:van/ui/focus_screen.dart';
 import 'package:van/ui/mic_button.dart';
-import 'package:van/ui/model_screen.dart';
 import 'package:van/ui/settings_screen.dart';
+import 'package:van/ui/tab_pulse.dart';
 import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
 
@@ -30,6 +30,7 @@ class NowScreen extends StatefulWidget {
     required this.calendarPreferences,
     this.speech = const UnsupportedSpeech(),
     this.modelFile = const UnsupportedModelFile(),
+    this.refreshOn,
     super.key,
   });
 
@@ -52,8 +53,11 @@ class NowScreen extends StatefulWidget {
   /// Turns speech into text for the capture field, on the device only.
   final Speech speech;
 
-  /// The on-device model's weights, for the page behind the overflow menu.
+  /// The on-device model's weights, reached through Settings.
   final ModelFile modelFile;
+
+  /// Ticks when this tab becomes the visible one. See [TabPulse].
+  final Listenable? refreshOn;
 
   @override
   State<NowScreen> createState() => _NowScreenState();
@@ -78,11 +82,17 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.refreshOn?.addListener(_onShown);
     inBackground(_refresh());
   }
 
+  /// Reloads when the tab is opened. A capture on another screen, a nudge
+  /// answered, a sweep - all of them change what belongs here.
+  void _onShown() => inBackground(_refresh());
+
   @override
   void dispose() {
+    widget.refreshOn?.removeListener(_onShown);
     WidgetsBinding.instance.removeObserver(this);
     _input.dispose();
     super.dispose();
@@ -128,20 +138,13 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
   /// from here as well because the banner has to lead somewhere: being told
   /// the calendar could not be read is only useful next to the screen that
   /// says which calendars there are.
-  Future<void> _openModel() async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ModelScreen(modelFile: widget.modelFile),
-      ),
-    );
-  }
-
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => SettingsScreen(
           calendars: widget.calendars,
           preferences: widget.calendarPreferences,
+          modelFile: widget.modelFile,
         ),
       ),
     );
@@ -379,35 +382,14 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
       appBar: AppBar(
         title: const Text('Van'),
         actions: [
+          // One icon, and it is settings. The refresh button that used to be
+          // here did what pulling the list down already does, and an
+          // overflow menu with a single entry in it is a place things get
+          // hidden rather than organised.
           IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: _refresh,
-            tooltip: 'Refresh',
-          ),
-          // An overflow rather than another icon. This is the only entry
-          // point Van has for anything that is not a tab, and it is here
-          // because the Now screen is where Van's own state is already
-          // reported.
-          //
-          // `onSelected` with a value rather than `PopupMenuItem.onTap`.
-          // The first attempt used onTap and did not appear to navigate when
-          // driven on the phone - but a widget test written to reproduce that
-          // passed against the onTap version too, so the cause is unproven
-          // and probably a missed tap rather than the code. This shape is
-          // kept because it is the better one regardless: the enum makes
-          // adding a second entry a compile error at the switch instead of a
-          // forgotten branch.
-          PopupMenuButton<_NowMenu>(
-            tooltip: 'More',
-            onSelected: (item) => inBackground(switch (item) {
-              _NowMenu.model => _openModel(),
-            }),
-            itemBuilder: (_) => const [
-              PopupMenuItem<_NowMenu>(
-                value: _NowMenu.model,
-                child: Text('On-device model'),
-              ),
-            ],
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => inBackground(_openSettings()),
+            tooltip: 'Settings',
           ),
         ],
       ),
@@ -508,15 +490,6 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
       ),
     );
   }
-}
-
-/// The things behind the Now screen's overflow menu.
-///
-/// An enum for one entry, so that adding a second is a compile error at the
-/// switch rather than a forgotten branch.
-enum _NowMenu {
-  /// Where the on-device model's weights are, and how to install them.
-  model,
 }
 
 /// A question Van is waiting on, and the task it belongs to.

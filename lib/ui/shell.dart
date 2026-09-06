@@ -8,6 +8,7 @@ import 'package:van/platform/speech.dart';
 import 'package:van/ui/calendar_screen.dart';
 import 'package:van/ui/chat_screen.dart';
 import 'package:van/ui/now_screen.dart';
+import 'package:van/ui/tab_pulse.dart';
 import 'package:van/ui/task_list_screen.dart';
 import 'package:van_core/van_core.dart';
 
@@ -66,6 +67,29 @@ class VanShell extends StatefulWidget {
 class _VanShellState extends State<VanShell> {
   int _tab = 0;
 
+  /// One per tab. Poked when that tab becomes visible, so the screen behind
+  /// it reloads - an `IndexedStack` keeps every screen alive, which is what
+  /// saves a half-typed sentence in Chat and is also why none of them would
+  /// otherwise notice that the data changed while it was hidden.
+  final List<TabPulse> _pulses = List.generate(
+    4,
+    (_) => TabPulse(),
+    growable: false,
+  );
+
+  @override
+  void dispose() {
+    for (final pulse in _pulses) {
+      pulse.dispose();
+    }
+    super.dispose();
+  }
+
+  void _select(int index) {
+    setState(() => _tab = index);
+    _pulses[index].pulse();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -83,24 +107,31 @@ class _VanShellState extends State<VanShell> {
             calendarPreferences: widget.calendarPreferences,
             speech: widget.speech,
             modelFile: widget.modelFile,
+            refreshOn: _pulses[0],
           ),
           CalendarScreen(
             service: widget.service,
             clock: widget.clock,
             calendars: widget.calendars,
             calendarPreferences: widget.calendarPreferences,
+            refreshOn: _pulses[1],
           ),
           ChatScreen(
             service: widget.service,
             clock: widget.clock,
             speech: widget.speech,
+            refreshOn: _pulses[2],
           ),
-          TaskListScreen(service: widget.service, clock: widget.clock),
+          TaskListScreen(
+            service: widget.service,
+            clock: widget.clock,
+            refreshOn: _pulses[3],
+          ),
         ],
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
+        onDestinationSelected: _select,
         destinations: const [
           NavigationDestination(
             icon: Icon(Icons.bolt_outlined),

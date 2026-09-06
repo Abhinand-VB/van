@@ -78,20 +78,40 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  group('the overflow menu', () {
-    testWidgets('opens the on-device model page', (tester) async {
-      // Written after the menu appeared to do nothing on the phone. It
-      // passes against the version that appeared broken, so it is a guard on
-      // the route rather than a reproduction of that - the cause there was
-      // most likely a missed tap, and the honest place to settle it is the
-      // device, not here.
+  group('the app bar', () {
+    testWidgets('has one icon, and it is settings', (tester) async {
       await show(tester);
-      await tester.tap(find.byTooltip('More'));
+
+      // The refresh button that used to be here did what pulling the list
+      // down already does, and an overflow menu with a single entry is a
+      // place things get hidden rather than organised.
+      expect(find.byTooltip('Settings'), findsOneWidget);
+      expect(find.byTooltip('Refresh'), findsNothing);
+      expect(find.byTooltip('More'), findsNothing);
+    });
+
+    testWidgets('settings opens the hub, which reaches the model', (
+      tester,
+    ) async {
+      await show(tester);
+      await tester.tap(find.byTooltip('Settings'));
       await tester.pumpAndSettle();
+
+      expect(find.text('Settings'), findsWidgets);
+      expect(find.text('Calendars'), findsOneWidget);
       await tester.tap(find.text('On-device model'));
       await tester.pumpAndSettle();
 
       expect(find.text('Not installed'), findsOneWidget);
+    });
+
+    testWidgets('pulling the list down still reloads it', (tester) async {
+      // The refresh icon went; the gesture it duplicated did not.
+      await show(tester);
+      await tester.drag(find.byType(ListView), const Offset(0, 300));
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
     });
   });
 

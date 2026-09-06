@@ -14,10 +14,48 @@ import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/router.dart';
 import 'package:van/main.dart';
 import 'package:van/platform/calendars.dart';
+import 'package:van/platform/model_file.dart';
 import 'package:van_core/van_core.dart';
 
 import '../support/fake_notifications.dart';
 import '../support/prompts.dart';
+
+/// A phone that has somewhere to put a model but has not got one.
+///
+/// `UnsupportedModelFile` reports an empty path, which is Van's signal that
+/// there is nowhere to install one - so it cannot be used to test the offer.
+class _EmptySlot implements ModelFile {
+  int opened = 0;
+
+  @override
+  Future<ModelFileStatus> status() async => const ModelFileStatus(
+    present: false,
+    path: '/data/user/0/dev.van.app/files/models/model.litertlm',
+    bytes: 0,
+    expectedName: 'model.litertlm',
+  );
+
+  @override
+  Future<ModelFileStatus> install() async => status();
+
+  @override
+  Future<ModelFileStatus> remove() async => status();
+
+  @override
+  Future<void> openSourcePage() async => opened++;
+
+  @override
+  Future<DownloadProgress> startDownload() async => DownloadProgress.idle;
+
+  @override
+  Future<DownloadProgress> downloadProgress() async => DownloadProgress.idle;
+
+  @override
+  Future<DownloadProgress> cancelDownload() async => DownloadProgress.idle;
+
+  @override
+  Future<ModelFileStatus> adoptDownload() async => status();
+}
 
 void main() {
   late VanDatabase db;
@@ -67,6 +105,84 @@ void main() {
     );
     await tester.pumpAndSettle();
   }
+
+  group('the on-device model offer', () {
+    Future<void> showWithSlot(
+      WidgetTester tester, {
+      required _EmptySlot model,
+      bool usesModel = false,
+    }) async {
+      await tester.pumpWidget(
+        VanApp(
+          service: service,
+          clock: FakeClock(DateTime.utc(2026, 8, 19, 9)),
+          notifications: notifications,
+          settings: settings,
+          calendars: const UnsupportedCalendars(),
+          calendarPreferences: CalendarPreferences(settings),
+          modelFile: model,
+          usesModel: usesModel,
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('is made once, and says the model is optional', (
+      tester,
+    ) async {
+      await showWithSlot(tester, model: _EmptySlot());
+
+      expect(find.text('Run a model on your phone?'), findsOneWidget);
+      // The honest version of today's state. Selling a 2.6 GB download for a
+      // capability that is switched off is a lie the user discovers the
+      // moment they install it and nothing changes.
+      expect(find.textContaining('nothing uses it yet'), findsOneWidget);
+      expect(find.textContaining('works fully without it'), findsOneWidget);
+    });
+
+    testWidgets('claims more once something is actually routed to it', (
+      tester,
+    ) async {
+      await showWithSlot(tester, model: _EmptySlot(), usesModel: true);
+
+      expect(find.textContaining('word its nudges'), findsOneWidget);
+      expect(find.textContaining('nothing uses it yet'), findsNothing);
+    });
+
+    testWidgets('declining leaves everything alone, and does not repeat', (
+      tester,
+    ) async {
+      await showWithSlot(tester, model: _EmptySlot());
+      await tester.tap(find.text('Not now'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Run a model on your phone?'), findsNothing);
+
+      // An offer that comes back on every cold start is not an offer.
+      await showWithSlot(tester, model: _EmptySlot());
+      expect(find.text('Run a model on your phone?'), findsNothing);
+    });
+
+    testWidgets('accepting opens the page that installs it', (tester) async {
+      await showWithSlot(tester, model: _EmptySlot());
+      await tester.tap(find.text('Set it up'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('On-device model'), findsWidgets);
+      expect(find.text('Not installed'), findsOneWidget);
+    });
+
+    testWidgets('is not made on a build with nowhere to put one', (
+      tester,
+    ) async {
+      // `UnsupportedModelFile` reports an empty path. Inviting someone to
+      // install a model on a platform that cannot hold one is worse than
+      // saying nothing at all.
+      await launch(tester);
+
+      expect(find.text('Run a model on your phone?'), findsNothing);
+    });
+  });
 
   group('asking for permission', () {
     testWidgets('asks on a fresh install', (tester) async {

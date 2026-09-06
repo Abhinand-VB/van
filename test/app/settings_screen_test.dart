@@ -15,8 +15,8 @@ import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/router.dart';
 import 'package:van/platform/calendars.dart';
 import 'package:van/ui/calendar_screen.dart';
+import 'package:van/ui/calendar_settings_screen.dart';
 import 'package:van/ui/now_screen.dart';
-import 'package:van/ui/settings_screen.dart';
 import 'package:van_core/van_core.dart';
 
 import '../support/fake_calendars.dart';
@@ -82,7 +82,10 @@ void main() {
   Future<void> showSettings(WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
-        home: SettingsScreen(calendars: calendars, preferences: preferences),
+        home: CalendarSettingsScreen(
+          calendars: calendars,
+          preferences: preferences,
+        ),
       ),
     );
     await tester.pumpAndSettle();
@@ -231,7 +234,7 @@ void main() {
       await tester.tap(find.byTooltip('Calendars'));
       await tester.pumpAndSettle();
 
-      expect(find.byType(SettingsScreen), findsOneWidget);
+      expect(find.byType(CalendarSettingsScreen), findsOneWidget);
       expect(find.text('Work'), findsOneWidget);
     });
 

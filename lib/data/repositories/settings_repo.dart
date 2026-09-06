@@ -18,6 +18,13 @@ abstract final class SettingKeys {
   /// later is respected without Van being told about it. See
   /// `CalendarPreferences`, which owns the encoding.
   static const excludedCalendars = 'excluded_calendars';
+
+  /// Set once Van has offered to set up the on-device model.
+  ///
+  /// Same shape as [askedForPermission] and for the same reason: offering is
+  /// a one-time event, and whether the file is actually *present* is read
+  /// from disk every time and must never be cached here.
+  static const offeredModel = 'offered_model';
 }
 
 /// Small key/value store for things that are not worth a table.

@@ -175,8 +175,13 @@ class ModelFilePlugin(
             "path" to file.absolutePath,
             "bytes" to if (file.isFile) file.length() else 0L,
             "expectedName" to ModelStorage.FILE_NAME,
+            "pending" to downloadedFile().let { it.isFile && it.length() > 0 },
         )
     }
+
+    /** Where a finished download sits until it is adopted. */
+    private fun downloadedFile(): java.io.File =
+        java.io.File(context.getExternalFilesDir(null), DOWNLOAD_NAME)
 
     /**
      * Hands [url] to whatever browser the phone has.
@@ -238,6 +243,21 @@ class ModelFilePlugin(
      * only once is worse than no progress bar on a file this size.
      */
     private fun downloadStatus(): Map<String, Any?> {
+        // The file on disk outranks anything remembered in memory, and that is
+        // the whole fix for the bug this had: `downloadId` lives only as long
+        // as the process, so a download that finished while Van was closed -
+        // or simply while this page was not open - left two and a half
+        // gigabytes sitting unclaimed and a screen offering to fetch it again.
+        // Asking the filesystem cannot forget.
+        val finished = downloadedFile()
+        if (finished.isFile && finished.length() > 0) {
+            return mapOf(
+                "state" to "done",
+                "bytes" to finished.length(),
+                "total" to finished.length(),
+            )
+        }
+
         val id = downloadId ?: return mapOf("state" to "idle")
         val manager = downloads ?: return mapOf("state" to "idle")
 

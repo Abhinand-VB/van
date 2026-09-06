@@ -78,6 +78,19 @@ class InferenceConfig {
   /// Capability id to backend name.
   final Map<String, String> routes;
 
+  /// Whether any capability is actually answered by a model.
+  ///
+  /// A backend of type `null` is the deterministic fallback wearing a
+  /// backend's clothes, so a config that routes everything to one is a config
+  /// with no model in it - which is what ships today. Read by the first-run
+  /// offer, so Van does not press a two-and-a-half-gigabyte download on
+  /// somebody for a capability that is not going to use it.
+  bool get usesModel {
+    bool real(String name) =>
+        backendTypes[name] != null && backendTypes[name] != 'null';
+    return real(defaultBackend) || routes.values.any(real);
+  }
+
   /// Builds a router, resolving names against [available].
   ///
   /// [warnings] collects anything wrong with the config. A name that resolves

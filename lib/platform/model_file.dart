@@ -8,6 +8,7 @@ class ModelFileStatus {
     required this.path,
     required this.bytes,
     required this.expectedName,
+    this.pendingDownload = false,
   });
 
   /// Nothing is known, because nothing can be asked.
@@ -29,6 +30,15 @@ class ModelFileStatus {
 
   /// The file name the engine looks for.
   final String expectedName;
+
+  /// Whether a finished download is sitting there waiting to be moved into
+  /// place.
+  ///
+  /// Read from the filesystem rather than from anything Van remembers, which
+  /// is what makes it survive the app being closed - the bug this exists to
+  /// fix was a completed 2.6 GB download that nothing ever claimed, because
+  /// the only record of it was a variable in a page that had been disposed.
+  final bool pendingDownload;
 
   /// Size in whole gigabytes and one decimal, for a person to read.
   String get size => bytes <= 0
@@ -116,18 +126,17 @@ class DownloadProgress {
 
 /// Installs and removes the on-device model's weights.
 ///
-/// **This receives a file; it does not fetch one.** Two constraints decide
-/// that between them, and they point the same way:
+/// **Two routes in, and Van has no HTTP client on either.** The download hands
+/// a URL to Android's `DownloadManager`, which fetches it in a system process;
+/// the manual route takes a file the user already has. `AGENTS.md` forbids
+/// adding a network dependency, which asking the OS to fetch something is not.
+/// See `DECISIONS_PENDING.md` D79.
 ///
-///  - `AGENTS.md` forbids a network dependency in v1 outright. There is no
-///    HTTP client in the dependency set and adding one to download a model
-///    would be the first thing in Van that talks to the internet.
-///  - The weights are licence-gated. Whoever installs them has to accept that
-///    licence, and that is the user - not the app, and certainly not an agent
-///    working overnight.
-///
-/// So the honest surface is one that says where the file must go and takes it
-/// when the user has it. See `DECISIONS_PENDING.md` D77.
+/// **A finished download is claimed from the filesystem, not from memory.**
+/// [ModelFileStatus.pendingDownload] is read off disk every time, because the
+/// first version tracked it in a variable on a page - so a download that
+/// completed while that page was closed left 2.6 GB unclaimed and a screen
+/// offering to fetch it all over again.
 ///
 /// **It does not choose a backend.** Routing lives in
 /// `assets/inference_config.json` and stays there; `AGENTS.md` is explicit
@@ -251,6 +260,7 @@ class MethodChannelModelFile implements ModelFile {
         path: row['path'] as String? ?? '',
         bytes: (row['bytes'] as num?)?.toInt() ?? 0,
         expectedName: row['expectedName'] as String? ?? '',
+        pendingDownload: row['pending'] as bool? ?? false,
       );
     } on PlatformException catch (_) {
       // A failed copy or a file that could not be opened. The page shows the

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/ui/background.dart';
+import 'package:van/ui/tab_pulse.dart';
 import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
 
@@ -20,13 +21,21 @@ import 'package:van_core/van_core.dart';
 /// ever filled in.
 class TaskListScreen extends StatefulWidget {
   /// Creates the screen.
-  const TaskListScreen({required this.service, required this.clock, super.key});
+  const TaskListScreen({
+    required this.service,
+    required this.clock,
+    this.refreshOn,
+    super.key,
+  });
 
   /// The application service.
   final VanService service;
 
   /// Source of the current time.
   final Clock clock;
+
+  /// Ticks when this tab becomes the visible one. See [TabPulse].
+  final Listenable? refreshOn;
 
   @override
   State<TaskListScreen> createState() => _TaskListScreenState();
@@ -42,11 +51,17 @@ class _TaskListScreenState extends State<TaskListScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.refreshOn?.addListener(_onShown);
     inBackground(_refresh());
   }
 
+  /// Reloads when the tab is opened. Finishing something on Now changes this
+  /// list, and an IndexedStack would otherwise show yesterday's answer.
+  void _onShown() => inBackground(_refresh());
+
   @override
   void dispose() {
+    widget.refreshOn?.removeListener(_onShown);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

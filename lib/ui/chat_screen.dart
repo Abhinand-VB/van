@@ -5,6 +5,7 @@ import 'package:van/app/van_service.dart';
 import 'package:van/platform/speech.dart';
 import 'package:van/ui/background.dart';
 import 'package:van/ui/mic_button.dart';
+import 'package:van/ui/tab_pulse.dart';
 import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
 
@@ -143,6 +144,7 @@ class ChatScreen extends StatefulWidget {
     required this.service,
     required this.clock,
     this.speech = const UnsupportedSpeech(),
+    this.refreshOn,
     super.key,
   });
 
@@ -154,6 +156,9 @@ class ChatScreen extends StatefulWidget {
 
   /// Turns speech into text for the composer, on the device only.
   final Speech speech;
+
+  /// Ticks when this tab becomes the visible one. See [TabPulse].
+  final Listenable? refreshOn;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -181,11 +186,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.refreshOn?.addListener(_onShown);
     inBackground(_askAboutStall());
   }
 
+  /// Opens the conversation about a stalled block when the tab is shown, not
+  /// only when the app comes back from the background.
+  void _onShown() => inBackground(_askAboutStall());
+
   @override
   void dispose() {
+    widget.refreshOn?.removeListener(_onShown);
     WidgetsBinding.instance.removeObserver(this);
     _input.dispose();
     _scroll.dispose();

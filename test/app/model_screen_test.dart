@@ -14,11 +14,15 @@ class _FakeModelFile implements ModelFile {
   /// cancelled, which must leave the status exactly as it was.
   bool? picks = true;
 
+  /// A finished download sitting in external storage, unclaimed.
+  bool pending = false;
+
   ModelFileStatus get _status => ModelFileStatus(
     present: present,
     path: '/data/user/0/dev.van.app/files/models/gemma-e2b-int4.litertlm',
     bytes: present ? 3221225472 : 0,
     expectedName: 'gemma-e2b-int4.litertlm',
+    pendingDownload: pending,
   );
 
   @override
@@ -71,6 +75,7 @@ class _FakeModelFile implements ModelFile {
   Future<ModelFileStatus> adoptDownload() async {
     adopts++;
     present = true;
+    pending = false;
     progress = DownloadProgress.idle;
     return _status;
   }
@@ -194,6 +199,35 @@ void main() {
         find.widgetWithText(FilledButton, 'Download the model'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('a download finished while the page was shut is claimed', (
+      tester,
+    ) async {
+      // The bug this exists for, reported from the phone: 2,588,147,712 bytes
+      // sitting in external storage, `files/models/` not even created, and
+      // the page offering to download it again. The only record of the
+      // download was a variable on a page that had been disposed.
+      model.pending = true;
+
+      await show(tester);
+
+      expect(model.adopts, 1);
+      expect(find.textContaining('Installed'), findsOneWidget);
+      expect(
+        find.widgetWithText(FilledButton, 'Download the model'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('an already-installed model is not re-adopted', (tester) async {
+      model
+        ..present = true
+        ..pending = true;
+
+      await show(tester);
+
+      expect(model.adopts, 0);
     });
 
     testWidgets('the manual route is still there underneath', (tester) async {

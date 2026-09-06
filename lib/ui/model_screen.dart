@@ -60,6 +60,15 @@ class _ModelScreenState extends State<ModelScreen> {
       _status = status;
       _download = download;
     });
+
+    // A download that finished while this page was closed - or while Van was
+    // not running at all - is claimed the moment anyone looks. Without this
+    // the file sat in external storage for ever and the page cheerfully
+    // offered to fetch it again, which is exactly what happened.
+    if (status.pendingDownload && !status.present) {
+      await _run(widget.modelFile.adoptDownload);
+      return;
+    }
     _watch();
   }
 

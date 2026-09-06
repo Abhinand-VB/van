@@ -3,7 +3,8 @@ import 'package:van/app/van_service.dart';
 import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/platform/calendars.dart';
 import 'package:van/ui/background.dart';
-import 'package:van/ui/settings_screen.dart';
+import 'package:van/ui/calendar_settings_screen.dart';
+import 'package:van/ui/tab_pulse.dart';
 import 'package:van_core/van_core.dart';
 
 /// How much of the plan is on screen at once.
@@ -55,6 +56,7 @@ class CalendarScreen extends StatefulWidget {
     required this.calendars,
     required this.calendarPreferences,
     this.initialView = CalendarView.day,
+    this.refreshOn,
     super.key,
   });
 
@@ -72,6 +74,9 @@ class CalendarScreen extends StatefulWidget {
 
   /// Which view to open on.
   final CalendarView initialView;
+
+  /// Ticks when this tab becomes the visible one. See [TabPulse].
+  final Listenable? refreshOn;
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -104,11 +109,17 @@ class _CalendarScreenState extends State<CalendarScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.refreshOn?.addListener(_onShown);
     inBackground(_load());
   }
 
+  /// Reloads when the tab is opened. A block captured on Now belongs on this
+  /// timeline the moment you look at it.
+  void _onShown() => inBackground(_load());
+
   @override
   void dispose() {
+    widget.refreshOn?.removeListener(_onShown);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -205,7 +216,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => SettingsScreen(
+        builder: (_) => CalendarSettingsScreen(
           calendars: widget.calendars,
           preferences: widget.calendarPreferences,
         ),

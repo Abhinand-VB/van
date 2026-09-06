@@ -22,6 +22,7 @@ import 'package:van/platform/speech.dart';
 import 'package:van/platform/system_clock.dart';
 import 'package:van/platform/timezone_watcher.dart';
 import 'package:van/ui/background.dart';
+import 'package:van/ui/model_screen.dart';
 import 'package:van/ui/shell.dart';
 import 'package:van_core/van_core.dart';
 
@@ -158,6 +159,7 @@ Future<void> main() async {
       calendarPreferences: calendarPreferences,
       speech: speech,
       modelFile: modelFile,
+      usesModel: config.usesModel,
     ),
   );
 }
@@ -200,6 +202,7 @@ class VanApp extends StatelessWidget {
     required this.calendarPreferences,
     this.speech = const UnsupportedSpeech(),
     this.modelFile = const UnsupportedModelFile(),
+    this.usesModel = false,
     super.key,
   });
 
@@ -224,8 +227,12 @@ class VanApp extends StatelessWidget {
   /// On-device speech, for the microphone button on both composers.
   final Speech speech;
 
-  /// The on-device model's weights, for the page behind the Now overflow.
+  /// The on-device model's weights, for Settings and the first-run offer.
   final ModelFile modelFile;
+
+  /// Whether any capability is actually answered by a model, which decides
+  /// what the first-run offer can honestly claim.
+  final bool usesModel;
 
   @override
   Widget build(BuildContext context) {
@@ -246,6 +253,12 @@ class VanApp extends StatelessWidget {
       home: _FirstRun(
         notifications: notifications,
         settings: settings,
+        modelFile: modelFile,
+        // Offering only matters when something would actually use it. With
+        // every capability routed to "none" the offer is honest about that
+        // rather than absent, because a 2.6 GB download is not something to
+        // spring on someone with no explanation either way.
+        usesModel: usesModel,
         child: VanShell(
           service: service,
           clock: clock,
@@ -275,11 +288,20 @@ class _FirstRun extends StatefulWidget {
   const _FirstRun({
     required this.notifications,
     required this.settings,
+    required this.modelFile,
+    required this.usesModel,
     required this.child,
   });
 
   final Notifications notifications;
   final SettingsRepo settings;
+
+  /// The on-device model, for the one-time offer to set it up.
+  final ModelFile modelFile;
+
+  /// Whether any capability is actually routed to a model.
+  final bool usesModel;
+
   final Widget child;
 
   @override
@@ -294,6 +316,11 @@ class _FirstRunState extends State<_FirstRun> {
   }
 
   Future<void> _askOnce() async {
+    await _askForNotifications();
+    await _offerTheModel();
+  }
+
+  Future<void> _askForNotifications() async {
     if (await widget.settings.flag(SettingKeys.askedForPermission)) return;
     if ((await widget.notifications.permissions()).complete) return;
 
@@ -302,6 +329,75 @@ class _FirstRunState extends State<_FirstRun> {
     // again on the next launch.
     await widget.settings.setFlag(SettingKeys.askedForPermission);
     await widget.notifications.requestPermission();
+  }
+
+  /// Mentions the on-device model once, on first run, and then never again.
+  ///
+  /// **Second, not first.** Permission to interrupt is what makes Van work;
+  /// the model is optional and currently changes nothing. Putting a
+  /// two-and-a-half-gigabyte download in front of somebody before they have
+  /// captured a single task would be selling the engine before the car.
+  ///
+  /// Latched like the permission, and for the same reason: an offer that
+  /// reappears on every cold start is not an offer.
+  Future<void> _offerTheModel() async {
+    if (await widget.settings.flag(SettingKeys.offeredModel)) return;
+
+    final status = await widget.modelFile.status();
+    // Nothing to offer if it is already there - someone who has put the file
+    // on themselves does not need to be sold it. And nothing to offer on a
+    // build with nowhere to put one: an empty path is what
+    // `UnsupportedModelFile` reports, and inviting someone to install a model
+    // on a platform that cannot hold one is worse than saying nothing.
+    if (status.present || status.path.isEmpty) {
+      await widget.settings.setFlag(SettingKeys.offeredModel);
+      return;
+    }
+    if (!mounted) return;
+
+    await widget.settings.setFlag(SettingKeys.offeredModel);
+    if (!mounted) return;
+    // Captured before the dialog rather than reached for after it, so the
+    // push does not have to reason about a context that may have gone away
+    // while somebody was reading.
+    final navigator = Navigator.of(context);
+    final setUp = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Run a model on your phone?'),
+        content: Text(
+          widget.usesModel
+              ? 'Van can word its nudges with a language model that runs '
+                    'entirely on this phone — nothing you type or say leaves '
+                    'it. It is ${ModelSource.description}, downloaded once.'
+              // The honest version of today's state. Selling a download for a
+              // capability that is switched off would be a lie the user finds
+              // out about the moment they install it and nothing changes.
+              : 'Van can run a language model entirely on this phone, with '
+                    'nothing leaving it. It is optional and Van works fully '
+                    'without it — nothing uses it yet, while its answers are '
+                    'still being measured against the built-in ones. You can '
+                    'set it up now or from Settings later.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Not now'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Set it up'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || !(setUp ?? false)) return;
+    await navigator.push(
+      MaterialPageRoute<void>(
+        builder: (_) => ModelScreen(modelFile: widget.modelFile),
+      ),
+    );
   }
 
   @override
