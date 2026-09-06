@@ -30,6 +30,7 @@ void main() {
   late VanService service;
   late FakeClock clock;
   late EventRepo events;
+  late SessionRepo sessions;
 
   /// Wednesday 19 August 2026, 09:00 UTC.
   final start = DateTime.utc(2026, 8, 19, 9);
@@ -40,10 +41,11 @@ void main() {
     notifications = FakeNotifications();
     speech = FakeSpeech()..granted = true;
     events = EventRepo(db, clock);
+    sessions = SessionRepo(db);
 
     service = VanService(
       tasks: TaskRepo(db),
-      sessions: SessionRepo(db),
+      sessions: sessions,
       events: events,
       nudges: NudgeRepo(db),
       router: InferenceRouter(defaultBackend: const NullBackend()),
@@ -157,6 +159,114 @@ void main() {
       expect(find.widgetWithText(TextField, 'call the bank'), findsOneWidget);
       // Still a draft here as well: nothing was sent.
       expect(await service.openTasks(), isEmpty);
+    });
+  });
+
+  group('answering a nudge by voice', () {
+    /// A block that came due and was not started, which is what opens the
+    /// stall prompt the moment Chat is shown.
+    Future<WorkSession> stalled() async {
+      final captured = await service.capture('write the report 45 minutes');
+      clock.advance(const Duration(hours: 2));
+      return captured.sessions.single;
+    }
+
+    testWidgets('a spoken "not today" does what the button does', (
+      tester,
+    ) async {
+      final session = await stalled();
+      speech.willHear('not today');
+
+      await showChat(tester);
+      expect(find.textContaining("What's in the way?"), findsOneWidget);
+      await speak(tester);
+
+      // The acceptance criterion is "exactly the same state change,
+      // including the event rows" - so this asserts the row, not just the
+      // status.
+      final after = await sessions.byId(session.id);
+      expect(after?.status, SessionStatus.skipped);
+      final row = (await events.all()).lastWhere(
+        (e) => e.type == EventType.sessionMissed,
+      );
+      expect(row.payload['reason'], 'not_today');
+      expect(find.text('Left for today.'), findsOneWidget);
+    });
+
+    testWidgets('a spoken "I have started" starts it', (tester) async {
+      final session = await stalled();
+      speech.willHear("I've started");
+
+      await showChat(tester);
+      await speak(tester);
+
+      expect((await sessions.byId(session.id))?.hasStarted, isTrue);
+      expect(find.text('Started.'), findsOneWidget);
+    });
+
+    testWidgets('a spoken "in twenty minutes" moves it by twenty', (
+      tester,
+    ) async {
+      final session = await stalled();
+      speech.willHear('give me twenty minutes');
+
+      await showChat(tester);
+      await speak(tester);
+
+      // A snooze does not move a block; it stands the old one down and plans
+      // a replacement, which is what keeps the log honest about what was
+      // actually agreed and when.
+      expect(
+        (await sessions.byId(session.id))?.status,
+        SessionStatus.rescheduled,
+      );
+      final replacement = (await sessions.forTask(
+        session.taskId,
+      )).firstWhere((s) => s.id != session.id);
+      expect(
+        replacement.plannedStart,
+        clock.now().add(const Duration(minutes: 20)),
+      );
+      expect(find.textContaining('Moved to'), findsOneWidget);
+    });
+
+    testWidgets('something Van cannot follow asks rather than acting', (
+      tester,
+    ) async {
+      final session = await stalled();
+      speech.willHear('I need to talk to Priya about it first');
+
+      await showChat(tester);
+      await speak(tester);
+
+      // Nothing moved. Applying the wrong action moves work the user never
+      // agreed to move, in a log that never deletes.
+      final after = await sessions.byId(session.id);
+      expect(after?.status, SessionStatus.planned);
+      expect(after?.hasStarted, isFalse);
+      expect(find.textContaining('I did not follow that'), findsOneWidget);
+      // And the words are still there to send as a reason instead.
+      expect(
+        find.widgetWithText(
+          TextField,
+          'I need to talk to Priya about it first',
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('speech is still only a draft when no nudge is open', (
+      tester,
+    ) async {
+      // The direct-action rule is scoped to answering a nudge. Said into an
+      // empty Chat, "not today" is a task nobody asked Van to act on.
+      speech.willHear('not today');
+
+      await showChat(tester);
+      await speak(tester);
+
+      expect(find.widgetWithText(TextField, 'not today'), findsOneWidget);
+      expect(find.text('Left for today.'), findsNothing);
     });
   });
 

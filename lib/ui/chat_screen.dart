@@ -41,6 +41,16 @@ class PlanCard extends ChatEntry {
   final bool undone;
 }
 
+/// What Van did about something that was said out loud.
+///
+/// Its own entry rather than a `ProposalCard`, because nothing was proposed:
+/// the user pressed a button with their voice and it happened.
+class _SpokenOutcome extends ChatEntry {
+  const _SpokenOutcome(this.text);
+
+  final String text;
+}
+
 /// Van asking the one thing the sentence did not say.
 ///
 /// A transcript line rather than a bar, because in a conversation the
@@ -211,6 +221,34 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     _toBottom();
   }
 
+  /// Takes a transcript, which usually becomes a draft and sometimes an
+  /// answer.
+  ///
+  /// **A nudge is the one place speech acts directly**, and `WP_VOICE.md` 2.3
+  /// names it as the exception to the draft rule for a reason: the answer
+  /// space is three actions wide, the phrasings are a handful, and the moment
+  /// Van most wants an answer is the moment the user is least willing to look
+  /// at a screen. Everywhere else the transcript goes in the box and waits.
+  void _heard(String heard) {
+    final answering = _answering;
+    if (answering != null) {
+      final answer = const SpokenAnswerReader().read(heard);
+      if (answer.intent != SpokenIntent.unclear) {
+        inBackground(_applySpoken(answering, heard, answer));
+        return;
+      }
+      // Van could not tell. **Ask rather than guess** - applying the wrong
+      // action moves work the user never agreed to move, in a log that never
+      // deletes. The words go in the composer, where they are a perfectly
+      // good reason to negotiate with, and Van says it did not follow.
+      _say(
+        'I did not follow that. Say "not today", "in an hour" or '
+        '"I\'ve started" - or send it as a reason.',
+      );
+    }
+    _fill(heard);
+  }
+
   /// Puts a transcript in the composer, without sending it.
   ///
   /// Appended rather than assigned, for the same reason as on the Now
@@ -220,6 +258,66 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     final existing = _input.text.trim();
     _input.text = existing.isEmpty ? heard : '$existing $heard';
     _input.selection = TextSelection.collapsed(offset: _input.text.length);
+  }
+
+  /// Does exactly what the notification's own button would have done.
+  ///
+  /// The same three service calls the buttons make, so a spoken "not today"
+  /// and a pressed Not today are the same state change and the same rows in
+  /// the log. Nothing new is reachable by voice that was not reachable by
+  /// thumb, which is what keeps the action set closed.
+  Future<void> _applySpoken(
+    String sessionId,
+    String heard,
+    SpokenAnswer answer,
+  ) async {
+    setState(() {
+      _entries.add(UserLine(heard));
+      _busy = true;
+    });
+    _toBottom();
+
+    final String done;
+    switch (answer.intent) {
+      case SpokenIntent.start:
+        final started = await widget.service.startSession(sessionId);
+        done = started == null
+            ? 'That block has already moved on.'
+            : 'Started.';
+      case SpokenIntent.snooze:
+        final minutes = answer.minutes;
+        final moved = minutes == null
+            ? await widget.service.snooze(sessionId)
+            : await widget.service.snooze(sessionId, minutes: minutes);
+        done = moved == null
+            ? 'That block has already moved on.'
+            : 'Moved to ${_clockTime(moved.plannedStart.toLocal())}.';
+      case SpokenIntent.notToday:
+        await widget.service.notToday(sessionId);
+        done = 'Left for today.';
+      case SpokenIntent.unclear:
+        // Unreachable: the caller checks before getting here. Stated rather
+        // than defaulted, so adding a fourth intent is a compile error rather
+        // than a silent no-op.
+        done = '';
+    }
+
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _answering = null;
+      _entries.add(_SpokenOutcome(done));
+    });
+    _toBottom();
+  }
+
+  void _say(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 4)),
+      );
   }
 
   Future<void> _send() async {
@@ -442,6 +540,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         clock: widget.clock,
                         onUndo: () => _undo(i, result),
                       ),
+                      _SpokenOutcome(:final text) => _NoteBubble(text: text),
                       final QuestionCard card => _QuestionBubble(
                         card: card,
                         onSkip: () => _skipQuestion(i),
@@ -463,7 +562,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             controller: _input,
             busy: _busy,
             speech: widget.speech,
-            onHeard: _fill,
+            onHeard: _heard,
             answering: _answering != null,
             asking: _questionAt == null
                 ? null
@@ -742,6 +841,37 @@ class _Composer extends StatelessWidget {
               tooltip: 'Send',
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// One plain line from Van, for something that simply happened.
+class _NoteBubble extends StatelessWidget {
+  const _NoteBubble({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colours = theme.colorScheme;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12, right: 40),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: colours.surfaceContainerHigh,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Text(
+          text,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            color: colours.onSurface,
+          ),
         ),
       ),
     );

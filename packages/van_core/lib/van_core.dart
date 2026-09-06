@@ -27,4 +27,5 @@ export 'src/scheduling/stale_session_sweep.dart';
 export 'src/scheduling/time_window.dart';
 export 'src/text/clarification.dart';
 export 'src/text/depth_reader.dart';
+export 'src/text/spoken_answer.dart';
 export 'src/text/temporal_parser.dart';
