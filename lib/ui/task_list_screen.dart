@@ -6,12 +6,18 @@ import 'package:van/ui/background.dart';
 import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
 
-/// Everything still open, in one flat list.
+/// Everything open, and what was finished lately.
 ///
-/// No folders, no labels, no projects, no sections. Those are the features
-/// that turn a task list into a system you maintain instead of a list you act
-/// on, and the person using Van is short of motivation, not of structure.
-/// Deadline order, swipe to finish, nothing else.
+/// No folders, no labels, no projects, no priorities to sort by. Those are the
+/// features that turn a task list into a system you maintain instead of a list
+/// you act on, and the person using Van is short of motivation, not of
+/// structure. Deadline order, and one section underneath for what is done.
+///
+/// **The finished section is not decoration and it is not a trophy shelf.** It
+/// is the only place in Van where an estimate meets what actually happened, so
+/// it shows both, and it invites the missing half of that comparison on every
+/// row that lacks it. Without it, `actualMinutes` would be a field nothing
+/// ever filled in.
 class TaskListScreen extends StatefulWidget {
   /// Creates the screen.
   const TaskListScreen({required this.service, required this.clock, super.key});
@@ -29,6 +35,7 @@ class TaskListScreen extends StatefulWidget {
 class _TaskListScreenState extends State<TaskListScreen>
     with WidgetsBindingObserver {
   List<Task> _open = const [];
+  List<Task> _done = const [];
   bool _loaded = false;
 
   @override
@@ -51,9 +58,11 @@ class _TaskListScreenState extends State<TaskListScreen>
 
   Future<void> _refresh() async {
     final open = await widget.service.openTasks();
+    final done = await widget.service.finishedTasks();
     if (!mounted) return;
     setState(() {
       _open = open;
+      _done = done;
       _loaded = true;
     });
   }
@@ -78,6 +87,7 @@ class _TaskListScreenState extends State<TaskListScreen>
       _say('Could not finish "${task.title}" - still on your list.');
       return false;
     }
+    await _refresh();
     _say('Finished "${task.title}".', undo: task);
     return true;
   }
@@ -90,9 +100,7 @@ class _TaskListScreenState extends State<TaskListScreen>
   Future<void> _tick(Task task) async {
     if (!await _complete(task, from: 'task_list_tick')) return;
     if (!mounted) return;
-    setState(
-      () => _open = [..._open]..removeWhere((t) => t.id == task.id),
-    );
+    setState(() => _open = [..._open]..removeWhere((t) => t.id == task.id));
     await _refresh();
   }
 
@@ -104,18 +112,12 @@ class _TaskListScreenState extends State<TaskListScreen>
 
   /// Opens the estimate editor and applies what comes back.
   Future<void> _editEstimate(Task task) async {
-    final minutes = await showModalBottomSheet<int>(
-      context: context,
-      showDragHandle: true,
-      // Without this the sheet is capped at half the screen, and a raised
-      // keyboard then has nowhere to push the Save button to.
-      isScrollControlled: true,
-      builder: (_) => EstimateSheet(
-        title: task.title,
-        initialMinutes:
-            task.estimatedMinutes ?? widget.service.defaultEstimateMinutes,
-        isAssumed: task.estimatedMinutes == null,
-      ),
+    final minutes = await _askMinutes(
+      title: task.title,
+      subtitle: task.estimatedMinutes == null
+          ? 'Nobody said how long, so Van assumed this.'
+          : 'How long you said it would take.',
+      initial: task.estimatedMinutes ?? widget.service.defaultEstimateMinutes,
     );
     if (minutes == null || !mounted) return;
 
@@ -126,6 +128,82 @@ class _TaskListScreenState extends State<TaskListScreen>
       AnswerOutcome.notUnderstood => 'That did not look like a length.',
       AnswerOutcome.tooLate => 'That one has already started; leaving it.',
     });
+  }
+
+  /// Asks how long the work actually took, and records it.
+  ///
+  /// Pre-filled with what Van *watched* happen, when it watched any of it: the
+  /// time between START and Done on blocks for this task. That is a different
+  /// thing from how long the work took - it excludes everything done outside
+  /// the app - so it seeds the question rather than answering it, and the
+  /// subtitle says which it is.
+  Future<void> _recordTime(Task task) async {
+    final measured = await widget.service.measuredMinutes(task.id);
+    if (!mounted) return;
+
+    final minutes = await _askMinutes(
+      title: task.title,
+      subtitle: measured > 0
+          ? 'Van watched $measured minutes of this in a block. Adjust it for '
+                'anything done outside the app.'
+          : 'How long it actually took, all in.',
+      initial: measured > 0
+          ? measured
+          : task.actualMinutes ??
+                task.estimatedMinutes ??
+                widget.service.defaultEstimateMinutes,
+    );
+    if (minutes == null || !mounted) return;
+
+    await widget.service.recordActualMinutes(task.id, minutes);
+    await _refresh();
+    _say('Noted: "${task.title}" took ${estimateLabel(minutes, minutes)}.');
+  }
+
+  Future<int?> _askMinutes({
+    required String title,
+    required String subtitle,
+    required int initial,
+  }) => showModalBottomSheet<int>(
+    context: context,
+    showDragHandle: true,
+    isScrollControlled: true,
+    builder: (_) => EstimateSheet(
+      title: title,
+      subtitle: subtitle,
+      initialMinutes: initial,
+    ),
+  );
+
+  Future<void> _confirmDelete(Task task) async {
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete "${task.title}"?'),
+        // Says what it is *not*, because the alternative to deleting is
+        // finishing and the two mean opposite things to a log that is trying
+        // to learn what this person follows through on.
+        content: const Text(
+          'It goes off the list entirely, along with any blocks planned for '
+          'it. Use Done instead if you actually did it.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Keep it'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+    if (!(yes ?? false)) return;
+
+    await widget.service.deleteTask(task.id);
+    await _refresh();
+    _say('Deleted "${task.title}".');
   }
 
   void _say(String message, {Task? undo}) {
@@ -146,6 +224,12 @@ class _TaskListScreenState extends State<TaskListScreen>
       );
   }
 
+  void _onMenu(Task task, _RowAction action) => inBackground(switch (action) {
+    _RowAction.estimate => _editEstimate(task),
+    _RowAction.timeTaken => _recordTime(task),
+    _RowAction.delete => _confirmDelete(task),
+  });
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -156,62 +240,104 @@ class _TaskListScreenState extends State<TaskListScreen>
         onRefresh: _refresh,
         child: !_loaded
             ? const SizedBox.shrink()
-            : _open.isEmpty
-            ? _EmptyList(theme: theme)
-            : ListView.builder(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                itemCount: _open.length,
-                itemBuilder: (context, i) {
-                  final task = _open[i];
-                  return Dismissible(
-                    key: ValueKey(task.id),
-                    direction: DismissDirection.startToEnd,
-                    background: const _CompleteBackground(),
-                    confirmDismiss: (_) =>
-                        _complete(task, from: 'task_list_swipe'),
-                    onDismissed: (_) {
-                      // Only reached once _complete has confirmed, so this is
-                      // the success path: drop the row, then reconcile with
-                      // the database. A failed reload leaves a stale list and
-                      // nothing worse, but `unawaited` catches nothing on its
-                      // own, so it still gets a handler.
-                      setState(
-                        () =>
-                            _open = [..._open]
-                              ..removeWhere((t) => t.id == task.id),
-                      );
-                      inBackground(_refresh());
-                    },
-                    child: _TaskRow(
-                      task: task,
-                      now: widget.clock.now(),
-                      estimate: estimateLabel(
-                        task.estimatedMinutes,
-                        widget.service.defaultEstimateMinutes,
+            : ListView(
+                padding: const EdgeInsets.only(bottom: 32),
+                children: [
+                  if (_open.isEmpty)
+                    _EmptyList(theme: theme, hasHistory: _done.isNotEmpty)
+                  else
+                    for (final task in _open)
+                      Dismissible(
+                        key: ValueKey(task.id),
+                        direction: DismissDirection.startToEnd,
+                        background: const _CompleteBackground(),
+                        confirmDismiss: (_) =>
+                            _complete(task, from: 'task_list_swipe'),
+                        onDismissed: (_) {
+                          // Only reached once _complete has confirmed, so this
+                          // is the success path: drop the row, then reconcile
+                          // with the database. A failed reload leaves a stale
+                          // list and nothing worse, but `unawaited` catches
+                          // nothing on its own, so it still gets a handler.
+                          setState(
+                            () =>
+                                _open = [..._open]
+                                  ..removeWhere((t) => t.id == task.id),
+                          );
+                          inBackground(_refresh());
+                        },
+                        child: _TaskRow(
+                          task: task,
+                          now: widget.clock.now(),
+                          estimate: estimateLabel(
+                            task.estimatedMinutes,
+                            widget.service.defaultEstimateMinutes,
+                          ),
+                          onTick: () => inBackground(_tick(task)),
+                          onEditEstimate: () =>
+                              inBackground(_editEstimate(task)),
+                          onMenu: (action) => _onMenu(task, action),
+                        ),
                       ),
-                      onTick: () => inBackground(_tick(task)),
-                      onEditEstimate: () => inBackground(_editEstimate(task)),
+                  if (_done.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+                      child: Text(
+                        'Finished',
+                        style: theme.textTheme.titleSmall,
+                      ),
                     ),
-                  );
-                },
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                      child: Text(
+                        // The reason this section exists, said once.
+                        'Tap a time to say how long it really took. It is the '
+                        'only way Van can find out whether its estimates are '
+                        'any good.',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                    for (final task in _done)
+                      _DoneRow(
+                        task: task,
+                        onRecordTime: () => inBackground(_recordTime(task)),
+                        onMenu: (action) => _onMenu(task, action),
+                      ),
+                  ],
+                ],
               ),
       ),
     );
   }
 }
 
+/// What a row's overflow menu offers.
+enum _RowAction {
+  /// Change how long Van thinks it will take, and replan.
+  estimate,
+
+  /// Say how long it actually took.
+  timeTaken,
+
+  /// Remove it entirely.
+  delete,
+}
+
 class _EmptyList extends StatelessWidget {
-  const _EmptyList({required this.theme});
+  const _EmptyList({required this.theme, required this.hasHistory});
 
   final ThemeData theme;
+  final bool hasHistory;
 
   @override
   Widget build(BuildContext context) {
-    // A ListView rather than a Center, so pull-to-refresh still works on an
-    // empty list.
-    return ListView(
+    return Column(
       children: [
-        const SizedBox(height: 120),
+        const SizedBox(height: 80),
         Icon(
           Icons.check_circle_outline,
           size: 40,
@@ -219,10 +345,21 @@ class _EmptyList extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         Text(
-          'Nothing open.',
+          hasHistory ? 'Nothing open.' : 'Nothing here yet.',
           style: theme.textTheme.titleMedium,
           textAlign: TextAlign.center,
         ),
+        const SizedBox(height: 4),
+        Text(
+          hasHistory
+              ? 'Everything you captured is done.'
+              : 'Say what needs doing on the Now screen.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+          textAlign: TextAlign.center,
+        ),
+        const SizedBox(height: 24),
       ],
     );
   }
@@ -256,6 +393,36 @@ class _CompleteBackground extends StatelessWidget {
   }
 }
 
+class _RowMenu extends StatelessWidget {
+  const _RowMenu({required this.onSelected, required this.forDone});
+
+  final ValueChanged<_RowAction> onSelected;
+
+  /// A finished task cannot usefully be re-estimated - the estimate is now
+  /// history to compare against, and replanning something that is done would
+  /// put blocks on the calendar for work that has stopped.
+  final bool forDone;
+
+  @override
+  Widget build(BuildContext context) => PopupMenuButton<_RowAction>(
+    tooltip: 'More',
+    icon: const Icon(Icons.more_vert, size: 20),
+    onSelected: onSelected,
+    itemBuilder: (_) => [
+      const PopupMenuItem(
+        value: _RowAction.timeTaken,
+        child: Text('Time taken…'),
+      ),
+      if (!forDone)
+        const PopupMenuItem(
+          value: _RowAction.estimate,
+          child: Text('Estimate…'),
+        ),
+      const PopupMenuItem(value: _RowAction.delete, child: Text('Delete')),
+    ],
+  );
+}
+
 class _TaskRow extends StatelessWidget {
   const _TaskRow({
     required this.task,
@@ -263,6 +430,7 @@ class _TaskRow extends StatelessWidget {
     required this.estimate,
     required this.onTick,
     required this.onEditEstimate,
+    required this.onMenu,
   });
 
   final Task task;
@@ -273,6 +441,7 @@ class _TaskRow extends StatelessWidget {
   final String estimate;
   final VoidCallback onTick;
   final VoidCallback onEditEstimate;
+  final ValueChanged<_RowAction> onMenu;
 
   @override
   Widget build(BuildContext context) {
@@ -294,11 +463,78 @@ class _TaskRow extends StatelessWidget {
                 color: overdue ? theme.colorScheme.error : null,
               ),
             ),
-      // The estimate moves out of the subtitle and becomes a control. It was
-      // read-only text that vanished entirely when nobody had stated one,
-      // which is the worst of both: no number to correct, and no sign that Van
-      // had picked one anyway.
-      trailing: TextButton(onPressed: onEditEstimate, child: Text(estimate)),
+      // The estimate is a control rather than read-only text. It was a
+      // subtitle that vanished entirely when nobody had stated one, which is
+      // the worst of both: no number to correct, and no sign Van had picked
+      // one anyway.
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextButton(onPressed: onEditEstimate, child: Text(estimate)),
+          _RowMenu(onSelected: onMenu, forDone: false),
+        ],
+      ),
+    );
+  }
+}
+
+/// A finished task, with the estimate next to what it really took.
+class _DoneRow extends StatelessWidget {
+  const _DoneRow({
+    required this.task,
+    required this.onRecordTime,
+    required this.onMenu,
+  });
+
+  final Task task;
+  final VoidCallback onRecordTime;
+  final ValueChanged<_RowAction> onMenu;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colours = theme.colorScheme;
+    final actual = task.actualMinutes;
+    final ratio = task.estimateRatio;
+
+    return ListTile(
+      leading: Icon(Icons.check_circle, size: 22, color: colours.primary),
+      title: Text(
+        task.title,
+        style: theme.textTheme.bodyMedium?.copyWith(
+          color: colours.onSurfaceVariant,
+        ),
+      ),
+      subtitle: actual == null
+          ? null
+          : Text(
+              // Only shown once both numbers exist, because "took 3h" on its
+              // own says nothing about whether the plan was wrong.
+              ratio == null
+                  ? 'took ${estimateLabel(actual, actual)}'
+                  : 'took ${estimateLabel(actual, actual)}  ·  estimated '
+                        '${estimateLabel(task.estimatedMinutes, actual)}',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: ratio != null && ratio > 1.5
+                    ? colours.error
+                    : colours.onSurfaceVariant,
+              ),
+            ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // The invitation. A finished task with no recorded time is the
+          // common case, and a button that says so is the only thing that
+          // will ever get one filled in.
+          TextButton(
+            onPressed: onRecordTime,
+            child: Text(
+              actual == null ? 'Add time' : estimateLabel(actual, actual),
+            ),
+          ),
+          _RowMenu(onSelected: onMenu, forDone: true),
+        ],
+      ),
     );
   }
 }

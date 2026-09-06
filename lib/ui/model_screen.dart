@@ -106,26 +106,52 @@ class _ModelScreenState extends State<ModelScreen> {
                             'degraded one.',
                   style: theme.textTheme.bodyMedium,
                 ),
-                const SizedBox(height: 16),
-                Text(
-                  // The honest explanation of why there is no download button,
-                  // said once, here, rather than left as a puzzle.
-                  'Van will not download it for you. It has no network access '
-                  'at all, and the weights are licence-gated — accepting that '
-                  'licence is yours to do. Download the file on this phone or '
-                  'copy it across, then point Van at it.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
+                const SizedBox(height: 24),
+                // Two steps, numbered, because "go and find a file" is not an
+                // instruction anybody can follow. Van cannot do step one -
+                // there is no HTTP client in it and the licence is not an
+                // app's to accept - but it can take you to the exact page,
+                // which is the difference between a rule and an obstacle.
+                _Step(
+                  number: 1,
+                  title: 'Get the file',
+                  body:
+                      'Opens the model page in your browser. Accept the '
+                      'licence there and download ${ModelSource.description}. '
+                      'Van makes no network request of its own — your browser '
+                      'does the downloading.',
+                  action: FilledButton.icon(
+                    onPressed: _busy
+                        ? null
+                        : () => inBackground(widget.modelFile.openSourcePage()),
+                    icon: const Icon(Icons.open_in_new),
+                    label: const Text('Open the model page'),
                   ),
                 ),
                 const SizedBox(height: 20),
-                FilledButton.icon(
-                  onPressed: _busy
-                      ? null
-                      : () => inBackground(_run(widget.modelFile.install)),
-                  icon: const Icon(Icons.folder_open),
-                  label: Text(
-                    status.present ? 'Replace the file' : 'Choose the file',
+                _Step(
+                  number: 2,
+                  title: 'Point Van at it',
+                  body:
+                      'Pick the downloaded file. Van copies it into its own '
+                      'private storage under its own name, so it does not '
+                      'matter what the download is called.',
+                  action: FilledButton.tonalIcon(
+                    onPressed: _busy
+                        ? null
+                        : () => inBackground(_run(widget.modelFile.install)),
+                    icon: const Icon(Icons.folder_open),
+                    label: Text(
+                      status.present ? 'Replace the file' : 'Choose the file',
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                SelectableText(
+                  ModelSource.url,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontFamily: 'monospace',
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
                 if (status.present) ...[
@@ -152,6 +178,61 @@ class _ModelScreenState extends State<ModelScreen> {
                 ],
               ],
             ),
+    );
+  }
+}
+
+/// One numbered step, with the thing it asks you to do attached to it.
+class _Step extends StatelessWidget {
+  const _Step({
+    required this.number,
+    required this.title,
+    required this.body,
+    required this.action,
+  });
+
+  final int number;
+  final String title;
+  final String body;
+  final Widget action;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colours = theme.colorScheme;
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: colours.surfaceContainerHighest,
+            shape: BoxShape.circle,
+          ),
+          child: Text('$number', style: theme.textTheme.labelMedium),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: theme.textTheme.titleSmall),
+              const SizedBox(height: 4),
+              Text(
+                body,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colours.onSurfaceVariant,
+                ),
+              ),
+              const SizedBox(height: 10),
+              SizedBox(width: double.infinity, child: action),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

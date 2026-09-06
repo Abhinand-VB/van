@@ -125,6 +125,15 @@ class ModelFilePlugin(
                 ModelStorage.modelFile(context.filesDir).delete()
                 result.success(status())
             }
+            "openPage" -> {
+                val url = call.argument<String>("url")
+                if (url == null) {
+                    result.error("bad_arguments", "url is required", null)
+                } else {
+                    openPage(url)
+                    result.success(null)
+                }
+            }
             else -> result.notImplemented()
         }
     }
@@ -136,6 +145,27 @@ class ModelFilePlugin(
             "path" to file.absolutePath,
             "bytes" to if (file.isFile) file.length() else 0L,
             "expectedName" to ModelStorage.FILE_NAME,
+        )
+    }
+
+    /**
+     * Hands [url] to whatever browser the phone has.
+     *
+     * **This is not a network dependency and Van does not gain one.** No
+     * request is made from this process; a URI is handed to the OS and the
+     * browser does everything after that - including the licence the user has
+     * to accept, which is theirs to accept on the vendor's own page rather
+     * than something an app can click through for them.
+     *
+     * `NEW_TASK` because the plugin holds the application context, not the
+     * activity's, and starting an activity from a non-activity context
+     * without it throws.
+     */
+    private fun openPage(url: String) {
+        context.startActivity(
+            Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            },
         )
     }
 

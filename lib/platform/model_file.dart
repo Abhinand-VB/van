@@ -38,6 +38,20 @@ class ModelFileStatus {
       : '${(bytes / (1 << 20)).round()} MB';
 }
 
+/// Where the weights come from, and what to look for when you get there.
+///
+/// One place, so the page, the docs and anything later that needs to name the
+/// model cannot drift apart. Verified to resolve on 6 September 2026; if the
+/// vendor moves it, this constant is the only thing to change.
+abstract final class ModelSource {
+  /// The page that hosts the file, where the licence is accepted.
+  static const url =
+      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm';
+
+  /// What to download once you are there.
+  static const description = 'a .litertlm file, roughly 2.5 GB';
+}
+
 /// Installs and removes the on-device model's weights.
 ///
 /// **This receives a file; it does not fetch one.** Two constraints decide
@@ -67,6 +81,15 @@ abstract interface class ModelFile {
 
   /// Deletes the installed weights.
   Future<ModelFileStatus> remove();
+
+  /// Opens [ModelSource.url] in the phone's browser.
+  ///
+  /// **Van makes no request and gains no HTTP client.** A URI is handed to the
+  /// OS; the browser does the downloading and the vendor's own page presents
+  /// the licence, which is the only place it can honestly be accepted. That
+  /// keeps `AGENTS.md`'s no-network rule intact and still leaves the user one
+  /// tap from the file instead of a filename to go and search for.
+  Future<void> openSourcePage();
 }
 
 /// The Android implementation, over a method channel.
@@ -85,6 +108,19 @@ class MethodChannelModelFile implements ModelFile {
 
   @override
   Future<ModelFileStatus> remove() => _call('remove');
+
+  @override
+  Future<void> openSourcePage() async {
+    try {
+      await channel.invokeMethod<void>('openPage', {
+        'url': ModelSource.url,
+      });
+    } on PlatformException catch (_) {
+      // No browser, or the intent was refused. The page still shows the URL
+      // as selectable text, so this is a lost convenience rather than a dead
+      // end.
+    } on MissingPluginException catch (_) {}
+  }
 
   Future<ModelFileStatus> _call(String method) async {
     try {
@@ -120,4 +156,7 @@ class UnsupportedModelFile implements ModelFile {
 
   @override
   Future<ModelFileStatus> remove() async => ModelFileStatus.unknown;
+
+  @override
+  Future<void> openSourcePage() async {}
 }

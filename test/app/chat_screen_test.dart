@@ -41,8 +41,11 @@ class _FailingComplete extends VanService {
   });
 
   @override
-  Future<Task?> completeTask(String taskId, {String source = 'task_list'}) =>
-      throw Exception('the write failed');
+  Future<Task?> completeTask(
+    String taskId, {
+    String source = 'task_list',
+    int? actualMinutes,
+  }) => throw Exception('the write failed');
 }
 
 class _FailingCapture extends VanService {
@@ -557,9 +560,33 @@ void main() {
       expect(find.text('Third thing'), findsOneWidget);
     });
 
-    testWidgets('says so when there is nothing open', (tester) async {
+    testWidgets('an empty list with no history invites a capture', (
+      tester,
+    ) async {
       await showList(tester);
+
+      // "Nothing open" is the wrong thing to say to someone who has never
+      // captured anything - it reads as a report on work they never did.
+      expect(find.text('Nothing here yet.'), findsOneWidget);
+      expect(find.textContaining('Say what needs doing'), findsOneWidget);
+    });
+
+    testWidgets('an empty list with history says everything is done', (
+      tester,
+    ) async {
+      final captured = await service.capture('call the bank 30 minutes');
+      await service.completeTask(captured.task.id);
+
+      await showList(tester);
+
       expect(find.text('Nothing open.'), findsOneWidget);
+      expect(
+        find.textContaining('Everything you captured is done'),
+        findsOneWidget,
+      );
+      // And the finished work is still on screen, which is the point of the
+      // section: it is where an estimate meets what actually happened.
+      expect(find.text('Call the bank'), findsOneWidget);
     });
 
     testWidgets('swiping right finishes a task', (tester) async {

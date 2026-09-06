@@ -26,6 +26,7 @@ Task taskFromRow(TaskRow row) => Task(
   status: row.status,
   source: row.source,
   depth: row.depth,
+  actualMinutes: row.actualMinutes,
 );
 
 /// Converts a domain task into a row for insert or replace.
@@ -40,6 +41,7 @@ TasksCompanion taskToRow(Task task) => TasksCompanion.insert(
   createdUtc: _millis(task.createdAt),
   source: task.source,
   depth: Value(task.depth),
+  actualMinutes: Value(task.actualMinutes),
 );
 
 /// Converts a persisted session row into the domain model.

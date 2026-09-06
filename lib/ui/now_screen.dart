@@ -309,7 +309,9 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
         // between an editable field and an empty one.
         initialMinutes:
             task.estimatedMinutes ?? widget.service.defaultEstimateMinutes,
-        isAssumed: task.estimatedMinutes == null,
+        subtitle: task.estimatedMinutes == null
+            ? 'Nobody said how long, so Van assumed this.'
+            : 'How long you said it would take.',
       ),
     );
     if (minutes == null || !mounted) return;

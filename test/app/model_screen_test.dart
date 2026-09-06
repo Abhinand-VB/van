@@ -8,6 +8,7 @@ class _FakeModelFile implements ModelFile {
   bool present = false;
   int installs = 0;
   int removes = 0;
+  int opened = 0;
 
   /// What the picker "returns" on the next install. Null means the user
   /// cancelled, which must leave the status exactly as it was.
@@ -36,12 +37,27 @@ class _FakeModelFile implements ModelFile {
     present = false;
     return _status;
   }
+
+  @override
+  Future<void> openSourcePage() async => opened++;
 }
 
 void main() {
   late _FakeModelFile model;
 
   setUp(() => model = _FakeModelFile());
+
+  /// Scrolls [finder] into view. The page is a two-step flow now and the
+  /// things below step two are genuinely off the bottom of a phone, which
+  /// means they are not built until they are reached.
+  Future<void> reveal(WidgetTester tester, Finder finder) async {
+    await tester.scrollUntilVisible(
+      finder,
+      120,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+  }
 
   Future<void> show(WidgetTester tester) async {
     await tester.pumpWidget(
@@ -61,24 +77,76 @@ void main() {
       expect(find.textContaining('works fully without this'), findsOneWidget);
     });
 
-    testWidgets('explains why there is no download button', (tester) async {
+    testWidgets('gives two numbered steps, not a filename to go hunt', (
+      tester,
+    ) async {
       await show(tester);
 
-      // Two reasons, both real, and the page says them rather than leaving
-      // the missing button as a puzzle: Van has no network access at all, and
-      // the licence is the user's to accept.
-      expect(find.textContaining('will not download it for you'), findsWidgets);
-      expect(find.textContaining('licence-gated'), findsWidgets);
+      // "Download it yourself" with no link is an obstacle, not a rule. Van
+      // still makes no request - the browser does - but a tap gets you to the
+      // exact page instead of a search.
+      expect(find.text('Get the file'), findsOneWidget);
+      expect(find.text('Point Van at it'), findsOneWidget);
       expect(
-        find.widgetWithText(FilledButton, 'Choose the file'),
+        find.widgetWithText(FilledButton, 'Open the model page'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('.litertlm'), findsWidgets);
+    });
+
+    testWidgets('says the browser does the downloading, not Van', (
+      tester,
+    ) async {
+      await show(tester);
+
+      // The honest version of the constraint. Van has no HTTP client, so it
+      // hands a URI to the OS and the vendor's own page presents the licence
+      // - which is the only place it can be accepted by the person it binds.
+      expect(
+        find.textContaining('Van makes no network request of its own'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Accept the licence there'), findsOneWidget);
+    });
+
+    testWidgets('the first step opens the source page', (tester) async {
+      await show(tester);
+      await tester.tap(
+        find.widgetWithText(FilledButton, 'Open the model page'),
+      );
+      await tester.pumpAndSettle();
+
+      expect(model.opened, 1);
+    });
+
+    testWidgets('the URL is on screen even if no browser opens', (
+      tester,
+    ) async {
+      await show(tester);
+
+      // The button is a convenience over the address, not a replacement for
+      // it: a phone with no browser, or an intent that is refused, still
+      // leaves something to copy.
+      expect(
+        find.textContaining('huggingface.co/litert-community'),
         findsOneWidget,
       );
     });
 
-    testWidgets('names the exact file and where it goes', (tester) async {
+    testWidgets('says the download can be called anything', (tester) async {
       await show(tester);
 
-      expect(find.text('gemma-e2b-int4.litertlm'), findsOneWidget);
+      // Van copies whatever is picked to its own name, so a page that showed
+      // its internal filename as "what to look for" would send someone
+      // hunting for a name the vendor does not use.
+      expect(
+        find.textContaining('does not matter what the download is called'),
+        findsOneWidget,
+      );
+      await reveal(
+        tester,
+        find.textContaining('files/models/gemma-e2b-int4.litertlm'),
+      );
       expect(
         find.textContaining('files/models/gemma-e2b-int4.litertlm'),
         findsOneWidget,
@@ -93,7 +161,9 @@ void main() {
 
     testWidgets('choosing a file installs it', (tester) async {
       await show(tester);
-      await tester.tap(find.widgetWithText(FilledButton, 'Choose the file'));
+      await tester.tap(
+        find.text('Choose the file'),
+      );
       await tester.pumpAndSettle();
 
       expect(model.installs, 1);
@@ -104,7 +174,7 @@ void main() {
       model.picks = null;
 
       await show(tester);
-      await tester.tap(find.widgetWithText(FilledButton, 'Choose the file'));
+      await tester.tap(find.text('Choose the file'));
       await tester.pumpAndSettle();
 
       expect(find.text('Not installed'), findsOneWidget);
@@ -138,6 +208,7 @@ void main() {
 
     testWidgets('removing asks first, and says what is lost', (tester) async {
       await show(tester);
+      await reveal(tester, find.text('Remove it'));
       await tester.tap(find.text('Remove it'));
       await tester.pumpAndSettle();
 
@@ -146,11 +217,14 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(model.removes, 0);
-      expect(find.textContaining('Installed'), findsOneWidget);
+      // Still there to be tapped again. Asserted on the button rather than
+      // the status card, which is now scrolled off the top of the page.
+      expect(find.text('Remove it'), findsOneWidget);
     });
 
     testWidgets('and removes it when confirmed', (tester) async {
       await show(tester);
+      await reveal(tester, find.text('Remove it'));
       await tester.tap(find.text('Remove it'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, 'Remove'));

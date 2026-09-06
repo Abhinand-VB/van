@@ -159,7 +159,7 @@ class EstimateSheet extends StatefulWidget {
   const EstimateSheet({
     required this.title,
     required this.initialMinutes,
-    required this.isAssumed,
+    required this.subtitle,
     super.key,
   });
 
@@ -170,9 +170,13 @@ class EstimateSheet extends StatefulWidget {
   /// What to open with. Never zero and never blank - see [estimateLabel].
   final int initialMinutes;
 
-  /// Whether [initialMinutes] is Van's assumption rather than the user's
-  /// figure, which is worth saying out loud on the one screen that can fix it.
-  final bool isAssumed;
+  /// What this sheet is asking, in the caller's own words.
+  ///
+  /// Passed in rather than derived, because the same sheet asks two different
+  /// questions - how long will this take, and how long did it actually take -
+  /// and a widget that guessed which from a boolean would eventually guess
+  /// wrong.
+  final String subtitle;
 
   @override
   State<EstimateSheet> createState() => _EstimateSheetState();
@@ -215,12 +219,7 @@ class _EstimateSheetState extends State<EstimateSheet> {
         children: [
           Text(widget.title, style: theme.textTheme.titleMedium),
           const SizedBox(height: 4),
-          Text(
-            widget.isAssumed
-                ? 'Nobody said how long, so Van assumed this.'
-                : 'How long you said it would take.',
-            style: theme.textTheme.bodySmall,
-          ),
+          Text(widget.subtitle, style: theme.textTheme.bodySmall),
           const SizedBox(height: 16),
           Wrap(
             spacing: 8,

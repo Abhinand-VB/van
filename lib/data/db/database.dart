@@ -32,7 +32,7 @@ class VanDatabase extends _$VanDatabase {
   VanDatabase.on(super.e);
 
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -93,6 +93,14 @@ class VanDatabase extends _$VanDatabase {
       if (from < 4) {
         await m.addColumn(tasks, tasks.depth);
         await m.addColumn(workSessions, workSessions.isOpener);
+      }
+
+      // v5 records how long work actually took, which is the only number in
+      // Van that can tell an estimate it was wrong. Nullable, so the column
+      // adds cleanly to a table full of rows and every task that predates it
+      // reads back as "nobody said" - which is exactly true of them.
+      if (from < 5) {
+        await m.addColumn(tasks, tasks.actualMinutes);
       }
     },
     beforeOpen: (details) async {

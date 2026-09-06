@@ -31,6 +31,14 @@
         <intent>
             <action android:name="android.speech.RecognitionService"/>
         </intent>
+        <!-- So the model page can be handed to a browser. Van makes no
+             request itself and has no HTTP client; this is package
+             visibility for an ACTION_VIEW, which Android 11+ hides without
+             a declaration. -->
+        <intent>
+            <action android:name="android.intent.action.VIEW"/>
+            <data android:scheme="https"/>
+        </intent>
     </queries>
     <application
         android:label="Van"

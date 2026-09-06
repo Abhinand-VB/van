@@ -105,6 +105,17 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         requiredDuringInsert: false,
         defaultValue: const Constant('unknown'),
       ).withConverter<TaskDepth>($TasksTable.$converterdepth);
+  static const VerificationMeta _actualMinutesMeta = const VerificationMeta(
+    'actualMinutes',
+  );
+  @override
+  late final GeneratedColumn<int> actualMinutes = GeneratedColumn<int>(
+    'actual_minutes',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -117,6 +128,7 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     createdUtc,
     source,
     depth,
+    actualMinutes,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -175,6 +187,15 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     } else if (isInserting) {
       context.missing(_createdUtcMeta);
     }
+    if (data.containsKey('actual_minutes')) {
+      context.handle(
+        _actualMinutesMeta,
+        actualMinutes.isAcceptableOrUnknown(
+          data['actual_minutes']!,
+          _actualMinutesMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -232,6 +253,10 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
           data['${effectivePrefix}depth'],
         )!,
       ),
+      actualMinutes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}actual_minutes'],
+      ),
     );
   }
 
@@ -268,6 +293,12 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
   /// depth, and a null that the mapper had to guess at would be a second
   /// place for that guess to be made.
   final TaskDepth depth;
+
+  /// How long the work actually took, once someone said. Added in v5.
+  ///
+  /// Nullable rather than defaulted, because "nobody has said" and "it took
+  /// no time" are different facts and only one of them is ever true.
+  final int? actualMinutes;
   const TaskRow({
     required this.id,
     required this.title,
@@ -279,6 +310,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     required this.createdUtc,
     required this.source,
     required this.depth,
+    this.actualMinutes,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -313,6 +345,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     {
       map['depth'] = Variable<String>($TasksTable.$converterdepth.toSql(depth));
     }
+    if (!nullToAbsent || actualMinutes != null) {
+      map['actual_minutes'] = Variable<int>(actualMinutes);
+    }
     return map;
   }
 
@@ -334,6 +369,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       createdUtc: Value(createdUtc),
       source: Value(source),
       depth: Value(depth),
+      actualMinutes: actualMinutes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(actualMinutes),
     );
   }
 
@@ -361,6 +399,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       depth: $TasksTable.$converterdepth.fromJson(
         serializer.fromJson<String>(json['depth']),
       ),
+      actualMinutes: serializer.fromJson<int?>(json['actualMinutes']),
     );
   }
   @override
@@ -385,6 +424,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       'depth': serializer.toJson<String>(
         $TasksTable.$converterdepth.toJson(depth),
       ),
+      'actualMinutes': serializer.toJson<int?>(actualMinutes),
     };
   }
 
@@ -399,6 +439,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     int? createdUtc,
     TaskSource? source,
     TaskDepth? depth,
+    Value<int?> actualMinutes = const Value.absent(),
   }) => TaskRow(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -412,6 +453,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     createdUtc: createdUtc ?? this.createdUtc,
     source: source ?? this.source,
     depth: depth ?? this.depth,
+    actualMinutes: actualMinutes.present
+        ? actualMinutes.value
+        : this.actualMinutes,
   );
   TaskRow copyWithCompanion(TasksCompanion data) {
     return TaskRow(
@@ -431,6 +475,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           : this.createdUtc,
       source: data.source.present ? data.source.value : this.source,
       depth: data.depth.present ? data.depth.value : this.depth,
+      actualMinutes: data.actualMinutes.present
+          ? data.actualMinutes.value
+          : this.actualMinutes,
     );
   }
 
@@ -446,7 +493,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ..write('status: $status, ')
           ..write('createdUtc: $createdUtc, ')
           ..write('source: $source, ')
-          ..write('depth: $depth')
+          ..write('depth: $depth, ')
+          ..write('actualMinutes: $actualMinutes')
           ..write(')'))
         .toString();
   }
@@ -463,6 +511,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     createdUtc,
     source,
     depth,
+    actualMinutes,
   );
   @override
   bool operator ==(Object other) =>
@@ -477,7 +526,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           other.status == this.status &&
           other.createdUtc == this.createdUtc &&
           other.source == this.source &&
-          other.depth == this.depth);
+          other.depth == this.depth &&
+          other.actualMinutes == this.actualMinutes);
 }
 
 class TasksCompanion extends UpdateCompanion<TaskRow> {
@@ -491,6 +541,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
   final Value<int> createdUtc;
   final Value<TaskSource> source;
   final Value<TaskDepth> depth;
+  final Value<int?> actualMinutes;
   final Value<int> rowid;
   const TasksCompanion({
     this.id = const Value.absent(),
@@ -503,6 +554,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.createdUtc = const Value.absent(),
     this.source = const Value.absent(),
     this.depth = const Value.absent(),
+    this.actualMinutes = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TasksCompanion.insert({
@@ -516,6 +568,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     required int createdUtc,
     required TaskSource source,
     this.depth = const Value.absent(),
+    this.actualMinutes = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -534,6 +587,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Expression<int>? createdUtc,
     Expression<String>? source,
     Expression<String>? depth,
+    Expression<int>? actualMinutes,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -547,6 +601,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       if (createdUtc != null) 'created_utc': createdUtc,
       if (source != null) 'source': source,
       if (depth != null) 'depth': depth,
+      if (actualMinutes != null) 'actual_minutes': actualMinutes,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -562,6 +617,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Value<int>? createdUtc,
     Value<TaskSource>? source,
     Value<TaskDepth>? depth,
+    Value<int?>? actualMinutes,
     Value<int>? rowid,
   }) {
     return TasksCompanion(
@@ -575,6 +631,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       createdUtc: createdUtc ?? this.createdUtc,
       source: source ?? this.source,
       depth: depth ?? this.depth,
+      actualMinutes: actualMinutes ?? this.actualMinutes,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -620,6 +677,9 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
         $TasksTable.$converterdepth.toSql(depth.value),
       );
     }
+    if (actualMinutes.present) {
+      map['actual_minutes'] = Variable<int>(actualMinutes.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -639,6 +699,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
           ..write('createdUtc: $createdUtc, ')
           ..write('source: $source, ')
           ..write('depth: $depth, ')
+          ..write('actualMinutes: $actualMinutes, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3131,6 +3192,7 @@ typedef $$TasksTableCreateCompanionBuilder =
       required int createdUtc,
       required TaskSource source,
       Value<TaskDepth> depth,
+      Value<int?> actualMinutes,
       Value<int> rowid,
     });
 typedef $$TasksTableUpdateCompanionBuilder =
@@ -3145,6 +3207,7 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<int> createdUtc,
       Value<TaskSource> source,
       Value<TaskDepth> depth,
+      Value<int?> actualMinutes,
       Value<int> rowid,
     });
 
@@ -3233,6 +3296,11 @@ class $$TasksTableFilterComposer extends Composer<_$VanDatabase, $TasksTable> {
         builder: (column) => ColumnWithTypeConverterFilters(column),
       );
 
+  ColumnFilters<int> get actualMinutes => $composableBuilder(
+    column: $table.actualMinutes,
+    builder: (column) => ColumnFilters(column),
+  );
+
   Expression<bool> workSessionsRefs(
     Expression<bool> Function($$WorkSessionsTableFilterComposer f) f,
   ) {
@@ -3317,6 +3385,11 @@ class $$TasksTableOrderingComposer
     column: $table.depth,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get actualMinutes => $composableBuilder(
+    column: $table.actualMinutes,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TasksTableAnnotationComposer
@@ -3363,6 +3436,11 @@ class $$TasksTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<TaskDepth, String> get depth =>
       $composableBuilder(column: $table.depth, builder: (column) => column);
+
+  GeneratedColumn<int> get actualMinutes => $composableBuilder(
+    column: $table.actualMinutes,
+    builder: (column) => column,
+  );
 
   Expression<T> workSessionsRefs<T extends Object>(
     Expression<T> Function($$WorkSessionsTableAnnotationComposer a) f,
@@ -3428,6 +3506,7 @@ class $$TasksTableTableManager
                 Value<int> createdUtc = const Value.absent(),
                 Value<TaskSource> source = const Value.absent(),
                 Value<TaskDepth> depth = const Value.absent(),
+                Value<int?> actualMinutes = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TasksCompanion(
                 id: id,
@@ -3440,6 +3519,7 @@ class $$TasksTableTableManager
                 createdUtc: createdUtc,
                 source: source,
                 depth: depth,
+                actualMinutes: actualMinutes,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3454,6 +3534,7 @@ class $$TasksTableTableManager
                 required int createdUtc,
                 required TaskSource source,
                 Value<TaskDepth> depth = const Value.absent(),
+                Value<int?> actualMinutes = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TasksCompanion.insert(
                 id: id,
@@ -3466,6 +3547,7 @@ class $$TasksTableTableManager
                 createdUtc: createdUtc,
                 source: source,
                 depth: depth,
+                actualMinutes: actualMinutes,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

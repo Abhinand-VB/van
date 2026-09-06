@@ -28,6 +28,12 @@ class Tasks extends Table {
   TextColumn get depth =>
       textEnum<TaskDepth>().withDefault(const Constant('unknown'))();
 
+  /// How long the work actually took, once someone said. Added in v5.
+  ///
+  /// Nullable rather than defaulted, because "nobody has said" and "it took
+  /// no time" are different facts and only one of them is ever true.
+  IntColumn get actualMinutes => integer().nullable()();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }

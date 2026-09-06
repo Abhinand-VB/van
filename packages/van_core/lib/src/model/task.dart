@@ -61,10 +61,15 @@ class Task {
     this.status = TaskStatus.inbox,
     this.source = TaskSource.quickAdd,
     this.depth = TaskDepth.unknown,
+    this.actualMinutes,
   }) : assert(title.isNotEmpty, 'a task must have a title'),
        assert(
          estimatedMinutes == null || estimatedMinutes > 0,
          'estimatedMinutes must be positive when known',
+       ),
+       assert(
+         actualMinutes == null || actualMinutes > 0,
+         'actualMinutes must be positive when known',
        ),
        assert(createdAt.isUtc, 'createdAt must be UTC'),
        assert(deadline == null || deadline.isUtc, 'deadline must be UTC');
@@ -109,6 +114,27 @@ class Task {
   /// D73.
   final TaskDepth depth;
 
+  /// How long the work actually took, in minutes, once someone said.
+  ///
+  /// **This is the only number in Van that can tell an estimate it was
+  /// wrong.** Everything else the app records is about whether work started;
+  /// this is about whether the size of it was ever right. Null until it is
+  /// given, and it is never inferred: a block that ran for forty minutes is
+  /// evidence of forty minutes at the desk, not of a task that took forty
+  /// minutes, and quietly conflating the two would put a number here that
+  /// nobody stands behind.
+  final int? actualMinutes;
+
+  /// How far the estimate was out, as a multiple. Null until both are known.
+  ///
+  /// Greater than one means it took longer than planned, which is the
+  /// direction that matters: an under-run costs a free afternoon, an over-run
+  /// costs everything scheduled after it.
+  double? get estimateRatio =>
+      (estimatedMinutes == null || actualMinutes == null)
+      ? null
+      : actualMinutes! / estimatedMinutes!;
+
   /// Whether a deadline exists and has passed as of [now].
   bool isOverdue(DateTime now) =>
       deadline != null && now.isAfter(deadline!) && status != TaskStatus.done;
@@ -130,6 +156,7 @@ class Task {
     TaskStatus? status,
     TaskSource? source,
     TaskDepth? depth,
+    int? actualMinutes,
   }) => Task(
     id: id,
     title: title ?? this.title,
@@ -141,6 +168,7 @@ class Task {
     status: status ?? this.status,
     source: source ?? this.source,
     depth: depth ?? this.depth,
+    actualMinutes: actualMinutes ?? this.actualMinutes,
   );
 
   /// Returns a copy with no deadline.
@@ -154,6 +182,7 @@ class Task {
     status: status,
     source: source,
     depth: depth,
+    actualMinutes: actualMinutes,
   );
 
   @override
@@ -169,7 +198,8 @@ class Task {
           status == other.status &&
           createdAt == other.createdAt &&
           source == other.source &&
-          depth == other.depth;
+          depth == other.depth &&
+          actualMinutes == other.actualMinutes;
 
   @override
   int get hashCode => Object.hash(
@@ -183,6 +213,7 @@ class Task {
     createdAt,
     source,
     depth,
+    actualMinutes,
   );
 
   @override

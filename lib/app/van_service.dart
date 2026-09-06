@@ -1448,6 +1448,7 @@ class VanService {
   Future<Task?> completeTask(
     String taskId, {
     String source = 'task_list',
+    int? actualMinutes,
   }) async {
     final task = await _tasks.byId(taskId);
     if (task == null) return null;
@@ -1462,15 +1463,111 @@ class VanService {
       await _sessions.save(session.skip());
     }
 
-    final done = task.copyWith(status: TaskStatus.done);
+    final done = task.copyWith(
+      status: TaskStatus.done,
+      actualMinutes: actualMinutes,
+    );
     await _tasks.save(done);
     await _events.append(EventType.taskUpdated, {
       'taskId': taskId,
       'status': TaskStatus.done.name,
       'source': source,
       'blocksStoodDown': open.length,
+      'actualMinutes': ?actualMinutes,
+      'estimatedMinutes': ?task.estimatedMinutes,
     });
     return done;
+  }
+
+  /// Records how long [taskId] actually took, after the fact.
+  ///
+  /// Separate from [completeTask] because finishing something and knowing how
+  /// long it took are different moments. Forcing them together would make
+  /// every completion a two-step action, and the number would get guessed to
+  /// get past the dialog - which is worse than not having it.
+  ///
+  /// Works on an open task too. Someone who has spent three hours on
+  /// something and is not finished has learned the estimate was wrong, and
+  /// that is worth recording before they forget.
+  Future<Task?> recordActualMinutes(String taskId, int minutes) async {
+    if (minutes <= 0) return null;
+    final task = await _tasks.byId(taskId);
+    if (task == null) return null;
+
+    final updated = task.copyWith(actualMinutes: minutes);
+    await _tasks.save(updated);
+    await _events.append(EventType.taskUpdated, {
+      'taskId': taskId,
+      'source': 'time_taken',
+      'actualMinutes': minutes,
+      // Both, so the log carries the comparison rather than requiring a join
+      // against whatever the estimate happened to be at the time.
+      'estimatedMinutes': ?task.estimatedMinutes,
+    });
+    return updated;
+  }
+
+  /// How much time Van actually watched being spent on [taskId], in minutes.
+  ///
+  /// Only blocks that were started and finished count, and only the time
+  /// between those two instants. **This is not the same as how long the work
+  /// took** - it is how long the user sat in a Van block for it, which
+  /// excludes everything done outside the app. It exists to pre-fill the
+  /// question rather than to answer it, which is the whole difference between
+  /// a measurement and an assumption.
+  Future<int> measuredMinutes(String taskId) async {
+    var total = 0;
+    for (final session in await _sessions.forTask(taskId)) {
+      final from = session.actualStart;
+      final to = session.actualEnd;
+      if (from == null || to == null || !to.isAfter(from)) continue;
+      total += to.difference(from).inMinutes;
+    }
+    return total;
+  }
+
+  /// Everything finished, most recently created first.
+  Future<List<Task>> finishedTasks({int limit = 20}) async {
+    final all = await _tasks.all();
+    return [
+      for (final task in all)
+        if (task.status == TaskStatus.done) task,
+    ].take(limit).toList();
+  }
+
+  /// Removes [taskId] entirely: the task, its blocks and its armed nudges.
+  ///
+  /// **A delete, not `TaskStatus.abandoned`, and the difference is not
+  /// cosmetic.** Abandoned means *the user gave up on this work*, and that
+  /// distinction exists so Van can learn what this person follows through on.
+  /// Someone clearing a task off the list because it was a mistake, a
+  /// duplicate, or no longer a thing that needs doing has not given up on
+  /// anything, and recording it as though they had would poison the only
+  /// signal that status carries.
+  ///
+  /// **Nothing is truly lost.** The `events` table is append-only: the
+  /// `taskCreated` row, every `sessionPlanned`, every nudge decision all stay
+  /// exactly where they were, joined now by this one. What goes is the task's
+  /// place in the live list.
+  Future<bool> deleteTask(String taskId, {String reason = 'deleted'}) async {
+    final task = await _tasks.byId(taskId);
+    if (task == null) return false;
+
+    final sessions = await _sessions.forTask(taskId);
+    for (final session in sessions) {
+      await _notifications.cancelForSession(session.id);
+      await _nudges.deleteForSession(session.id);
+      await _sessions.delete(session.id);
+    }
+    await _tasks.delete(taskId);
+
+    await _events.append(EventType.taskUpdated, {
+      'taskId': taskId,
+      'title': task.title,
+      'status': reason,
+      'blocksRemoved': sessions.length,
+    });
+    return true;
   }
 
   /// Puts a finished task back on the list and plans it again.
@@ -1514,26 +1611,8 @@ class VanService {
   ///
   /// Nothing is truly lost: the `taskCreated` and `sessionPlanned` events stay
   /// in the append-only log, joined now by the undo itself.
-  Future<bool> undoCapture(String taskId) async {
-    final task = await _tasks.byId(taskId);
-    if (task == null) return false;
-
-    final sessions = await _sessions.forTask(taskId);
-    for (final session in sessions) {
-      await _notifications.cancelForSession(session.id);
-      await _nudges.deleteForSession(session.id);
-      await _sessions.delete(session.id);
-    }
-    await _tasks.delete(taskId);
-
-    await _events.append(EventType.taskUpdated, {
-      'taskId': taskId,
-      'title': task.title,
-      'status': 'undone',
-      'blocksRemoved': sessions.length,
-    });
-    return true;
-  }
+  Future<bool> undoCapture(String taskId) =>
+      deleteTask(taskId, reason: 'undone');
 
   /// Asks what to do about a stalled block, optionally given [reason].
   ///
