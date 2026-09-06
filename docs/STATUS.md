@@ -66,7 +66,7 @@ own database with every row intact.
 | **Microphone** | **Not granted, deliberately.** `RECORD_AUDIO` is in the manifest and the button is on both composers, but pressing it raises the permission dialog and answering that is your decision, not an agent's — the same call that was made about the calendar. Read-only check: this phone *does* have an on-device recogniser (`com.google.android.tts` registers the `RecognitionService`), so the button should be live rather than disabled once you allow it. |
 | **Schema v4, on the phone** | **Verified, read-only, 10:54.** Pulled the real database: `user_version = 4`, `tasks.depth` and `work_sessions.is_opener` both present, 8 tasks / 25 sessions / 341 events all intact, every pre-existing row reading back as `unknown` and not-an-opener exactly as designed. This is the check section 5d wishes it had had. |
 | **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has run against the real provider. |
-| **Tests** | **840 green (527 app, 313 core)**, `dart analyze --fatal-infos` and `check_layers` clean. `extract_task` still scores **29/29** on the golden set. |
+| **Tests** | **843 green (530 app, 313 core)**, `dart analyze --fatal-infos` and `check_layers` clean. `extract_task` still scores **29/29** on the golden set. |
 
 **Two things still unverified on hardware**, both needing you: a nudge firing
 with START coming back (issue 3), and the two features built this morning
@@ -80,7 +80,7 @@ Android's inexact window. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-**840 tests, all green, on a phone that runs.** Eight things need you and all
+**843 tests, all green, on a phone that runs.** Eight things need you and all
 of them are small. **Items 6 and 7 are new this morning and take ten seconds
 each** — they are the only way the work done overnight gets seen on the
 device, so do those two even if you skip the rest:
@@ -209,7 +209,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **840 tests passing** — 313 in `packages/van_core` (pure Dart), 527 in the app.
+- **843 tests passing** — 313 in `packages/van_core` (pure Dart), 530 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -1741,7 +1741,31 @@ the same as using one; the gate in section 3e decides, and it cannot be
 evaluated until the golden set has been run on the phone against real weights
 (issue 14).
 
-### Getting the file: two steps, and a link
+### Getting the file: one button
+
+**Correction, and it matters more than the feature.** This section said the
+weights were licence-gated. **They are not.** `litert-community` republishes
+them under Apache 2.0, the API reports `gated: false`, and an anonymous
+request returns 2,588,147,712 bytes. There was never a licence for the owner
+to accept, and the obstacle described below was in front of an open door.
+
+**Van now downloads it, and still has no HTTP client.** Android's
+`DownloadManager` performs the transfer in its own process; handing it a URL
+is the same shape as handing a URI to a browser. No package was added and the
+release manifest still declares no `INTERNET` permission. It waits for Wi-Fi
+rather than spending 2.6 GB of mobile data, says so rather than appearing
+stuck, survives the app closing, resumes, shows progress, and can be
+cancelled. On completion Van moves the file into place unasked.
+
+**Unverified on hardware, and the reason is subtle**: the debug manifest
+declares `INTERNET` for Flutter's tooling, so a successful download in a debug
+build would not prove the release build can do it. The experiment that settles
+it is a release build and one tap. D79.
+
+The manual route stays underneath, because a computer and a cable is often the
+better way to move two and a half gigabytes.
+
+### The manual route: a link and a picker
 
 The first version said "download it yourself" and gave no link, which the
 owner correctly called bad UX. **The constraint was never the problem; the

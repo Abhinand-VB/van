@@ -498,6 +498,49 @@ it should wait for a fortnight of real numbers.
 
 ---
 
+### D79 — The model downloads itself now, and I was wrong about why it could not
+
+**I told you the weights were licence-gated. They are not.** I asserted it in
+the UI, in STATUS and in D77, on the general fact that Gemma weights usually
+are. This repository is not: `litert-community` republishes them under Apache
+2.0, the Hugging Face API reports `gated: false`, and an anonymous request
+returns the file - 2,588,147,712 bytes, checked rather than assumed. There was
+never a licence for you to accept. The obstacle I built was in front of an open
+door, and it is the kind of mistake that is worse than a bug, because it was
+stated confidently in three places.
+
+**And "no network dependency" never meant "no button".** Android's
+`DownloadManager` is a system service that performs the transfer in its own
+process. Handing it a URL is the same shape as handing a URI to a browser,
+which that page already did. Van gains no HTTP client, adds no package, and the
+release manifest still declares no `INTERNET` permission. **If you read
+`AGENTS.md` line 92 more strictly than that, this is the change to reverse** -
+the manual file-picker route underneath it still works on its own.
+
+**The download waits for Wi-Fi.** 2.6 GB on mobile data is a bill, not a
+convenience, so `setAllowedOverMetered(false)` and the page says "Waiting for
+Wi-Fi" rather than appearing stuck. **If you would rather it just went**, that
+is one boolean.
+
+**One thing genuinely unverified, and the reason is subtle.** The downloader is
+built, installed and covered by tests against a fake, but has not been run on
+the phone - it was in use. More importantly, running it in *this* build would
+not settle the question: `android/app/src/debug/AndroidManifest.xml` declares
+`INTERNET` for Flutter's dev tooling, so a debug download succeeding would not
+prove the release build can do it. **The experiment that settles it is a
+release build**, installed, one tap. If it turns out `DownloadManager` does
+need the permission in release, the honest options are to declare `INTERNET`
+(and admit Van now has network access) or to drop back to the manual route.
+
+**The file is `gemma-4-E2B-it.litertlm`.** The repo also has device-specific
+builds, including `_qualcomm_sm8750` which is exactly this phone's chip
+(Snapdragon 8 Elite). I did not point at it: it is larger, needs backend
+configuration this engine does not do yet, and an untested optimisation is not
+worth a download of that size. Worth revisiting once the plain one has been
+shown to run.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner
