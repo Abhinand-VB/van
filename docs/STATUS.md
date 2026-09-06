@@ -24,7 +24,7 @@ calendar, so the feature is installed and unexercised against real data.**
 
 | | |
 |---|---|
-| **Commit the phone is running** | The WP-11 calendar commit — see `git log -1`. It is the newest commit that changes code. |
+| **Commit the phone is running** | `de2c910` — "Plan around the calendar, without ever reading a meeting's name". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
 | **APK installed at** | **6 Sep 2026, 00:53:55** (device local, PDT), debug build, phone `<device-serial>` |
 | **Last launched** | **6 Sep 2026, 00:54** — `am start` delivered, process alive (pid 30090) |
 | **Last seen rendering** | **6 Sep 2026, 00:54, this build.** Now screen with the new calendar action in the app bar, and the Calendars page reached by tapping it. Both screenshotted. |
