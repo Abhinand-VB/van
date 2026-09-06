@@ -5,6 +5,7 @@ import 'package:van_core/src/model/task.dart';
 import 'package:van_core/src/model/work_session.dart';
 import 'package:van_core/src/result.dart';
 import 'package:van_core/src/scheduling/time_window.dart';
+import 'package:van_core/src/text/depth_reader.dart';
 
 /// The shape Van insists work should take.
 ///
@@ -21,6 +22,7 @@ class PlannerConstraints {
     this.finishBeforeDeadlineHours = 12,
     this.maxSessionsPerDay = 3,
     this.defaultEstimateMinutes = 60,
+    this.openingBlockMinutes = 25,
   }) : assert(
          minSessionMinutes <= maxSessionMinutes,
          'minSessionMinutes must not exceed maxSessionMinutes',
@@ -43,6 +45,15 @@ class PlannerConstraints {
 
   /// Assumed effort when the user never said how long it would take.
   final int defaultEstimateMinutes;
+
+  /// How long the first block of a deep task gets.
+  ///
+  /// Twenty-five minutes because the block has one job - find the first
+  /// step - and because that is short enough to begin without deciding to. A
+  /// deep task's real enemy is not the three hours, it is the first ten
+  /// minutes, and a plan that opens with ninety of them is the thing people
+  /// bounce off.
+  final int openingBlockMinutes;
 }
 
 /// Why a task could not be fully scheduled.
@@ -130,6 +141,19 @@ class SessionPlanner {
     final placed = <WorkSession>[];
     final perDay = <String, int>{};
 
+    // A deep task gets a short opening block, and only when it would
+    // otherwise be a slab.
+    //
+    // **Both halves of that are the behaviour, not the heuristic.** Deep work
+    // that already fits in one block is not the problem this solves - nobody
+    // bounces off a forty-minute block - and chopping it would just fragment
+    // a plan the user already agreed the length of. What people bounce off is
+    // opening a three-hour "write the dissertation" with ninety minutes of
+    // it, having never decided what the first sentence is.
+    var opening =
+        task.depth == TaskDepth.deep &&
+        remaining > constraints.maxSessionMinutes;
+
     for (final raw in slots) {
       if (remaining <= 0) break;
 
@@ -144,9 +168,10 @@ class SessionPlanner {
 
         final available = usable.end.difference(cursor).inMinutes;
         var take = remaining;
-        if (take > constraints.maxSessionMinutes) {
-          take = constraints.maxSessionMinutes;
-        }
+        final cap = opening
+            ? constraints.openingBlockMinutes
+            : constraints.maxSessionMinutes;
+        if (take > cap) take = cap;
         if (take > available) take = available;
 
         // A block below the minimum is only worth placing when it is the last
@@ -154,12 +179,20 @@ class SessionPlanner {
         if (take < constraints.minSessionMinutes && take < remaining) break;
         if (take <= 0) break;
 
+        // The opener is the block Van *placed* first, not whichever ends up
+        // earliest later. It is spent whether or not it came out at the full
+        // twenty-five minutes: a slot with only twenty left in it still holds
+        // the opening block, and the work after it is ordinary work.
+        final isOpener = opening;
+        opening = false;
+
         placed.add(
           WorkSession(
             id: ids.next(),
             taskId: task.id,
             plannedStart: cursor,
             plannedMinutes: take,
+            isOpener: isOpener,
           ),
         );
         remaining -= take;

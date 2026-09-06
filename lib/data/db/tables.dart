@@ -19,6 +19,15 @@ class Tasks extends Table {
   IntColumn get createdUtc => integer()();
   TextColumn get source => textEnum<TaskSource>()();
 
+  /// Whether starting this is itself the work. Added in v4.
+  ///
+  /// Defaulted rather than nullable so every row upgraded from v3 reads back
+  /// as `unknown`, which is exactly what is true of them: nothing read their
+  /// depth, and a null that the mapper had to guess at would be a second
+  /// place for that guess to be made.
+  TextColumn get depth =>
+      textEnum<TaskDepth>().withDefault(const Constant('unknown'))();
+
   @override
   Set<Column<Object>> get primaryKey => {id};
 }
@@ -40,6 +49,10 @@ class WorkSessions extends Table {
   TextColumn get status => textEnum<SessionStatus>()();
   IntColumn get rescheduleCount => integer().withDefault(const Constant(0))();
   TextColumn get parentSessionId => text().nullable()();
+
+  /// Whether this block is for finding the first step rather than doing the
+  /// work. Added in v4; false for everything that existed before it.
+  BoolColumn get isOpener => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column<Object>> get primaryKey => {id};

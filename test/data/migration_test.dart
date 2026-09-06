@@ -5,23 +5,63 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqlite3/sqlite3.dart';
 import 'package:van/data/db/database.dart';
 import 'package:van/data/repositories/event_repo.dart';
+import 'package:van/data/repositories/session_repo.dart';
+import 'package:van/data/repositories/task_repo.dart';
 import 'package:van_core/van_core.dart';
 
-/// Builds the events table exactly as schema v1 had it: no `session_id`.
+/// The events table exactly as schema v1 had it: no `session_id`.
+const _v1Events = '''
+  CREATE TABLE events (
+    id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    ts_utc INTEGER NOT NULL,
+    type TEXT NOT NULL,
+    payload_json TEXT NOT NULL DEFAULT '{}'
+  );
+''';
+
+/// The other two tables an upgrade now touches, as v1 had them: `tasks`
+/// without `depth`, `work_sessions` without `is_opener`.
+///
+/// **Added because the fixture was lying by omission.** It built the events
+/// table alone, which was enough while every migration only touched events -
+/// and the moment v4 added a column to `tasks`, seven passing tests started
+/// failing with "no such table". A phone at v1 has all six tables; a fixture
+/// that has one is not the shape sitting on the phone, which is the whole
+/// claim this file makes.
+const _v1Rest = '''
+  CREATE TABLE tasks (
+    id TEXT NOT NULL PRIMARY KEY,
+    title TEXT NOT NULL,
+    notes TEXT NULL,
+    deadline_utc INTEGER NULL,
+    estimated_minutes INTEGER NULL,
+    priority TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_utc INTEGER NOT NULL,
+    source TEXT NOT NULL
+  );
+  CREATE TABLE work_sessions (
+    id TEXT NOT NULL PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks (id),
+    planned_start_utc INTEGER NOT NULL,
+    planned_minutes INTEGER NOT NULL,
+    actual_start_utc INTEGER NULL,
+    actual_end_utc INTEGER NULL,
+    status TEXT NOT NULL,
+    reschedule_count INTEGER NOT NULL DEFAULT 0,
+    parent_session_id TEXT NULL
+  );
+''';
+
+/// Builds a database at schema v1.
 ///
 /// Written out by hand rather than generated, because the point of the test is
 /// to prove the upgrade works against the shape that is actually sitting on
 /// the phone.
 Database v1DatabaseWith(List<({EventType type, int ts, String payload})> rows) {
   final db = sqlite3.openInMemory()
-    ..execute('''
-      CREATE TABLE events (
-        id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-        ts_utc INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        payload_json TEXT NOT NULL DEFAULT '{}'
-      );
-    ''')
+    ..execute(_v1Events)
+    ..execute(_v1Rest)
     ..execute('CREATE INDEX idx_events_ts ON events (ts_utc);')
     ..execute('CREATE INDEX idx_events_type ON events (type);');
 
@@ -117,14 +157,8 @@ void main() {
       // json_extract on invalid JSON would throw and abort the whole
       // migration, taking the log with it, so this is worth knowing.
       final raw = sqlite3.openInMemory()
-        ..execute('''
-          CREATE TABLE events (
-            id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-            ts_utc INTEGER NOT NULL,
-            type TEXT NOT NULL,
-            payload_json TEXT NOT NULL DEFAULT '{}'
-          );
-        ''')
+        ..execute(_v1Events)
+        ..execute(_v1Rest)
         ..execute(
           'INSERT INTO events (ts_utc, type, payload_json) VALUES (?, ?, ?)',
           [1000, EventType.appOpened.name, 'not json at all'],
@@ -190,6 +224,98 @@ void main() {
       await events.append(EventType.sessionStarted, {'sessionId': 's1'});
 
       expect(await events.forSession('s1'), hasLength(2));
+    });
+  });
+
+  group('upgrading to v4', () {
+    /// A v3 database - the shape on the phone before tonight - carrying one
+    /// task and one block.
+    Database v3With() =>
+        v1DatabaseWith([
+            event(EventType.taskCreated, 1000, {'taskId': 't1'}),
+          ])
+          ..execute('ALTER TABLE events ADD COLUMN session_id TEXT NULL')
+          ..execute(
+            'CREATE INDEX idx_events_session ON events (session_id)',
+          )
+          ..execute(
+            'INSERT INTO tasks (id, title, priority, status, created_utc, '
+            'source, estimated_minutes) '
+            "VALUES ('t1', 'Write the dissertation', 'normal', 'active', "
+            '1000, '
+            "'quickAdd', 180)",
+          )
+          ..execute(
+            'INSERT INTO work_sessions (id, task_id, planned_start_utc, '
+            'planned_minutes, status) '
+            "VALUES ('s1', 't1', 2000, 90, 'planned')",
+          )
+          ..execute('PRAGMA user_version = 3');
+
+    test('a task that predates depth reads back as unknown', () async {
+      final raw = v3With();
+      final db = VanDatabase.on(NativeDatabase.opened(raw));
+      addTearDown(db.close);
+
+      final task = await TaskRepo(db).byId('t1');
+
+      // Nothing is backfilled and nothing should be. Re-reading old titles
+      // through today's verb list would invent a depth for work that was
+      // planned without one - and the plan it already has was made on the old
+      // rule, so a depth disagreeing with it would be worse than no depth.
+      expect(task?.depth, TaskDepth.unknown);
+      expect(task?.title, 'Write the dissertation');
+      expect(task?.estimatedMinutes, 180);
+    });
+
+    test('a block that predates the opener is not one', () async {
+      final raw = v3With();
+      final db = VanDatabase.on(NativeDatabase.opened(raw));
+      addTearDown(db.close);
+
+      final session = await SessionRepo(db).byId('s1');
+
+      expect(session?.isOpener, isFalse);
+      expect(session?.plannedMinutes, 90);
+    });
+
+    test('the columns are added, and only once', () async {
+      final raw = v3With();
+      final db = VanDatabase.on(NativeDatabase.opened(raw));
+      addTearDown(db.close);
+      await TaskRepo(db).byId('t1');
+
+      // addColumn on a NOT NULL column with no default fails outright against
+      // a table that already has rows, which is every database on the phone.
+      // Both columns carry defaults for exactly that reason.
+      final columns = raw
+          .select('PRAGMA table_info(tasks)')
+          .map((r) => r['name'] as String);
+      expect(columns, contains('depth'));
+      expect(columns.where((c) => c == 'depth'), hasLength(1));
+    });
+
+    test('writing after the upgrade round-trips both new fields', () async {
+      final raw = v3With();
+      final db = VanDatabase.on(NativeDatabase.opened(raw));
+      addTearDown(db.close);
+
+      final tasks = TaskRepo(db);
+      final sessions = SessionRepo(db);
+      final task = (await tasks.byId('t1'))!;
+      await tasks.save(task.copyWith(depth: TaskDepth.deep));
+      await sessions.save(
+        WorkSession(
+          id: 's2',
+          taskId: 't1',
+          plannedStart: DateTime.utc(2026, 9, 6, 9),
+          plannedMinutes: 25,
+          isOpener: true,
+        ),
+      );
+
+      expect((await tasks.byId('t1'))?.depth, TaskDepth.deep);
+      expect((await sessions.byId('s2'))?.isOpener, isTrue);
     });
   });
 

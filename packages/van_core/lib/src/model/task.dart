@@ -1,4 +1,5 @@
 import 'package:meta/meta.dart';
+import 'package:van_core/src/text/depth_reader.dart';
 
 /// Where a task is in its life.
 enum TaskStatus {
@@ -59,6 +60,7 @@ class Task {
     this.priority = Priority.normal,
     this.status = TaskStatus.inbox,
     this.source = TaskSource.quickAdd,
+    this.depth = TaskDepth.unknown,
   }) : assert(title.isNotEmpty, 'a task must have a title'),
        assert(
          estimatedMinutes == null || estimatedMinutes > 0,
@@ -94,6 +96,19 @@ class Task {
   /// How it was captured.
   final TaskSource source;
 
+  /// Whether starting is itself the work.
+  ///
+  /// Persisted rather than re-read at plan time, because a task is re-planned
+  /// long after the sentence that made it - by the sweep, by a reschedule, by
+  /// an answered question - and re-reading the title each time would let the
+  /// same task be deep on Monday and shallow on Tuesday because a verb list
+  /// changed underneath it.
+  ///
+  /// How sure Van was is deliberately *not* here: nothing reads it, and it is
+  /// recorded in the `taskCreated` event instead. See `DECISIONS_PENDING.md`
+  /// D73.
+  final TaskDepth depth;
+
   /// Whether a deadline exists and has passed as of [now].
   bool isOverdue(DateTime now) =>
       deadline != null && now.isAfter(deadline!) && status != TaskStatus.done;
@@ -114,6 +129,7 @@ class Task {
     Priority? priority,
     TaskStatus? status,
     TaskSource? source,
+    TaskDepth? depth,
   }) => Task(
     id: id,
     title: title ?? this.title,
@@ -124,6 +140,7 @@ class Task {
     priority: priority ?? this.priority,
     status: status ?? this.status,
     source: source ?? this.source,
+    depth: depth ?? this.depth,
   );
 
   /// Returns a copy with no deadline.
@@ -136,6 +153,7 @@ class Task {
     priority: priority,
     status: status,
     source: source,
+    depth: depth,
   );
 
   @override
@@ -150,7 +168,8 @@ class Task {
           priority == other.priority &&
           status == other.status &&
           createdAt == other.createdAt &&
-          source == other.source;
+          source == other.source &&
+          depth == other.depth;
 
   @override
   int get hashCode => Object.hash(
@@ -163,6 +182,7 @@ class Task {
     status,
     createdAt,
     source,
+    depth,
   );
 
   @override

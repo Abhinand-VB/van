@@ -25,6 +25,7 @@ Task taskFromRow(TaskRow row) => Task(
   priority: row.priority,
   status: row.status,
   source: row.source,
+  depth: row.depth,
 );
 
 /// Converts a domain task into a row for insert or replace.
@@ -38,6 +39,7 @@ TasksCompanion taskToRow(Task task) => TasksCompanion.insert(
   status: task.status,
   createdUtc: _millis(task.createdAt),
   source: task.source,
+  depth: Value(task.depth),
 );
 
 /// Converts a persisted session row into the domain model.
@@ -51,6 +53,7 @@ WorkSession sessionFromRow(WorkSessionRow row) => WorkSession(
   status: row.status,
   rescheduleCount: row.rescheduleCount,
   parentSessionId: row.parentSessionId,
+  isOpener: row.isOpener,
 );
 
 /// Converts a domain session into a row for insert or replace.
@@ -69,6 +72,7 @@ WorkSessionsCompanion sessionToRow(WorkSession session) =>
       status: session.status,
       rescheduleCount: Value(session.rescheduleCount),
       parentSessionId: Value(session.parentSessionId),
+      isOpener: Value(session.isOpener),
     );
 
 /// Converts a persisted nudge row into the domain model.

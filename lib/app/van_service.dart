@@ -518,6 +518,7 @@ class VanService {
       priority: draft.priority,
       status: TaskStatus.active,
       source: TaskSource.quickAdd,
+      depth: draft.depth.depth,
     );
     await _tasks.save(task);
     await _events.append(EventType.taskCreated, {
@@ -525,6 +526,13 @@ class VanService {
       'title': task.title,
       'deadline': task.deadline?.toIso8601String(),
       'estimatedMinutes': task.estimatedMinutes,
+      'depth': task.depth.name,
+      // How sure the reading was, recorded here rather than stored on the
+      // task. Nothing acts on it - the planner reads depth alone - and this
+      // is a fact about a moment's reading of a sentence, which is exactly
+      // what the log is for. It is also how anyone finds out later whether a
+      // verb list was worth trusting. See DECISIONS_PENDING D73.
+      'depthConfidence': draft.depth.confidence,
     });
 
     if (clarification != null) {

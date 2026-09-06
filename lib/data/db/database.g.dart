@@ -96,6 +96,16 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
         requiredDuringInsert: true,
       ).withConverter<TaskSource>($TasksTable.$convertersource);
   @override
+  late final GeneratedColumnWithTypeConverter<TaskDepth, String> depth =
+      GeneratedColumn<String>(
+        'depth',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('unknown'),
+      ).withConverter<TaskDepth>($TasksTable.$converterdepth);
+  @override
   List<GeneratedColumn> get $columns => [
     id,
     title,
@@ -106,6 +116,7 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
     status,
     createdUtc,
     source,
+    depth,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -215,6 +226,12 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
           data['${effectivePrefix}source'],
         )!,
       ),
+      depth: $TasksTable.$converterdepth.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}depth'],
+        )!,
+      ),
     );
   }
 
@@ -229,6 +246,8 @@ class $TasksTable extends Tasks with TableInfo<$TasksTable, TaskRow> {
       const EnumNameConverter<TaskStatus>(TaskStatus.values);
   static JsonTypeConverter2<TaskSource, String, String> $convertersource =
       const EnumNameConverter<TaskSource>(TaskSource.values);
+  static JsonTypeConverter2<TaskDepth, String, String> $converterdepth =
+      const EnumNameConverter<TaskDepth>(TaskDepth.values);
 }
 
 class TaskRow extends DataClass implements Insertable<TaskRow> {
@@ -241,6 +260,14 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
   final TaskStatus status;
   final int createdUtc;
   final TaskSource source;
+
+  /// Whether starting this is itself the work. Added in v4.
+  ///
+  /// Defaulted rather than nullable so every row upgraded from v3 reads back
+  /// as `unknown`, which is exactly what is true of them: nothing read their
+  /// depth, and a null that the mapper had to guess at would be a second
+  /// place for that guess to be made.
+  final TaskDepth depth;
   const TaskRow({
     required this.id,
     required this.title,
@@ -251,6 +278,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     required this.status,
     required this.createdUtc,
     required this.source,
+    required this.depth,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -282,6 +310,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
         $TasksTable.$convertersource.toSql(source),
       );
     }
+    {
+      map['depth'] = Variable<String>($TasksTable.$converterdepth.toSql(depth));
+    }
     return map;
   }
 
@@ -302,6 +333,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       status: Value(status),
       createdUtc: Value(createdUtc),
       source: Value(source),
+      depth: Value(depth),
     );
   }
 
@@ -326,6 +358,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       source: $TasksTable.$convertersource.fromJson(
         serializer.fromJson<String>(json['source']),
       ),
+      depth: $TasksTable.$converterdepth.fromJson(
+        serializer.fromJson<String>(json['depth']),
+      ),
     );
   }
   @override
@@ -347,6 +382,9 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
       'source': serializer.toJson<String>(
         $TasksTable.$convertersource.toJson(source),
       ),
+      'depth': serializer.toJson<String>(
+        $TasksTable.$converterdepth.toJson(depth),
+      ),
     };
   }
 
@@ -360,6 +398,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     TaskStatus? status,
     int? createdUtc,
     TaskSource? source,
+    TaskDepth? depth,
   }) => TaskRow(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -372,6 +411,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     status: status ?? this.status,
     createdUtc: createdUtc ?? this.createdUtc,
     source: source ?? this.source,
+    depth: depth ?? this.depth,
   );
   TaskRow copyWithCompanion(TasksCompanion data) {
     return TaskRow(
@@ -390,6 +430,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ? data.createdUtc.value
           : this.createdUtc,
       source: data.source.present ? data.source.value : this.source,
+      depth: data.depth.present ? data.depth.value : this.depth,
     );
   }
 
@@ -404,7 +445,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           ..write('priority: $priority, ')
           ..write('status: $status, ')
           ..write('createdUtc: $createdUtc, ')
-          ..write('source: $source')
+          ..write('source: $source, ')
+          ..write('depth: $depth')
           ..write(')'))
         .toString();
   }
@@ -420,6 +462,7 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
     status,
     createdUtc,
     source,
+    depth,
   );
   @override
   bool operator ==(Object other) =>
@@ -433,7 +476,8 @@ class TaskRow extends DataClass implements Insertable<TaskRow> {
           other.priority == this.priority &&
           other.status == this.status &&
           other.createdUtc == this.createdUtc &&
-          other.source == this.source);
+          other.source == this.source &&
+          other.depth == this.depth);
 }
 
 class TasksCompanion extends UpdateCompanion<TaskRow> {
@@ -446,6 +490,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
   final Value<TaskStatus> status;
   final Value<int> createdUtc;
   final Value<TaskSource> source;
+  final Value<TaskDepth> depth;
   final Value<int> rowid;
   const TasksCompanion({
     this.id = const Value.absent(),
@@ -457,6 +502,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     this.status = const Value.absent(),
     this.createdUtc = const Value.absent(),
     this.source = const Value.absent(),
+    this.depth = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   TasksCompanion.insert({
@@ -469,6 +515,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     required TaskStatus status,
     required int createdUtc,
     required TaskSource source,
+    this.depth = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -486,6 +533,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Expression<String>? status,
     Expression<int>? createdUtc,
     Expression<String>? source,
+    Expression<String>? depth,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -498,6 +546,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       if (status != null) 'status': status,
       if (createdUtc != null) 'created_utc': createdUtc,
       if (source != null) 'source': source,
+      if (depth != null) 'depth': depth,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -512,6 +561,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
     Value<TaskStatus>? status,
     Value<int>? createdUtc,
     Value<TaskSource>? source,
+    Value<TaskDepth>? depth,
     Value<int>? rowid,
   }) {
     return TasksCompanion(
@@ -524,6 +574,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
       status: status ?? this.status,
       createdUtc: createdUtc ?? this.createdUtc,
       source: source ?? this.source,
+      depth: depth ?? this.depth,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -564,6 +615,11 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
         $TasksTable.$convertersource.toSql(source.value),
       );
     }
+    if (depth.present) {
+      map['depth'] = Variable<String>(
+        $TasksTable.$converterdepth.toSql(depth.value),
+      );
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -582,6 +638,7 @@ class TasksCompanion extends UpdateCompanion<TaskRow> {
           ..write('status: $status, ')
           ..write('createdUtc: $createdUtc, ')
           ..write('source: $source, ')
+          ..write('depth: $depth, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -691,6 +748,21 @@ class $WorkSessionsTable extends WorkSessions
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _isOpenerMeta = const VerificationMeta(
+    'isOpener',
+  );
+  @override
+  late final GeneratedColumn<bool> isOpener = GeneratedColumn<bool>(
+    'is_opener',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_opener" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -702,6 +774,7 @@ class $WorkSessionsTable extends WorkSessions
     status,
     rescheduleCount,
     parentSessionId,
+    isOpener,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -786,6 +859,12 @@ class $WorkSessionsTable extends WorkSessions
         ),
       );
     }
+    if (data.containsKey('is_opener')) {
+      context.handle(
+        _isOpenerMeta,
+        isOpener.isAcceptableOrUnknown(data['is_opener']!, _isOpenerMeta),
+      );
+    }
     return context;
   }
 
@@ -833,6 +912,10 @@ class $WorkSessionsTable extends WorkSessions
         DriftSqlType.string,
         data['${effectivePrefix}parent_session_id'],
       ),
+      isOpener: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_opener'],
+      )!,
     );
   }
 
@@ -855,6 +938,10 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
   final SessionStatus status;
   final int rescheduleCount;
   final String? parentSessionId;
+
+  /// Whether this block is for finding the first step rather than doing the
+  /// work. Added in v4; false for everything that existed before it.
+  final bool isOpener;
   const WorkSessionRow({
     required this.id,
     required this.taskId,
@@ -865,6 +952,7 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
     required this.status,
     required this.rescheduleCount,
     this.parentSessionId,
+    required this.isOpener,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -888,6 +976,7 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
     if (!nullToAbsent || parentSessionId != null) {
       map['parent_session_id'] = Variable<String>(parentSessionId);
     }
+    map['is_opener'] = Variable<bool>(isOpener);
     return map;
   }
 
@@ -908,6 +997,7 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
       parentSessionId: parentSessionId == null && nullToAbsent
           ? const Value.absent()
           : Value(parentSessionId),
+      isOpener: Value(isOpener),
     );
   }
 
@@ -928,6 +1018,7 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
       ),
       rescheduleCount: serializer.fromJson<int>(json['rescheduleCount']),
       parentSessionId: serializer.fromJson<String?>(json['parentSessionId']),
+      isOpener: serializer.fromJson<bool>(json['isOpener']),
     );
   }
   @override
@@ -945,6 +1036,7 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
       ),
       'rescheduleCount': serializer.toJson<int>(rescheduleCount),
       'parentSessionId': serializer.toJson<String?>(parentSessionId),
+      'isOpener': serializer.toJson<bool>(isOpener),
     };
   }
 
@@ -958,6 +1050,7 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
     SessionStatus? status,
     int? rescheduleCount,
     Value<String?> parentSessionId = const Value.absent(),
+    bool? isOpener,
   }) => WorkSessionRow(
     id: id ?? this.id,
     taskId: taskId ?? this.taskId,
@@ -972,6 +1065,7 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
     parentSessionId: parentSessionId.present
         ? parentSessionId.value
         : this.parentSessionId,
+    isOpener: isOpener ?? this.isOpener,
   );
   WorkSessionRow copyWithCompanion(WorkSessionsCompanion data) {
     return WorkSessionRow(
@@ -996,6 +1090,7 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
       parentSessionId: data.parentSessionId.present
           ? data.parentSessionId.value
           : this.parentSessionId,
+      isOpener: data.isOpener.present ? data.isOpener.value : this.isOpener,
     );
   }
 
@@ -1010,7 +1105,8 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
           ..write('actualEndUtc: $actualEndUtc, ')
           ..write('status: $status, ')
           ..write('rescheduleCount: $rescheduleCount, ')
-          ..write('parentSessionId: $parentSessionId')
+          ..write('parentSessionId: $parentSessionId, ')
+          ..write('isOpener: $isOpener')
           ..write(')'))
         .toString();
   }
@@ -1026,6 +1122,7 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
     status,
     rescheduleCount,
     parentSessionId,
+    isOpener,
   );
   @override
   bool operator ==(Object other) =>
@@ -1039,7 +1136,8 @@ class WorkSessionRow extends DataClass implements Insertable<WorkSessionRow> {
           other.actualEndUtc == this.actualEndUtc &&
           other.status == this.status &&
           other.rescheduleCount == this.rescheduleCount &&
-          other.parentSessionId == this.parentSessionId);
+          other.parentSessionId == this.parentSessionId &&
+          other.isOpener == this.isOpener);
 }
 
 class WorkSessionsCompanion extends UpdateCompanion<WorkSessionRow> {
@@ -1052,6 +1150,7 @@ class WorkSessionsCompanion extends UpdateCompanion<WorkSessionRow> {
   final Value<SessionStatus> status;
   final Value<int> rescheduleCount;
   final Value<String?> parentSessionId;
+  final Value<bool> isOpener;
   final Value<int> rowid;
   const WorkSessionsCompanion({
     this.id = const Value.absent(),
@@ -1063,6 +1162,7 @@ class WorkSessionsCompanion extends UpdateCompanion<WorkSessionRow> {
     this.status = const Value.absent(),
     this.rescheduleCount = const Value.absent(),
     this.parentSessionId = const Value.absent(),
+    this.isOpener = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   WorkSessionsCompanion.insert({
@@ -1075,6 +1175,7 @@ class WorkSessionsCompanion extends UpdateCompanion<WorkSessionRow> {
     required SessionStatus status,
     this.rescheduleCount = const Value.absent(),
     this.parentSessionId = const Value.absent(),
+    this.isOpener = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        taskId = Value(taskId),
@@ -1091,6 +1192,7 @@ class WorkSessionsCompanion extends UpdateCompanion<WorkSessionRow> {
     Expression<String>? status,
     Expression<int>? rescheduleCount,
     Expression<String>? parentSessionId,
+    Expression<bool>? isOpener,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1103,6 +1205,7 @@ class WorkSessionsCompanion extends UpdateCompanion<WorkSessionRow> {
       if (status != null) 'status': status,
       if (rescheduleCount != null) 'reschedule_count': rescheduleCount,
       if (parentSessionId != null) 'parent_session_id': parentSessionId,
+      if (isOpener != null) 'is_opener': isOpener,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1117,6 +1220,7 @@ class WorkSessionsCompanion extends UpdateCompanion<WorkSessionRow> {
     Value<SessionStatus>? status,
     Value<int>? rescheduleCount,
     Value<String?>? parentSessionId,
+    Value<bool>? isOpener,
     Value<int>? rowid,
   }) {
     return WorkSessionsCompanion(
@@ -1129,6 +1233,7 @@ class WorkSessionsCompanion extends UpdateCompanion<WorkSessionRow> {
       status: status ?? this.status,
       rescheduleCount: rescheduleCount ?? this.rescheduleCount,
       parentSessionId: parentSessionId ?? this.parentSessionId,
+      isOpener: isOpener ?? this.isOpener,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1165,6 +1270,9 @@ class WorkSessionsCompanion extends UpdateCompanion<WorkSessionRow> {
     if (parentSessionId.present) {
       map['parent_session_id'] = Variable<String>(parentSessionId.value);
     }
+    if (isOpener.present) {
+      map['is_opener'] = Variable<bool>(isOpener.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1183,6 +1291,7 @@ class WorkSessionsCompanion extends UpdateCompanion<WorkSessionRow> {
           ..write('status: $status, ')
           ..write('rescheduleCount: $rescheduleCount, ')
           ..write('parentSessionId: $parentSessionId, ')
+          ..write('isOpener: $isOpener, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -3021,6 +3130,7 @@ typedef $$TasksTableCreateCompanionBuilder =
       required TaskStatus status,
       required int createdUtc,
       required TaskSource source,
+      Value<TaskDepth> depth,
       Value<int> rowid,
     });
 typedef $$TasksTableUpdateCompanionBuilder =
@@ -3034,6 +3144,7 @@ typedef $$TasksTableUpdateCompanionBuilder =
       Value<TaskStatus> status,
       Value<int> createdUtc,
       Value<TaskSource> source,
+      Value<TaskDepth> depth,
       Value<int> rowid,
     });
 
@@ -3116,6 +3227,12 @@ class $$TasksTableFilterComposer extends Composer<_$VanDatabase, $TasksTable> {
         builder: (column) => ColumnWithTypeConverterFilters(column),
       );
 
+  ColumnWithTypeConverterFilters<TaskDepth, TaskDepth, String> get depth =>
+      $composableBuilder(
+        column: $table.depth,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
   Expression<bool> workSessionsRefs(
     Expression<bool> Function($$WorkSessionsTableFilterComposer f) f,
   ) {
@@ -3195,6 +3312,11 @@ class $$TasksTableOrderingComposer
     column: $table.source,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get depth => $composableBuilder(
+    column: $table.depth,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$TasksTableAnnotationComposer
@@ -3238,6 +3360,9 @@ class $$TasksTableAnnotationComposer
 
   GeneratedColumnWithTypeConverter<TaskSource, String> get source =>
       $composableBuilder(column: $table.source, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<TaskDepth, String> get depth =>
+      $composableBuilder(column: $table.depth, builder: (column) => column);
 
   Expression<T> workSessionsRefs<T extends Object>(
     Expression<T> Function($$WorkSessionsTableAnnotationComposer a) f,
@@ -3302,6 +3427,7 @@ class $$TasksTableTableManager
                 Value<TaskStatus> status = const Value.absent(),
                 Value<int> createdUtc = const Value.absent(),
                 Value<TaskSource> source = const Value.absent(),
+                Value<TaskDepth> depth = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TasksCompanion(
                 id: id,
@@ -3313,6 +3439,7 @@ class $$TasksTableTableManager
                 status: status,
                 createdUtc: createdUtc,
                 source: source,
+                depth: depth,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3326,6 +3453,7 @@ class $$TasksTableTableManager
                 required TaskStatus status,
                 required int createdUtc,
                 required TaskSource source,
+                Value<TaskDepth> depth = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => TasksCompanion.insert(
                 id: id,
@@ -3337,6 +3465,7 @@ class $$TasksTableTableManager
                 status: status,
                 createdUtc: createdUtc,
                 source: source,
+                depth: depth,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0
@@ -3403,6 +3532,7 @@ typedef $$WorkSessionsTableCreateCompanionBuilder =
       required SessionStatus status,
       Value<int> rescheduleCount,
       Value<String?> parentSessionId,
+      Value<bool> isOpener,
       Value<int> rowid,
     });
 typedef $$WorkSessionsTableUpdateCompanionBuilder =
@@ -3416,6 +3546,7 @@ typedef $$WorkSessionsTableUpdateCompanionBuilder =
       Value<SessionStatus> status,
       Value<int> rescheduleCount,
       Value<String?> parentSessionId,
+      Value<bool> isOpener,
       Value<int> rowid,
     });
 
@@ -3488,6 +3619,11 @@ class $$WorkSessionsTableFilterComposer
 
   ColumnFilters<String> get parentSessionId => $composableBuilder(
     column: $table.parentSessionId,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isOpener => $composableBuilder(
+    column: $table.isOpener,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -3564,6 +3700,11 @@ class $$WorkSessionsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<bool> get isOpener => $composableBuilder(
+    column: $table.isOpener,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   $$TasksTableOrderingComposer get taskId {
     final $$TasksTableOrderingComposer composer = $composerBuilder(
       composer: this,
@@ -3633,6 +3774,9 @@ class $$WorkSessionsTableAnnotationComposer
     builder: (column) => column,
   );
 
+  GeneratedColumn<bool> get isOpener =>
+      $composableBuilder(column: $table.isOpener, builder: (column) => column);
+
   $$TasksTableAnnotationComposer get taskId {
     final $$TasksTableAnnotationComposer composer = $composerBuilder(
       composer: this,
@@ -3694,6 +3838,7 @@ class $$WorkSessionsTableTableManager
                 Value<SessionStatus> status = const Value.absent(),
                 Value<int> rescheduleCount = const Value.absent(),
                 Value<String?> parentSessionId = const Value.absent(),
+                Value<bool> isOpener = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WorkSessionsCompanion(
                 id: id,
@@ -3705,6 +3850,7 @@ class $$WorkSessionsTableTableManager
                 status: status,
                 rescheduleCount: rescheduleCount,
                 parentSessionId: parentSessionId,
+                isOpener: isOpener,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -3718,6 +3864,7 @@ class $$WorkSessionsTableTableManager
                 required SessionStatus status,
                 Value<int> rescheduleCount = const Value.absent(),
                 Value<String?> parentSessionId = const Value.absent(),
+                Value<bool> isOpener = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => WorkSessionsCompanion.insert(
                 id: id,
@@ -3729,6 +3876,7 @@ class $$WorkSessionsTableTableManager
                 status: status,
                 rescheduleCount: rescheduleCount,
                 parentSessionId: parentSessionId,
+                isOpener: isOpener,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

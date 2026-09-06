@@ -78,6 +78,33 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  group('a deep task on the Now card', () {
+    testWidgets('opens with a short block, named for what it is for', (
+      tester,
+    ) async {
+      await service.capture('write the dissertation, 4 hours');
+
+      await show(tester);
+
+      // The whole point of reading depth. Not "Van thinks this is deep" -
+      // there is nowhere in the product that says that, and there should not
+      // be - but a first block a person can actually begin.
+      expect(find.text('Write the dissertation'), findsWidgets);
+      expect(find.text('Work out where to start'), findsOneWidget);
+      expect(find.textContaining('25 minutes'), findsOneWidget);
+    });
+
+    testWidgets('an errand is not given one, however long it is', (
+      tester,
+    ) async {
+      await service.capture('email the whole list, 4 hours');
+
+      await show(tester);
+
+      expect(find.text('Work out where to start'), findsNothing);
+    });
+  });
+
   group('Van asking how long', () {
     testWidgets('capturing without a duration asks, and still captures', (
       tester,

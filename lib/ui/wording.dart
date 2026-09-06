@@ -1,3 +1,11 @@
+/// The words Van uses about a plan it made, in one place.
+///
+/// Here rather than in `van_core` because that package holds no English the
+/// user reads, and here rather than inline in each screen because the Now
+/// card, the focus timer and the calendar all name the same block and must
+/// not name it three different things.
+library;
+
 import 'package:flutter/material.dart';
 import 'package:van_core/van_core.dart';
 
@@ -18,6 +26,15 @@ String questionFor(Clarification clarification) =>
       TaskField.duration => 'Roughly how long? e.g. 45 minutes, or 2 hours',
       TaskField.deadline => 'When does this need to be done by?',
     };
+
+/// What an opening block is for, in the words shown on it.
+///
+/// A block named "Write the dissertation" and lasting twenty-five minutes
+/// reads as Van having got the estimate wrong. Naming it for its actual job
+/// is the difference between a strange short block and an obviously sensible
+/// one, and it is most of why depth is worth reading at all: the point was
+/// never to classify the task, it was to make the first block startable.
+const openerLabel = 'Work out where to start';
 
 /// What Van says it assumed, so a guess never passes for a statement.
 String assumptionOf(int minutes) => minutes % 60 == 0

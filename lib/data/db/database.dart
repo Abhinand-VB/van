@@ -32,7 +32,7 @@ class VanDatabase extends _$VanDatabase {
   VanDatabase.on(super.e);
 
   @override
-  int get schemaVersion => 3;
+  int get schemaVersion => 4;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -76,6 +76,23 @@ class VanDatabase extends _$VanDatabase {
           'CREATE INDEX IF NOT EXISTS idx_events_session '
           'ON events (session_id)',
         );
+      }
+
+      // v4 carries task depth and the opening block that depends on it.
+      //
+      // Both columns are declared with defaults, which is what makes this a
+      // two-line upgrade: `addColumn` on a NOT NULL column with no default
+      // fails on a table that already has rows, and this database is on a
+      // phone with months of them. Nothing is backfilled and nothing should
+      // be - re-reading old titles through today's verb list would invent a
+      // depth for tasks that were planned without one, and the plans they
+      // already have were made on the old rule.
+      //
+      // No index on either. Depth is read alongside a task that is being
+      // loaded anyway, and there is no query that selects *by* it.
+      if (from < 4) {
+        await m.addColumn(tasks, tasks.depth);
+        await m.addColumn(workSessions, workSessions.isOpener);
       }
     },
     beforeOpen: (details) async {

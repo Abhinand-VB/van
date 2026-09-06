@@ -1,6 +1,7 @@
 import 'package:meta/meta.dart';
 import 'package:van_core/src/model/task.dart';
 import 'package:van_core/src/text/clarification.dart';
+import 'package:van_core/src/text/depth_reader.dart';
 
 /// A task pulled out of a sentence, before anything has been persisted.
 ///
@@ -15,6 +16,7 @@ class TaskDraft {
     this.estimatedMinutes,
     this.priority = Priority.normal,
     this.clarification,
+    this.depth = const DepthReading(TaskDepth.unknown, 0),
   });
 
   /// What to call it, with any date or duration phrasing removed.
@@ -37,6 +39,12 @@ class TaskDraft {
   /// from the fields being empty.
   final Clarification? clarification;
 
+  /// Whether starting this is itself the work, and how sure that reading is.
+  ///
+  /// Defaults to "unknown, not at all sure", which is the honest state for a
+  /// draft nobody has read for depth.
+  final DepthReading depth;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -45,11 +53,18 @@ class TaskDraft {
           deadline == other.deadline &&
           estimatedMinutes == other.estimatedMinutes &&
           priority == other.priority &&
-          clarification == other.clarification;
+          clarification == other.clarification &&
+          depth == other.depth;
 
   @override
-  int get hashCode =>
-      Object.hash(title, deadline, estimatedMinutes, priority, clarification);
+  int get hashCode => Object.hash(
+    title,
+    deadline,
+    estimatedMinutes,
+    priority,
+    clarification,
+    depth,
+  );
 
   @override
   String toString() =>
@@ -106,11 +121,16 @@ class TemporalParser {
     final priority = _parsePriority(lower, consumed);
     final deadline = _parseDeadline(lower, now, consumed);
 
+    final title = _titleFrom(text, consumed);
     return TaskDraft(
-      title: _titleFrom(text, consumed),
+      title: title,
       deadline: deadline,
       estimatedMinutes: minutes,
       priority: priority,
+      // Read from the title with the date and duration phrasing already
+      // stripped out. "by friday" is not a verb, and leaving it in would give
+      // the word list two more chances to be wrong.
+      depth: const DepthReader().read(title, statedMinutes: minutes),
     );
   }
 

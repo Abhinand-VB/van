@@ -40,6 +40,7 @@ class WorkSession {
     this.status = SessionStatus.planned,
     this.rescheduleCount = 0,
     this.parentSessionId,
+    this.isOpener = false,
   }) : assert(plannedMinutes > 0, 'plannedMinutes must be positive'),
        assert(plannedStart.isUtc, 'plannedStart must be UTC'),
        assert(rescheduleCount >= 0, 'rescheduleCount must not be negative');
@@ -70,6 +71,15 @@ class WorkSession {
 
   /// The session this one replaced, if it came from a reschedule.
   final String? parentSessionId;
+
+  /// Whether this block exists to find the first step rather than to do the
+  /// work.
+  ///
+  /// Carried on the session rather than derived from "is it the earliest one
+  /// of a deep task", because blocks move. The moment the sweep reschedules
+  /// something, earliest is no longer a fact about the plan Van made, and a
+  /// screen that recomputed it would rename a block by moving it.
+  final bool isOpener;
 
   /// When the block was due to finish.
   DateTime get plannedEnd =>

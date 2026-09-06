@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/ui/background.dart';
+import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
 
 /// The screen you are on while actually working.
@@ -138,6 +139,19 @@ class _FocusScreenState extends State<FocusScreen> {
                 textAlign: TextAlign.center,
                 style: theme.textTheme.titleLarge,
               ),
+              // The one screen where saying what the block is for matters
+              // most: this is the twenty-five minutes, running, and "work out
+              // where to start" is the whole instruction.
+              if (widget.session.isOpener) ...[
+                const SizedBox(height: 6),
+                Text(
+                  openerLabel,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.titleSmall?.copyWith(
+                    color: theme.colorScheme.primary,
+                  ),
+                ),
+              ],
               const SizedBox(height: 24),
               Text(
                 '$minutes:$seconds',

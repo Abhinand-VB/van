@@ -6,9 +6,9 @@ import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/platform/calendars.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/ui/background.dart';
-import 'package:van/ui/clarify.dart';
 import 'package:van/ui/focus_screen.dart';
 import 'package:van/ui/settings_screen.dart';
+import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
 
 /// The home screen, and deliberately the only thing on it.
@@ -419,6 +419,15 @@ class _NextCard extends StatelessWidget {
         Text('NEXT', style: theme.textTheme.labelSmall),
         const SizedBox(height: 8),
         Text(task.title, style: theme.textTheme.headlineSmall),
+        if (session.isOpener) ...[
+          const SizedBox(height: 4),
+          Text(
+            openerLabel,
+            style: theme.textTheme.titleSmall?.copyWith(
+              color: theme.colorScheme.primary,
+            ),
+          ),
+        ],
         const SizedBox(height: 6),
         Text(
           running

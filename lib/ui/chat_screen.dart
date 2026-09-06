@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/ui/background.dart';
-import 'package:van/ui/clarify.dart';
+import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
 
 /// One line in the conversation.

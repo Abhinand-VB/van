@@ -976,6 +976,10 @@ class _ItemCard extends StatelessWidget {
   }
 
   static String _suffix(_Item item) => switch (item.session?.status) {
+    // An opening block says what it is for before it says what happened to
+    // it, because "25m" against a four-hour task otherwise reads as Van
+    // having mis-estimated.
+    SessionStatus.planned when item.session!.isOpener => '  ·  first step',
     SessionStatus.started => '  ·  in progress',
     SessionStatus.completed => '  ·  done',
     SessionStatus.partial => '  ·  part done',
