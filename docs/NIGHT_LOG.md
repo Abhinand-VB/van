@@ -1788,3 +1788,42 @@ valuable thing in the run: tasks could not be moved to done, because the only
 route was an undiscoverable swipe and the circles that looked like checkboxes
 were `Icon` widgets. The app had been showing a picture of a control it did
 not have, on the screen people actually use, since August.
+
+## 13c, and the acceptance criterion that was already true
+
+The work package's own criterion for this one was "a block that has moved four
+times without ever starting is not proposed for a fifth move by the
+deterministic path". It was already true when I started, and not for a good
+reason: the deterministic fallback proposes hold, shrink or release, and has
+never in its life proposed a defer. So the criterion could be met by changing
+nothing at all.
+
+That is worth noticing rather than quietly banking. The criterion was written
+about the *shape* of the decision, and the shape it was written about is the
+one a model will produce - a model can propose a defer, and until now nothing
+in the domain would have stopped it doing so for the fourth time on work that
+had never once begun. So the real deliverable was never a change to the
+fallback; it was a gate that will still hold when something else is answering.
+
+Which turned the whole item into a question about where evidence is allowed to
+act. The answer that made it easy: **evidence tightens and never loosens.**
+`allowedAt(level)` remains the ceiling and reads no evidence at all; the log
+can take an option off the table underneath it and can never add one. That
+keeps the ladder the only thing that decides how hard Van pushes, which is the
+property that made routing this to a model defensible in the first place - and
+it means a wrong reading of the log costs a worse proposal, never a bolder
+one.
+
+The rest was gathering. Three bounded queries rather than a scan, and one
+definition worth arguing about: "ever started" follows the chain of
+reschedules rather than the task, because starting the first hour of a
+three-hour task does not vouch for the third. Task-wide would have made the
+flag true for nearly everything and the rule would never have fired.
+
+**The best evidence of the morning arrived without me.** Pulling the database
+at 12:19 to check the migration, the log carried a `clarificationAsked` and a
+`clarificationAnswered`, two completions with `source: task_list_tick`, and one
+`source: undo`. The owner had used the question, the new tick and the undo, on
+real tasks, without being asked to. Three features confirmed on hardware by
+ordinary use - which is worth more than any amount of `adb shell input tap`,
+and is the thing section 3 of OVERNIGHT has been asking for since August.

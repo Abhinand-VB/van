@@ -380,6 +380,43 @@ interrupting a person, and it should be taken separately.
 
 ---
 
+### D76 — Reschedule evidence: one rule with teeth, and three numbers without
+
+**Only one piece of evidence refuses anything.** A defer is blocked when the
+work has moved three times and was never once started. The start rate at this
+hour and the calendar density are gathered, put in the prompt and written to
+the log, and they refuse nothing at all. That is deliberate: a rule that fires
+on "you rarely start at 9am" would be Van arguing with you about your own
+mornings on four weeks of thin data, and I would rather it earned that right by
+being visibly right in the log first. **Both numbers are one `if` away from
+having teeth if you want them to.**
+
+**Three is the threshold and it is borrowed, not chosen.** It is bound by a
+test to `InterventionPolicy.renegotiateAfterMoves`, so it cannot drift. If
+three feels early, moving that one constant moves both behaviours together —
+which is the point of tying them.
+
+**The four-hour calendar window is a guess.** Two hours either side of the
+block, on the reasoning that this is the stretch a "move it later today" would
+land in. Nothing tuned it. If the density number turns out to read as noise,
+this is the first dial.
+
+**"Ever started" follows the chain of reschedules, not the task.** Starting the
+first hour of a three-hour task does not vouch for the third. The alternative -
+task-wide - would make the flag true for almost everything and the rule would
+never fire. Recorded because it is the kind of definition that looks arbitrary
+later and is not.
+
+**Nothing was done about the sweep**, which is the other place "move it again"
+happens automatically: `StaleSessionSweep` reschedules abandoned work up to
+`maxMoves = 5` without asking whether any of it was ever started. That is
+arguably the same defect wearing a different hat. I left it alone because
+`maxMoves` is a tuned number STATUS calls deliberate, and retuning the sweep is
+a bigger change than the work package asked for. **Worth a look when you next
+read the week report.**
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner

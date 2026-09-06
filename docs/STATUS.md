@@ -1,19 +1,25 @@
 # Van — Project Status
 
-**Last updated:** 6 September 2026, 11:50 PDT, during an unattended run that
+**Last updated:** 6 September 2026, 12:25 PDT, during an unattended run that
 started at 02:00 and has outlasted the night. This file is the handover
 between sessions and between agents; it says what is true now. The narrative
 of how it got that way is in `docs/NIGHT_LOG.md`.
 
-**This run has done the first four items of the `OVERNIGHT.md` 3c queue** —
+**This run has done the first five items of the `OVERNIGHT.md` 3c queue** —
 month cells that name what is on them, `WP_JUDGEMENT` 13a (Van asks how long),
-13b (depth, and the short opening block), and `WP_VOICE.md` in full. All are
-installed. Sections 3w, 3x and 3y have them; 3v is the previous session's
-calendar work.
+13b (depth, and the short opening block), `WP_VOICE.md` in full, and 13c
+(reschedule judgement on evidence). All are installed. Sections 3w to 3z have
+them; 3v is the previous session's calendar work.
 
-**Two items left in the queue**: 13c (reschedule judgement on evidence) and
-13d (the on-device engine, which is licence-blocked and has standing
-instructions in `OVERNIGHT.md`).
+**One item left in the queue**: 13d, the on-device engine, which is
+licence-blocked and has standing instructions in `OVERNIGHT.md`.
+
+**And the phone's own log now says three of them work**, which is better
+evidence than an agent driving the UI: it carries a `clarificationAsked` and a
+`clarificationAnswered` row (13a asked how long and got an answer), two
+`taskUpdated` rows with `source: task_list_tick` (the new tick finished
+something), and one with `source: undo` (the undo put it back). Nobody drove
+those. You did.
 
 **Then you said two things and they were both right**: tasks could not be
 moved to done, and the card should carry an editable time with a default.
@@ -35,16 +41,17 @@ own database with every row intact.
 
 | | |
 |---|---|
-| **Commit the phone is running** | `c54adeb` — "Answer a nudge by saying the answer". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
-| **APK installed at** | **6 Sep 2026, 11:48** (device local, PDT), debug build, phone `<device-serial>` |
-| **Last launched** | **6 Sep 2026, 11:48** — `am start` delivered, process alive (pid 14222). |
+| **Commit the phone is running** | `449c611` — "Let the log overrule move it again". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
+| **APK installed at** | **6 Sep 2026, 12:19** (device local, PDT), debug build, phone `<device-serial>` |
+| **Last launched** | **6 Sep 2026, 12:19** — `am start` delivered, process alive (pid 26810). |
 | **Last seen rendering** | **6 Sep 2026, 11:49, this build.** The microphone button on the Now capture field and on the Chat composer, next to a live stall prompt. At 11:43 the Now card showing `1h (assumed)` against a task you captured without a duration — which is WP-13a's assumption surfacing on real data rather than on a fixture. At 11:29 the estimate sheet open over a raised keyboard with every preset reachable. At 02:18 the month grid drawing real calendar names and colours. |
 | **Last driven by hand** | **6 Sep 2026, 11:49** — opened the Chat tab and read the composer. |
-| **Still not driven by hand** | **13a's question, 13b's opening block, and the microphone itself.** The first two need a capture on your phone; the third needs the microphone permission, which is yours to grant — see the row below. All three are covered by tests that drive the real screens. Section 0 items 6 to 8. |
+| **Proved by your own use, 12:19** | Pulled the database read-only. It holds **`clarificationAsked` and `clarificationAnswered`** — 13a asked how long about something you captured without a duration, and you answered it — plus two **`taskUpdated` rows with `source: task_list_tick`** and one with **`source: undo`**. So the question, the new tick and the undo are all confirmed working on hardware, by you rather than by an agent tapping at it. |
+| **Still unproved on hardware** | **13b's opening block** (needs a deep task long enough to be a slab — nothing captured so far has been one; all nine tasks read `depth: unknown`), **the microphone** (needs the permission, which is yours to grant — see below), and **13c** (needs a block that has moved three times without ever starting). |
 | **Microphone** | **Not granted, deliberately.** `RECORD_AUDIO` is in the manifest and the button is on both composers, but pressing it raises the permission dialog and answering that is your decision, not an agent's — the same call that was made about the calendar. Read-only check: this phone *does* have an on-device recogniser (`com.google.android.tts` registers the `RecognitionService`), so the button should be live rather than disabled once you allow it. |
 | **Schema v4, on the phone** | **Verified, read-only, 10:54.** Pulled the real database: `user_version = 4`, `tasks.depth` and `work_sessions.is_opener` both present, 8 tasks / 25 sessions / 341 events all intact, every pre-existing row reading back as `unknown` and not-an-opener exactly as designed. This is the check section 5d wishes it had had. |
 | **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has run against the real provider. |
-| **Tests** | **793 green (492 app, 301 core)**, `dart analyze --fatal-infos` and `check_layers` clean |
+| **Tests** | **813 green (500 app, 313 core)**, `dart analyze --fatal-infos` and `check_layers` clean |
 
 **Two things still unverified on hardware**, both needing you: a nudge firing
 with START coming back (issue 3), and the two features built this morning
@@ -58,7 +65,7 @@ Android's inexact window. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-**793 tests, all green, on a phone that runs.** Eight things need you and all
+**813 tests, all green, on a phone that runs.** Eight things need you and all
 of them are small. **Items 6 and 7 are new this morning and take ten seconds
 each** — they are the only way the work done overnight gets seen on the
 device, so do those two even if you skip the rest:
@@ -187,7 +194,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **793 tests passing** — 301 in `packages/van_core` (pure Dart), 492 in the app.
+- **813 tests passing** — 313 in `packages/van_core` (pure Dart), 500 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -246,6 +253,8 @@ working configuration, not a degraded one.
 | App: the speech channel and its two promises | 13 |
 | App: the microphone on both composers | 16 |
 | Core: reading a spoken nudge answer | 10 |
+| Core: reschedule evidence and the defer rule | 12 |
+| App: gathering the evidence from the log | 8 |
 
 ---
 
@@ -266,7 +275,7 @@ working configuration, not a degraded one.
 | WP-10 | Usage-stats distraction detection | Not started (phase 4) |
 | WP-11 | Device calendar as a commitment source | **Done, granted and proved on the phone** (see 3v) |
 | WP-12 | Speaking to Van — voice capture, spoken nudge answers | **Done, installed, microphone not yet granted** (see 3y) |
-| WP-13 | Making the model earn its place — asking, depth, evidence, engine | **13a and 13b done and installed** (section 3w). 13c (reschedule judgement) and 13d (the engine) not started. `docs/WP_JUDGEMENT.md` |
+| WP-13 | Making the model earn its place — asking, depth, evidence, engine | **13a, 13b and 13c done and installed** (sections 3w, 3z). 13d (the engine) not started and licence-blocked. `docs/WP_JUDGEMENT.md` |
 
 ### Commits
 
@@ -1587,6 +1596,81 @@ The same shape as the calendar. Refusing the microphone removes the button and
 breaks nothing else, and the default everywhere is `UnsupportedSpeech` — so a
 screen given no recogniser behaves like a phone that cannot listen, rather
 than offering a button that always fails.
+
+---
+
+## 3z. Reschedule judgement on evidence (WP-13c)
+
+Built 6 September, midday. `Negotiate` saw the ladder rung and the block
+length; the move count, the start history and the calendar sat in the database
+being used for nothing. That is what the owner meant by *"it is not analysing
+whether a reschedule is legitimate"*.
+
+**`NegotiationEvidence` carries counts, not conclusions.** "Two starts out of
+nine blocks at this hour" survives a change of mind about what it means; "bad
+at mornings" is a judgement baked in at the wrong layer. The judgements live
+in `NegotiationRules`, where they can be argued with, and the evidence class
+holds only what happened.
+
+### The one rule with teeth
+
+**A defer proposed for work that has moved three times and was never once
+started is refused**, with its own rejection reason (`deferAgainstEvidence`,
+distinct from `deferOutOfRange`, which is about the *size* of the delay).
+
+**Both halves are required.** Four moves where the user began each time and
+ran out of time is a plan adapting, which is what Van is for. Four moves where
+they never started is work that will not begin at that size, and the honest
+answers are to shrink it or let it go — both of which remain on the table, so
+this narrows the answer rather than refusing to give one.
+
+The threshold is bound by a test to `InterventionPolicy.renegotiateAfterMoves`
+(3), which is the point at which Van already names the pattern out loud.
+Refusing to keep moving at the same moment Van starts talking about the moving
+is the consistent position, and two constants that must agree will not stay
+agreed by hope.
+
+### Evidence tightens; it never loosens
+
+`allowedAt(level)` still sets the ceiling and **reads no evidence at all**. A
+reading of the log may take an option away from underneath the ladder; it may
+never add one. If a bad reading could *widen* what a model is permitted to
+propose, the whole argument for letting a model near this collapses. There is
+a test named after exactly that.
+
+`buildRequest` now offers the model only the actions that would survive the
+gate, rather than listing one and then refusing it — a model learns nothing
+from being refused, and the user gets a template.
+
+### What the acceptance criterion did and did not prove
+
+Worth saying plainly: *"a block that has moved four times without ever starting
+is not proposed for a fifth move by the deterministic path"* **was already
+vacuously true**. The deterministic fallback proposes hold, shrink or release
+and has never proposed a defer at all. It is now true structurally as well,
+which is the half that will still hold once a model is answering.
+
+### What is gathered, and what it costs
+
+Three bounded queries on a path the user is waiting on: the task's own
+sessions, four weeks of blocks at this hour of day, and a four-hour window of
+calendar around the block. None is a scan of the event log.
+
+**"Ever started" walks the chain of reschedules, not the task.** Starting the
+first hour of a three-hour task says nothing about whether the third hour will
+begin, and treating them as one history would make the flag mean almost
+nothing. There is a test for that specific confusion.
+
+**A broken calendar costs the evidence and nothing else** — the same shape as
+every other calendar read since WP-11.
+
+### What reaches the log
+
+The evidence is written into the `interventionSelected` row, so a proposal
+that looks wrong next week can be judged against what was known at the time
+rather than against what is true then. **Counts only**: a test plants a
+sensitive meeting title and a calendar id in the window and greps the
+serialised log for both. Same boundary D71 draws for the calendar screen.
 
 ---
 
