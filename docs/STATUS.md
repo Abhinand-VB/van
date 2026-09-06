@@ -1,7 +1,8 @@
 # Van — Project Status
 
-**Last updated:** 6 September 2026, 11:00 PDT, at the end of an unattended run
-that started at 02:00 and outlasted the night. This file is the handover
+**Last updated:** 6 September 2026, 11:30 PDT, at the end of an unattended run
+that started at 02:00, outlasted the night, and finished with the owner awake
+and giving direct feedback. This file is the handover
 between sessions and between agents; it says what is true now. The narrative
 of how it got that way is in `docs/NIGHT_LOG.md`.
 
@@ -10,9 +11,11 @@ cells that name what is on them, `WP_JUDGEMENT` 13a (Van asks how long) and
 13b (depth, and the short opening block). All three are installed. Section 3w
 has them; section 3v is the previous session's calendar work.
 
-**It stopped driving the phone's UI at 10:41**, when you woke up and started
-using it. Everything after that is code and read-only device checks, and the
-first table below says exactly what was and was not seen on hardware.
+**Then you said two things and they were both right**: tasks could not be
+moved to done, and the card should carry an editable time with a default.
+Both are built, installed and watched working — section 3x. Finishing a task
+had existed only as an undiscoverable swipe, while the circles on the Now
+screen *looked* like checkboxes and did nothing at all.
 
 Read order for a new session: this file, then `AGENTS.md`, then
 `docs/ARCHITECTURE.md`. `docs/AGENT_TASKS.md` is the original plan and is
@@ -28,15 +31,15 @@ own database with every row intact.
 
 | | |
 |---|---|
-| **Commit the phone is running** | `3087bc4` — "Give a deep task a first block it can actually be started from". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
-| **APK installed at** | **6 Sep 2026, 10:52** (device local, PDT), debug build, phone `<device-serial>` |
-| **Last launched** | **6 Sep 2026, 10:53** — `am start` delivered, process alive (pid 21910), and it wrote to the database, which is what proves it got through its composition root. |
-| **Last seen rendering** | **6 Sep 2026, 02:18**, on commit `af793dd`. The month grid with two named chips per cell, real calendar colours, and `+1` overflow. Screenshotted. **The two builds after that were installed and launched but not watched drawing** — see the row below. |
-| **Last driven by hand** | **6 Sep 2026, 10:42.** Stopped there deliberately: you had picked the phone up. |
-| **Why the UI was not driven after 10:42** | You were awake and using the phone — a call in progress and another app in the foreground. Driving `input tap` into Van while its owner is typing elsewhere is interference, not verification. **So 13a and 13b have not been seen working on the device.** Both are covered by widget tests that drive the real screens, and both are one capture away: type "finish the assignment" into the Now field and Van should ask how long; type "write the dissertation, 4 hours" and the first block should be 25 minutes called "Work out where to start". |
+| **Commit the phone is running** | `635750b` — "Stop the estimate sheet overflowing behind the keyboard". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
+| **APK installed at** | **6 Sep 2026, 11:29** (device local, PDT), debug build, phone `<device-serial>` |
+| **Last launched** | **6 Sep 2026, 11:29** — `am start` delivered, process alive. |
+| **Last seen rendering** | **6 Sep 2026, 11:29, this build.** The Now card with its editable estimate chip and "Mark done", the "After that" rows with working tick circles and per-task estimates, and the estimate sheet open over a raised keyboard with every preset and the Save button reachable. Screenshotted. Earlier, at 02:18, the month grid drawing real calendar names and colours. |
+| **Last driven by hand** | **6 Sep 2026, 11:29** — opened the estimate editor on a real task and dismissed it without changing anything. |
+| **Still not driven by hand** | **13a's question and 13b's opening block.** Both would mean capturing a task on your phone, and between 10:41 and 11:20 you were using it. Both are covered by widget tests against the real screens; both are one capture away. Section 0 items 6 and 7. |
 | **Schema v4, on the phone** | **Verified, read-only, 10:54.** Pulled the real database: `user_version = 4`, `tasks.depth` and `work_sessions.is_opener` both present, 8 tasks / 25 sessions / 341 events all intact, every pre-existing row reading back as `unknown` and not-an-opener exactly as designed. This is the check section 5d wishes it had had. |
 | **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has run against the real provider. |
-| **Tests** | **737 green (446 app, 291 core)**, `dart analyze --fatal-infos` and `check_layers` clean |
+| **Tests** | **754 green (463 app, 291 core)**, `dart analyze --fatal-infos` and `check_layers` clean |
 
 **Two things still unverified on hardware**, both needing you: a nudge firing
 with START coming back (issue 3), and the two features built this morning
@@ -50,7 +53,7 @@ Android's inexact window. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-**737 tests, all green, on a phone that runs.** Seven things need you and all
+**754 tests, all green, on a phone that runs.** Seven things need you and all
 of them are small. **Items 6 and 7 are new this morning and take ten seconds
 each** — they are the only way the work done overnight gets seen on the
 device, so do those two even if you skip the rest:
@@ -169,7 +172,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **737 tests passing** — 291 in `packages/van_core` (pure Dart), 446 in the app.
+- **754 tests passing** — 291 in `packages/van_core` (pure Dart), 463 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -224,6 +227,7 @@ working configuration, not a degraded one.
 | App: the question on the Now screen and in chat | 11 |
 | App: schema v4 migration | 4 |
 | App: month chips | 6 |
+| App: finishing, undo and the estimate editor | 17 |
 
 ---
 
@@ -1420,6 +1424,79 @@ touched `tasks`, seven passing tests failed with `no such table`. The fixture
 now builds `tasks` and `work_sessions` too, with four tests on the v4 upgrade
 itself — and the upgrade was then run against the phone's own database, which
 is the first table in this file.
+
+---
+
+## 3x. Finishing a task, and the estimate you can change
+
+Built 6 September, late morning, straight from the owner's own words: *"Tasks
+can't be moved to done or so in the app also in the card why not provide an
+editable time but with a default value so that we can track it later."* Both
+were right and the first was worse than it sounded.
+
+### Finishing existed and was invisible
+
+`completeTask` had been there since August. The only route to it was a
+**left-to-right swipe on the Tasks tab**, with nothing on screen saying so —
+and the Now screen's own "After that" list rendered each task with
+`Icon(Icons.circle_outlined)`. It looked exactly like a checkbox, sat exactly
+where a checkbox sits, and was inert. So the app showed a picture of the
+control it did not have, on the screen people actually use.
+
+There are now three routes, all visible: the circles on the Now list are real
+buttons, the Now card has **"Mark done"**, and the Tasks rows have a tick
+beside the swipe (which stays — it is faster once you know it is there).
+`completeTask` takes a `source` so the log records which one was used;
+`task_list` is still the default. **Which of the three people actually use is
+worth knowing before keeping all three.**
+
+### And therefore an undo
+
+Finishing became one tap on the main screen, next to what you were reading. A
+one-tap irreversible action in that position is a trap, so `reopenTask` puts a
+task back and plans it again, offered as **Undo** in the snackbar for five
+seconds.
+
+**It is not a true undo and the code says so.** The blocks that were stood
+down stay `skipped` — they really were skipped, and the log is append-only —
+and the task is planned afresh, so it returns at whatever times are free now
+rather than the ones it had. That is honest, and it is usually what someone
+wants a few seconds after a mis-tap.
+
+### The estimate is a control now, not a subtitle
+
+It used to be read-only text in a subtitle that **disappeared entirely when
+nobody had stated one** — the worst of both: no figure to correct, and no sign
+that Van had picked one anyway. It is now a chip on the Now card and a button
+on every row, **always carrying a number**, marked `(assumed)` when it is
+Van's rather than yours.
+
+Tapping opens a sheet pre-filled with that number plus the lengths people
+actually pick. The pre-fill is the point: it makes the question "is 1h right?"
+rather than "how long is this?", which is a far easier question and the whole
+reason it belongs on the card.
+
+**It routes through `answerDuration`** — the same call WP-13a's typed answer
+uses. One replan, one kind of event row, and editing the estimate closes a
+standing question about that task rather than leaving Van asking about a
+length you just gave it.
+
+### The bug that only the phone could show
+
+Opening that sheet on the device overflowed it by 152 pixels. The field
+autofocused, the keyboard came straight up over the presets, and Save was off
+screen. **Every widget test passed, because a test surface has no keyboard.**
+
+Three causes, all fixed: no autofocus (presets are the common case, the
+keyboard belongs to the uncommon one), `isScrollControlled: true` (or the
+sheet is capped at half the screen), and the content scrolls.
+
+**The regression test took two attempts and the first was worthless.** It set
+the insets after the sheet was laid out, on the default 800x600 surface, and
+passed against the unfixed code — measuring nothing, which is exactly what
+`OVERNIGHT.md` warns about. Giving it this phone's shape (1080x2340 at 3x) and
+raising the keyboard *before* the sheet opens reproduces it precisely: `A
+RenderFlex overflowed by 189 pixels` on the old code, clean on the new.
 
 ---
 

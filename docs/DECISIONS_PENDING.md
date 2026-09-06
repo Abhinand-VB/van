@@ -311,6 +311,37 @@ than no depth.
 
 ---
 
+### D74 — Finishing a task: three routes, and an undo that is not one
+
+You said tasks could not be moved to done. They could, by a swipe on the Tasks
+tab that nothing advertised — and the circles on the Now screen looked like
+checkboxes and did nothing, which is worse than having no control at all.
+
+**There are now three ways to finish and I kept all of them**: the tick on the
+Now list, "Mark done" on the card, and the tick beside the swipe on Tasks. That
+is arguably one too many. `completeTask` records which route was used, so
+after a week the log can say which you actually reach for and the other two can
+go. **If you would rather I picked one now, say which.**
+
+**The undo is not an undo and I did not make it one.** Reopening a task puts it
+back and plans it again from now; the blocks that were stood down stay
+`skipped`. Restoring the original times would mean either un-skipping resolved
+sessions — which the append-only rule exists to forbid — or remembering a
+pre-completion snapshot somewhere, which is a lot of machinery for a mis-tap.
+The snackbar is deliberately worded so the replan is not a surprise.
+
+**Editing an estimate replans immediately, with no confirmation.** Change 1h to
+3h on the card and the blocks are rebuilt on the spot, their nudges cancelled
+and re-armed. That is the same thing answering Van's question does, and asking
+"are you sure?" for a number you just chose seemed worse than doing it. The
+guard that *is* there: a task with a block already started refuses, because
+re-planning would take away the block you are sitting in.
+
+**The presets are 15 / 25 / 45 / 60 / 90 / 120 / 180 minutes.** A shortlist,
+not a scale. 25 is there because it is the opening-block length from 13b.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner
