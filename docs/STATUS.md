@@ -1,18 +1,18 @@
 # Van — Project Status
 
-**Last updated:** 6 September 2026, 12:25 PDT, during an unattended run that
-started at 02:00 and has outlasted the night. This file is the handover
+**Last updated:** 6 September 2026, 13:00 PDT, at the end of an unattended run
+that started at 02:00 and outlasted the night. This file is the handover
 between sessions and between agents; it says what is true now. The narrative
 of how it got that way is in `docs/NIGHT_LOG.md`.
 
-**This run has done the first five items of the `OVERNIGHT.md` 3c queue** —
-month cells that name what is on them, `WP_JUDGEMENT` 13a (Van asks how long),
-13b (depth, and the short opening block), `WP_VOICE.md` in full, and 13c
-(reschedule judgement on evidence). All are installed. Sections 3w to 3z have
-them; 3v is the previous session's calendar work.
+**This run did the whole of the `OVERNIGHT.md` 3c queue** — month cells that
+name what is on them, `WP_JUDGEMENT` 13a (Van asks how long), 13b (depth and
+the short opening block), `WP_VOICE.md` in full, 13c (reschedule judgement on
+evidence) and 13d (the engine and the weights surface). All are installed.
+Sections 3w to 3aa have them; 3v is the previous session's calendar work.
 
-**One item left in the queue**: 13d, the on-device engine, which is
-licence-blocked and has standing instructions in `OVERNIGHT.md`.
+**The queue is empty. Section 7 is where to look next**, and the honest answer
+there is that what remains needs you or needs a week of real use.
 
 **And the phone's own log now says three of them work**, which is better
 evidence than an agent driving the UI: it carries a `clarificationAsked` and a
@@ -41,17 +41,18 @@ own database with every row intact.
 
 | | |
 |---|---|
-| **Commit the phone is running** | `449c611` — "Let the log overrule move it again". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
-| **APK installed at** | **6 Sep 2026, 12:19** (device local, PDT), debug build, phone `<device-serial>` |
-| **Last launched** | **6 Sep 2026, 12:19** — `am start` delivered, process alive (pid 26810). |
+| **Commit the phone is running** | `e77c7ae` — "Put a real engine behind the seam, and route nothing to it". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
+| **APK installed at** | **6 Sep 2026, 12:54** (device local, PDT), debug build, phone `<device-serial>` |
+| **Last launched** | **6 Sep 2026, 12:54** — `am start` delivered, process alive (pid 29264), **with the inference engine compiled in and no model file present**: no crash, nothing from MediaPipe in logcat, every deterministic path intact. |
 | **Last seen rendering** | **6 Sep 2026, 11:49, this build.** The microphone button on the Now capture field and on the Chat composer, next to a live stall prompt. At 11:43 the Now card showing `1h (assumed)` against a task you captured without a duration — which is WP-13a's assumption surfacing on real data rather than on a fixture. At 11:29 the estimate sheet open over a raised keyboard with every preset reachable. At 02:18 the month grid drawing real calendar names and colours. |
 | **Last driven by hand** | **6 Sep 2026, 11:49** — opened the Chat tab and read the composer. |
 | **Proved by your own use, 12:19** | Pulled the database read-only. It holds **`clarificationAsked` and `clarificationAnswered`** — 13a asked how long about something you captured without a duration, and you answered it — plus two **`taskUpdated` rows with `source: task_list_tick`** and one with **`source: undo`**. So the question, the new tick and the undo are all confirmed working on hardware, by you rather than by an agent tapping at it. |
-| **Still unproved on hardware** | **13b's opening block** (needs a deep task long enough to be a slab — nothing captured so far has been one; all nine tasks read `depth: unknown`), **the microphone** (needs the permission, which is yours to grant — see below), and **13c** (needs a block that has moved three times without ever starting). |
+| **Still unproved on hardware** | **13b's opening block** (needs a deep task long enough to be a slab — nothing captured so far has been one; all nine tasks read `depth: unknown`), **the microphone** (needs the permission, which is yours to grant — see below), **13c** (needs a block that has moved three times without ever starting), and **the model engine**, which has never produced a token because there are no weights to run. |
+| **On-device model** | **Engine compiled in and wired; routing left at `"none"`; no weights installed.** The page behind the Now screen's overflow menu was watched drawing on the phone at 12:50 — it names the file, says where it goes, and says why Van will not download it for you. `inference_config.json` routes all three capabilities to `none` and stays that way until the golden set has been run against real weights. Section 3aa. |
 | **Microphone** | **Not granted, deliberately.** `RECORD_AUDIO` is in the manifest and the button is on both composers, but pressing it raises the permission dialog and answering that is your decision, not an agent's — the same call that was made about the calendar. Read-only check: this phone *does* have an on-device recogniser (`com.google.android.tts` registers the `RecognitionService`), so the button should be live rather than disabled once you allow it. |
 | **Schema v4, on the phone** | **Verified, read-only, 10:54.** Pulled the real database: `user_version = 4`, `tasks.depth` and `work_sessions.is_opener` both present, 8 tasks / 25 sessions / 341 events all intact, every pre-existing row reading back as `unknown` and not-an-opener exactly as designed. This is the check section 5d wishes it had had. |
 | **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has run against the real provider. |
-| **Tests** | **813 green (500 app, 313 core)**, `dart analyze --fatal-infos` and `check_layers` clean |
+| **Tests** | **825 green (512 app, 313 core)**, `dart analyze --fatal-infos` and `check_layers` clean. `extract_task` still scores **29/29** on the golden set. |
 
 **Two things still unverified on hardware**, both needing you: a nudge firing
 with START coming back (issue 3), and the two features built this morning
@@ -65,7 +66,7 @@ Android's inexact window. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-**813 tests, all green, on a phone that runs.** Eight things need you and all
+**825 tests, all green, on a phone that runs.** Eight things need you and all
 of them are small. **Items 6 and 7 are new this morning and take ten seconds
 each** — they are the only way the work done overnight gets seen on the
 device, so do those two even if you skip the rest:
@@ -194,7 +195,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **813 tests passing** — 313 in `packages/van_core` (pure Dart), 500 in the app.
+- **825 tests passing** — 313 in `packages/van_core` (pure Dart), 512 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -255,6 +256,7 @@ working configuration, not a degraded one.
 | Core: reading a spoken nudge answer | 10 |
 | Core: reschedule evidence and the defer rule | 12 |
 | App: gathering the evidence from the log | 8 |
+| App: the on-device model page | 11 |
 
 ---
 
@@ -270,12 +272,12 @@ working configuration, not a degraded one.
 | WP-4 | Notifications (see deviation below) | **Done, altered** |
 | WP-7 | Now + Focus + Chat + task list | **Done** |
 | WP-8 | Composition root, application service | **Done** |
-| WP-6 | On-device model backend | **Groundwork done, engine not wired** |
+| WP-6 | On-device model backend | **Engine wired, nothing routed to it, no weights** (see 3aa) |
 | WP-9 | Cloud backends (Claude / OpenAI / Gemini) | Not started (phase 3) |
 | WP-10 | Usage-stats distraction detection | Not started (phase 4) |
 | WP-11 | Device calendar as a commitment source | **Done, granted and proved on the phone** (see 3v) |
 | WP-12 | Speaking to Van — voice capture, spoken nudge answers | **Done, installed, microphone not yet granted** (see 3y) |
-| WP-13 | Making the model earn its place — asking, depth, evidence, engine | **13a, 13b and 13c done and installed** (sections 3w, 3z). 13d (the engine) not started and licence-blocked. `docs/WP_JUDGEMENT.md` |
+| WP-13 | Making the model earn its place — asking, depth, evidence, engine | **All four done and installed** (sections 3w, 3z, 3aa). 13d is built as far as a licence allows: engine wired, routing at `none`, no weights. `docs/WP_JUDGEMENT.md` |
 
 ### Commits
 
@@ -1671,6 +1673,80 @@ that looks wrong next week can be judged against what was known at the time
 rather than against what is true then. **Counts only**: a test plants a
 sensitive meeting title and a calendar id in the window and greps the
 serialised log for both. Same boundary D71 draws for the calendar screen.
+
+---
+
+## 3aa. The engine, and the weights it has no way to fetch (WP-13d / WP-6)
+
+Built 6 September, early afternoon. Both halves are installed. **Nothing has
+produced a token**, because the weights are licence-gated and no agent may
+accept a licence on the owner's behalf.
+
+### The engine
+
+`LiteRtEngine` sits behind the `LlmEngine` seam that the WP-6 groundwork cut
+for it, over MediaPipe's LLM inference API. STATUS 3e predicted this would be
+confined to two edits — a dependency in `build.gradle.kts` and one
+implementation selected in `LocalLlmPlugin.defaultEngine`. **It was exactly
+those two.** The abstraction held, which is the first time that claim has been
+tested rather than asserted.
+
+One `LlmInference` is held because loading is seconds and hundreds of
+megabytes. A **fresh session per generation**, because Van's capabilities are
+all one-shot: `extract_task` asking about this sentence must not be coloured
+by the last nudge that was worded.
+
+**`cancel()` is a no-op and says why.** `generateResponse` blocks and there is
+nothing to interrupt without moving to the async API, which is not worth doing
+before anything has been measured. The Dart side already treats cancel as
+best-effort.
+
+**`supportsNativeStructuredOutput` stays `false`.** This engine does not do
+constrained decoding, and 3e's warning stands: claiming it before the engine
+does it makes `ExtractTask` ask for schema-bound JSON and get prose, which
+reads as a model failure rather than the wiring one it would be.
+
+### What it costs, measured
+
+The debug APK is now **223 MB**, which looks alarming and mostly is not.
+Unzipped: the inference native libraries are **11.4 MB for arm64-v8a** and
+31.6 MB across all three ABIs, against 102 MB of Flutter's own debug
+libraries and 85 MB of debug assets. A release build with ABI splits carries
+about eleven megabytes of this.
+
+**Installed and launched with no model file present** — no crash, nothing from
+MediaPipe in logcat, and the parser still scores 29/29. That is the only claim
+about this engine that has been tested.
+
+### Nothing is routed to it
+
+`assets/inference_config.json` routes `extract_task`, `compose_nudge` and
+`negotiate` to `"none"`, and that is not an oversight. Having an engine is not
+the same as using one; the gate in section 3e decides, and it cannot be
+evaluated until the golden set has been run on the phone against real weights
+(issue 14).
+
+### The weights surface receives a file; it does not fetch one
+
+Two rules in `AGENTS.md` decide this between them and they agree: **v1 has no
+network dependency** and is not getting one, and the weights are
+**licence-gated**, so whoever installs them must have accepted that licence —
+the user, not the app. A downloader would need an HTTP client Van does not
+have and a token Van has no right to hold.
+
+So the page behind the Now screen's overflow menu says where the file goes and
+takes it when you have it, through the storage access framework — **no storage
+permission at all**: you pick one document, Android grants access to that one
+document, and it is copied into app-private storage where it vanishes on
+uninstall and nothing else on the phone can read it. The copy runs off the
+platform thread and lands on a `.part` file that is renamed, because an
+interrupted copy leaving half a model where the engine looks for a whole one
+would fail in a way that reads as a bad model rather than a bad copy.
+
+**It is not a model picker**, which `AGENTS.md` forbids. It manages one file;
+routing stays in the config asset. The page says so out loud when weights are
+present, because someone assuming the model was in use would read Van's
+deterministic answers as breakage.
 
 ---
 

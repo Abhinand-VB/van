@@ -1827,3 +1827,53 @@ at 12:19 to check the migration, the log carried a `clarificationAsked` and a
 real tasks, without being asked to. Three features confirmed on hardware by
 ordinary use - which is worth more than any amount of `adb shell input tap`,
 and is the thing section 3 of OVERNIGHT has been asking for since August.
+
+## 13d, and the abstraction that held
+
+The last item of the queue and the one with a licence sitting in the middle of
+it. The owner's standing instruction was to build the engine and the download
+surface, leave the routing at "none", record it, and move on - which is
+exactly right except that "download surface" turned out to be impossible for a
+better reason than the licence.
+
+`AGENTS.md` forbids a network dependency in v1 outright. There is no HTTP
+client in the dependency set, and a downloader would have been the first thing
+in Van ever to talk to the internet - for the purpose of fetching a
+licence-gated file that the user has to accept a licence for anyway. Both
+constraints point the same way, and the design they point at is better than a
+downloader would have been: the page says where the file goes and takes it
+when you have it, through the storage access framework, which needs no storage
+permission at all.
+
+**Then the engine, which was the experiment.** STATUS 3e has claimed since
+August that adding LiteRT would be "confined to two edits, and if a third is
+needed the abstraction has failed and that is worth stopping over". That is
+the kind of claim that sits in a document being true until someone tests it.
+It was two edits: a dependency line and one branch in `defaultEngine`.
+Nothing above the seam moved - not the channel, not the Dart backend, not the
+router, not one capability, not one test.
+
+I very nearly did not attempt it. Adding a large native dependency that
+nothing can exercise, to a green tree, on the basis of an API I could not run,
+is close to the thing this project's rules distrust most. What made it
+defensible was that the *bounded* part is verifiable even without weights: it
+either resolves or it does not, it either compiles or it does not, and the app
+either still launches and reports "unavailable" or it does not. All three were
+checked. Inference itself was not, and the class comment and STATUS both say
+so in those words rather than implying otherwise.
+
+**One number worth measuring rather than reporting.** The debug APK went to
+223 MB, which reads like a disaster. Unzipping it: 11.4 MB of inference
+libraries for arm64, against 102 MB of Flutter's own debug builds and 85 MB of
+debug assets. The alarming number was almost entirely not the thing I had just
+added, and quoting it without checking would have been a fabricated finding in
+the direction that makes me look careful.
+
+**And a smaller lesson about diagnosis.** The overflow menu appeared to do
+nothing on the phone, so I wrote a widget test to reproduce it - and it passed
+against the code I thought was broken. The honest conclusion is that I had
+probably just missed the tap, and the comment and commit message say that
+rather than claiming a fix for a bug I never demonstrated. The code change
+stayed, because the enum-valued `onSelected` is better on its own merits, but
+"better anyway" and "fixes the bug" are different claims and only one of them
+was earned.

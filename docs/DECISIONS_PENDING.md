@@ -417,6 +417,47 @@ read the week report.**
 
 ---
 
+### D77 — The model: an engine that has never run, and no downloader
+
+**The engine is compiled in, wired, and has produced nothing.** The weights are
+licence-gated; accepting a licence on your behalf is not an agent's to do, so
+`LiteRtEngine` has been built and installed and never executed. Every claim
+about how it behaves is unproven, the class comment says so, and the gate in
+STATUS 3e still stands: **do not route anything to it until the golden set has
+been run on the phone against real weights.** `inference_config.json` is
+untouched at `"none"`.
+
+**There is no download button, and two rules put it there.** `AGENTS.md`
+forbids a network dependency in v1 outright — there is no HTTP client and this
+would have been the first thing in Van to talk to the internet — and the
+licence is yours to accept. Both point at the same design: Van says where the
+file goes and takes it when you have it. **If you would rather Van fetched it,
+that is a decision to relax the no-network rule**, and it is yours.
+
+**It costs about eleven megabytes on this phone.** Measured, not guessed: the
+inference native libraries are 11.4 MB for arm64-v8a, 31.6 MB across all three
+ABIs. The debug APK's jump to 223 MB is almost entirely Flutter's own debug
+libraries and assets. **If eleven megabytes for a feature that is off is not
+worth it to you, reverting is one line in `build.gradle.kts` and one branch in
+`LocalLlmPlugin.defaultEngine`** — the same two edits that added it.
+
+**Two things in the engine are honest shortcuts rather than finished work.**
+`cancel()` does nothing, because `generateResponse` blocks and there is no
+interrupting it without the async API. And the system prompt is prepended as a
+separate query chunk rather than passed as a system role, because the model has
+no such role. If the goldens later show the system half being ignored, that
+line is where to look. Neither is worth fixing before anything has been
+measured.
+
+**The file name is `gemma-e2b-int4.litertlm`** and has been since the WP-6
+groundwork. If you download a differently-named or differently-formatted
+bundle, the page will accept it and copy it to that name — which is right, since
+the engine only cares about the path — but it means a wrong file will look
+installed and fail on first use. There is no format validation and I did not
+invent one, because I have no valid file to test it against.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner
