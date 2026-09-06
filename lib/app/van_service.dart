@@ -36,28 +36,73 @@ class CaptureResult {
   bool get isPartial => shortfallMinutes > 0;
 }
 
+/// One event from the device calendar, resolved to real instants and ready to
+/// draw.
+///
+/// Exists so the UI never has to know that providers store all-day entries as
+/// UTC midnights naming local dates. That arithmetic belongs to
+/// [CalendarFilter], which is also what planning uses, and two copies of it
+/// would eventually disagree by a timezone.
+///
+/// **[title] may be drawn and may not be recorded.** It never enters the
+/// event log, a notification, or the week report - see `CalendarEntry`.
+class CalendarOccurrence {
+  /// Creates an occurrence.
+  const CalendarOccurrence({
+    required this.start,
+    required this.end,
+    required this.title,
+    required this.isAllDay,
+    required this.blocks,
+    required this.attendance,
+  });
+
+  /// When it begins. UTC, and real - an all-day entry is already resolved.
+  final DateTime start;
+
+  /// When it ends. UTC.
+  final DateTime end;
+
+  /// What it is called, or empty for an untitled event.
+  final String title;
+
+  /// Whether the provider marks it all-day.
+  final bool isAllDay;
+
+  /// Whether Van treats this as time it may not plan into.
+  ///
+  /// Carried rather than re-derived so the screen and the planner cannot
+  /// disagree: a view that shaded a slot Van had scheduled into would be
+  /// lying about one of the two.
+  final bool blocks;
+
+  /// The user's own answer, when there was something to answer.
+  final Attendance attendance;
+}
+
 /// One stretch of the user's day, as the calendar screen draws it.
 ///
 /// Two lists rather than one merged timeline, because they are not the same
 /// kind of thing and must not be made to look like it: [blocks] is work Van
-/// planned and can talk about, [busy] is time somebody else already claimed
-/// and Van knows nothing about beyond its shape.
+/// planned, chose the time for, and will nudge about; [events] is what the
+/// device calendar says, which Van reads and never writes.
 class DayPlan {
   /// Creates a day.
-  const DayPlan({this.blocks = const [], this.busy = const []});
+  const DayPlan({this.blocks = const [], this.events = const []});
 
   /// Van's own work sessions that start in the window, earliest first.
   final List<({WorkSession session, Task task})> blocks;
 
-  /// Stretches the device calendar has already spoken for.
+  /// Everything on the calendars the user has not excluded, including the
+  /// entries that do not block.
   ///
-  /// Deliberately nameless. Van never reads an event title, so the only
-  /// honest thing a calendar view can draw here is a shape - see the note on
-  /// [VanService.calendarBusy].
-  final List<Commitment> busy;
+  /// A view is not a planner: an entry marked free still belongs on screen,
+  /// because the user put it there and expects to see it. Which of them Van
+  /// refuses to plan into is carried per occurrence.
+  final List<CalendarOccurrence> events;
 
   /// Whether there is nothing at all on this stretch of the day.
-  bool get isEmpty => blocks.isEmpty && busy.isEmpty;
+  bool get isEmpty => blocks.isEmpty && events.isEmpty;
 }
 
 /// What one pass of the stale-session sweep did.
@@ -490,15 +535,17 @@ class VanService {
       _calendarIsUnreadable = false;
       if (read == null) return const [];
 
+      final commitments = _calendarFilter.commitments(read.entries);
+
       // The count, never the content. Without this row, a day where Van
       // scheduled almost nothing looks identical to a day where it worked
       // correctly around a full calendar.
       await _events.append(EventType.calendarRead, {
-        'commitments': read.commitments.length,
-        'entries': read.entries,
+        'commitments': commitments.length,
+        'entries': read.entries.length,
         'excludedCalendars': read.excluded,
       });
-      return read.commitments;
+      return commitments;
     } on Object catch (error) {
       _calendarIsUnreadable = true;
       await _noteCalendarFailure(error);
@@ -512,8 +559,10 @@ class VanService {
   /// different things from a read and only one of them is planning. Errors
   /// are left to propagate, because who absorbs them - and what they mean -
   /// differs between the two as well.
-  Future<({List<Commitment> commitments, int entries, int excluded})?>
-  _readCalendar(DateTime from, DateTime to) async {
+  Future<({List<CalendarEntry> entries, int excluded})?> _readCalendar(
+    DateTime from,
+    DateTime to,
+  ) async {
     if (!await _calendars.hasPermission()) return null;
 
     final excluded = await _calendarPreferences?.excluded() ?? const <String>{};
@@ -522,44 +571,58 @@ class VanService {
       to: to,
       exclude: excluded,
     );
-    return (
-      commitments: _calendarFilter.commitments(entries),
-      entries: entries.length,
-      excluded: excluded.length,
-    );
+    return (entries: entries, excluded: excluded.length);
   }
 
-  /// The stretches of [from]..[to] the device calendar has claimed, for
-  /// drawing rather than for planning.
+  /// Everything on the user's calendars between [from] and [to], for drawing
+  /// rather than for planning.
   ///
-  /// Three differences from the planning read, all deliberate. It writes no
-  /// `calendarRead` row, because looking at your week is not a planning
-  /// decision and a row per scroll would drown the log. It leaves
-  /// [calendarIsUnreadable] alone, because that flag is a statement about the
-  /// *plan* on screen and a failed redraw says nothing about it. And a
-  /// failure returns nothing rather than propagating: a calendar view missing
-  /// its shaded bands is a lesser thing than a screen that will not paint.
-  ///
-  /// What comes back has no names attached and cannot be given any. Van never
-  /// reads an event title - see `CalendarEntry`.
-  Future<List<Commitment>> calendarBusy({
+  /// Four differences from the planning read, all deliberate. It returns
+  /// *every* entry rather than only the blocking ones, because a view that
+  /// silently hid the meetings the user marked free would look broken to the
+  /// person who marked them. It writes no `calendarRead` row, because looking
+  /// at your week is not a planning decision and a row per scroll would drown
+  /// the log. It leaves [calendarIsUnreadable] alone, because that flag is a
+  /// statement about the *plan* on screen and a failed redraw says nothing
+  /// about it. And a failure returns nothing rather than propagating: a
+  /// calendar view missing its events is a lesser thing than a screen that
+  /// will not paint.
+  Future<List<CalendarOccurrence>> calendarOccurrences({
     required DateTime from,
     required DateTime to,
   }) async {
     try {
-      return (await _readCalendar(from, to))?.commitments ?? const [];
+      final read = await _readCalendar(from, to);
+      if (read == null) return const [];
+
+      return [
+        for (final entry in read.entries)
+          if (_calendarFilter.span(entry) case final at?)
+            CalendarOccurrence(
+              start: at.start,
+              end: at.end,
+              title: entry.title,
+              isAllDay: entry.isAllDay,
+              blocks: _calendarFilter.blocks(entry),
+              attendance: entry.attendance,
+            ),
+      ]..sort((a, b) => a.start.compareTo(b.start));
     } on Object catch (_) {
       return const [];
     }
   }
 
-  /// Everything on the user's day between [from] and [to].
+  /// Everything on the user's plan between [from] and [to].
   ///
   /// Blocks are those that *start* in the window, which is the query the
   /// database is indexed for. A block that runs past midnight therefore
   /// belongs to the day it began on, which is also how a person would file
-  /// it.
-  Future<DayPlan> day({required DateTime from, required DateTime to}) async {
+  /// it - and a view that wants the tail of it asks for a slightly wider
+  /// window rather than for a different query.
+  Future<DayPlan> planBetween({
+    required DateTime from,
+    required DateTime to,
+  }) async {
     final sessions = await _sessions.plannedBetween(from, to);
 
     final tasks = <String, Task>{};
@@ -575,7 +638,7 @@ class VanService {
 
     return DayPlan(
       blocks: blocks,
-      busy: await calendarBusy(from: from, to: to),
+      events: await calendarOccurrences(from: from, to: to),
     );
   }
 

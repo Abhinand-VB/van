@@ -146,6 +146,7 @@ class MethodChannelCalendars implements Calendars {
       calendarId: '${row['calendarId']}',
       start: DateTime.fromMillisecondsSinceEpoch(start, isUtc: true),
       end: DateTime.fromMillisecondsSinceEpoch(end, isUtc: true),
+      title: row['title'] as String? ?? '',
       isAllDay: row['allDay'] as bool? ?? false,
       isBusy: row['busy'] as bool? ?? true,
       attendance: _attendanceFrom(row['attendance'] as String?),

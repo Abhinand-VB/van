@@ -107,7 +107,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 Text(
                   'Entries marked free, and all-day entries like birthdays, '
                   'do not take up time. Nothing is ever written to your '
-                  'calendar, and event names are never read.',
+                  'calendar.',
+                  style: theme.textTheme.bodySmall,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Event names are shown on the calendar screen and are '
+                  'never stored, logged, or put in a notification.',
                   style: theme.textTheme.bodySmall,
                 ),
                 const SizedBox(height: 24),

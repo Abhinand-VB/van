@@ -22,10 +22,15 @@ import java.util.concurrent.Executors
  * has no business knowing. This moves rows across the boundary and nothing
  * else — the same rule [LocalLlmPlugin] follows, and for the same reason.
  *
- * **It never reads a title.** Van's event log is append-only and never
- * deletes, so a meeting title that reaches it lives there permanently. Not
- * putting the string on the channel at all is a stronger guarantee than
- * handling it carefully on the other side, and planning has no use for it.
+ * **It reads the title and nothing else about the event.** No description, no
+ * location, no organiser, no attendee list. The title crosses the channel so a
+ * calendar view can be read at a glance; everything past it is detail Van has
+ * no use for, and reading it would only create something to leak.
+ *
+ * The title must never reach Van's `events` table, which is append-only and
+ * never deletes. That boundary is enforced on the Dart side - planning turns
+ * entries into nameless commitments - and asserted against the serialised log
+ * in `calendar_test.dart`.
  *
  * Queries run on a background thread. A `ContentResolver` query against a
  * synced calendar provider is disk and IPC, and blocking the platform thread
@@ -53,8 +58,9 @@ class CalendarPlugin(
         )
 
         /**
-         * Deliberately no TITLE, DESCRIPTION, LOCATION or ORGANIZER. See the
-         * class comment: what is never read cannot be leaked.
+         * TITLE, and deliberately no DESCRIPTION, LOCATION or ORGANIZER. See
+         * the class comment: what is never read cannot be leaked, and the
+         * title is the only one of the four a day view actually needs.
          */
         private val INSTANCE_COLUMNS = arrayOf(
             CalendarContract.Instances.CALENDAR_ID,
@@ -63,6 +69,7 @@ class CalendarPlugin(
             CalendarContract.Instances.ALL_DAY,
             CalendarContract.Instances.AVAILABILITY,
             CalendarContract.Instances.SELF_ATTENDEE_STATUS,
+            CalendarContract.Instances.TITLE,
         )
     }
 
@@ -213,6 +220,10 @@ class CalendarPlugin(
                             c.getInt(4) != CalendarContract.Events.AVAILABILITY_FREE
                         ),
                     "attendance" to attendance(if (c.isNull(5)) 0 else c.getInt(5)),
+                    // Untitled events are ordinary, not an error. The Dart
+                    // side draws its own placeholder rather than being handed
+                    // one invented here.
+                    "title" to c.getString(6).orEmpty(),
                 ),
             )
         }

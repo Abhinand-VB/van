@@ -131,16 +131,12 @@ side effect. Both halves are pinned by tests in `test/app/loop_test.dart`.
 None is expensive to reverse and none needed you to be awake, but all three are
 places where a different answer is defensible.
 
-**1. Van does not read event titles at all.** WP_CALENDAR 3.3 asked for the
+**1. Van does not read event titles at all.** ~~WP_CALENDAR 3.3 asked for the
 title to be planning-only and never logged. I went further: the Kotlin
-projection does not include TITLE, `CalendarEntry` has no field for it, and
-calendar commitments carry the constant label `calendar`. Nothing in planning
-wanted the string, and not having it is a stronger guarantee than handling it
-carefully. **The cost:** Van can never say "you have a meeting then" or show
-you which entry blocked a slot; it can only say that something did. If you want
-that, the title has to cross the channel and the privacy rule in 3.3 becomes a
-discipline rather than a fact. *Reversing it is one projection column and one
-field, plus a decision about the log.*
+projection does not include TITLE.~~ **Reversed the same day, at your request -
+see D71.** The prediction in this entry turned out to be exactly the cost you
+hit: a calendar screen that can only say "Busy" is unreadable, and you asked
+for the data. What survived the reversal is the half that mattered.
 
 **2. Cancelled events still block.** A calendar entry with `STATUS_CANCELED`
 that has not been deleted is treated like any other: if it is marked busy and
@@ -165,6 +161,48 @@ calendar is included until you untick it, *and* all-day entries block only when
 marked busy. Make the list opt-in and the feature does nothing on the day you
 grant it. Make all-day entries always block while everything is included and
 your birthday calendar eats one day in five.
+
+---
+
+### D71 — Event titles are read after all, and where the line moved to
+
+**You asked for a calendar showing the data from the selected calendars, which
+requires the title.** D70 had gone the other way, on the argument that what is
+never read cannot leak. That argument was sound and the result was a screen
+nobody could read: eight identical grey bands saying "Busy" tells you less than
+a paper diary.
+
+**What changed:** `CalendarPlugin.kt` now selects `Instances.TITLE`, and
+`CalendarEntry` carries it. Nothing else about the projection changed - no
+description, no location, no organiser, no attendee list. Those would only
+create more to protect and no view needs them.
+
+**What did not change, and is the whole point:** the title stops at the screen.
+
+- `CalendarFilter.commitments` still produces commitments labelled `calendar`,
+  so the planner and the event log physically have no title to write.
+- `VanService.calendarOccurrences` - the read the *view* uses - writes no event
+  row at all.
+- `calendar_screen_test.dart` plants an event called "Divorce mediation", runs
+  a real planning pass, and asserts the string appears nowhere in the
+  serialised log. That test is the rule; the comments only explain it.
+
+**The risk this accepts.** Before, a title could not leak because it did not
+exist in the process. Now it exists in memory for as long as a screen is drawn,
+and the guarantee is a boundary rather than an absence. The place it would go
+wrong is somebody adding a title to a log payload "for debugging". The test
+catches exactly that, which is why it greps rather than trusting review.
+
+**One consequence you can see.** The settings page used to say "event names are
+never read". It now says they are shown and never stored. A privacy claim that
+has quietly become false is worse than one that was never made.
+
+**Duplicates are collapsed in the view.** Your phone carries eight Google
+accounts and therefore eight holiday calendars, so Labor Day arrived eight
+times over. Identical name over identical minutes is drawn once. Van's own
+blocks are never collapsed - two identical sessions are two pieces of work.
+The planner never needed this: `FreeSlotFinder` merges overlapping commitments,
+so eight copies of a holiday always cost what one copy costs.
 
 ---
 

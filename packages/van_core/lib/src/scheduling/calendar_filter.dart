@@ -23,18 +23,28 @@ enum Attendance {
   declined,
 }
 
-/// One occurrence of a device-calendar event, as the planner needs to see it.
+/// One occurrence of a device-calendar event.
 ///
-/// **Deliberately carries no title, and the platform layer never reads one.**
-/// Van's `events` table is append-only and never deletes, so a meeting title
-/// that reaches it is there permanently. Not carrying the string at all is a
-/// stronger guarantee than carrying it carefully, and nothing in planning
-/// needs it: a commitment is a shape in the day, not a description of one.
+/// **The title is for the screen and for nothing else.** Van's `events` table
+/// is append-only and never deletes, so a meeting title that reaches it is
+/// there permanently. The rule is therefore not "handle it carefully" but a
+/// boundary: it may be drawn, and it may never be persisted, logged, put in a
+/// notification, or counted in the week report. `calendar_test.dart` asserts
+/// that against the serialised log rather than trusting review.
+///
+/// It was originally not read at all, which was a stronger guarantee and a
+/// worse calendar: a day view that draws every meeting as an anonymous grey
+/// band cannot be read at a glance, which is the only thing a calendar is
+/// for. See `docs/DECISIONS_PENDING.md` D70 and D71.
+///
+/// Nothing in *planning* uses it. [CalendarFilter.commitments] deliberately
+/// produces nameless commitments, so the layer that writes to the event log
+/// has no title to write even by accident.
 ///
 /// [start] and [end] are UTC instants for a timed entry. For an all-day entry
 /// they are UTC midnights *naming local dates*, which is how calendar
 /// providers store them - the same convention Android's `CalendarContract`
-/// uses. [CalendarFilter] resolves them against an offset; nothing else
+/// uses. [CalendarFilter.span] resolves them against an offset; nothing else
 /// should try to.
 @immutable
 class CalendarEntry {
@@ -43,6 +53,7 @@ class CalendarEntry {
     required this.calendarId,
     required this.start,
     required this.end,
+    this.title = '',
     this.isAllDay = false,
     this.isBusy = true,
     this.attendance = Attendance.none,
@@ -51,6 +62,12 @@ class CalendarEntry {
 
   /// Which device calendar this came from, so it can be excluded.
   final String calendarId;
+
+  /// What the event is called. **Display only** - see the class comment.
+  ///
+  /// Empty is normal rather than exceptional: providers allow untitled
+  /// events, and the screen has to have something to draw for one.
+  final String title;
 
   /// When it begins.
   final DateTime start;
@@ -119,21 +136,28 @@ class CalendarFilter {
 
   /// The blocking entries of [entries], as commitments the planner can use.
   ///
-  /// The label is a constant, not a description. Nothing downstream reads it
-  /// and nothing may: see [CalendarEntry] on why no title exists to put here.
+  /// **The label is a constant, not a description, even though a title is now
+  /// available.** This is the seam between the part of Van that may see a
+  /// meeting's name and the part that writes an append-only log. Dropping the
+  /// name here means the planning and logging code physically has nothing to
+  /// leak, rather than being trusted not to.
   List<Commitment> commitments(Iterable<CalendarEntry> entries) => [
     for (final entry in entries)
       if (blocks(entry))
-        if (_span(entry) case final span?)
-          Commitment(start: span.start, end: span.end, label: 'calendar'),
+        if (span(entry) case final at?)
+          Commitment(start: at.start, end: at.end, label: 'calendar'),
   ];
 
   /// The real instants [entry] occupies, or null when it occupies none.
   ///
+  /// Public because a calendar view has to place an all-day entry on exactly
+  /// the day the planner blocked out, and two implementations of that
+  /// arithmetic would eventually disagree by a timezone.
+  ///
   /// An entry with no duration is dropped rather than asserted on. Providers
   /// do emit them - a zero-length marker, an instance clipped to the edge of
   /// the query window - and a commitment must have a duration.
-  ({DateTime start, DateTime end})? _span(CalendarEntry entry) {
+  ({DateTime start, DateTime end})? span(CalendarEntry entry) {
     final start = entry.isAllDay
         ? entry.start.subtract(utcOffset)
         : entry.start;

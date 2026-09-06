@@ -24,7 +24,7 @@ calendar, so the feature is installed and unexercised against real data.**
 
 | | |
 |---|---|
-| **Commit the phone is running** | `3a1222a` — "Put the day on a clock, in a fourth tab". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
+| **Commit the phone is running** | `dcffd43` — "Show the calendar, not just its shape". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
 | **APK installed at** | **6 Sep 2026, 00:53:55** (device local, PDT), debug build, phone `<device-serial>` |
 | **Last launched** | **6 Sep 2026, 00:54** — `am start` delivered, process alive (pid 30090) |
 | **Last seen rendering** | **6 Sep 2026, 01:08, this build.** The Calendar tab drawing today's real blocks on a timeline — "Why is not working" at 08:00 and "Negotiate wiring check" after it — plus the four-tab nav and the Calendars settings page. Screenshotted. |
