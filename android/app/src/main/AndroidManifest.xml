@@ -15,6 +15,23 @@
          and there should not be. Requested at runtime; a refusal degrades
          planning to Van's own sessions rather than failing anything. -->
     <uses-permission android:name="android.permission.READ_CALENDAR"/>
+    <!-- Typing is the thing standing between "I should do that" and Van
+         knowing about it. Requested at runtime, and refusing it hides the
+         microphone button rather than breaking anything.
+
+         Audio never leaves this device: SpeechPlugin.kt uses
+         createOnDeviceSpeechRecognizer and has no fallback to the networked
+         recogniser, which is why there is no INTERNET permission here and
+         must never be one. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <!-- Android 11+ package visibility: without this, a query for the
+         on-device recogniser cannot see the service that provides it and
+         isOnDeviceRecognitionAvailable answers false on a phone that can. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
+    </queries>
     <application
         android:label="Van"
         android:name="${applicationName}"

@@ -5,8 +5,10 @@ import 'package:van/app/van_service.dart';
 import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/platform/calendars.dart';
 import 'package:van/platform/notifications.dart';
+import 'package:van/platform/speech.dart';
 import 'package:van/ui/background.dart';
 import 'package:van/ui/focus_screen.dart';
+import 'package:van/ui/mic_button.dart';
 import 'package:van/ui/settings_screen.dart';
 import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
@@ -24,6 +26,7 @@ class NowScreen extends StatefulWidget {
     required this.notifications,
     required this.calendars,
     required this.calendarPreferences,
+    this.speech = const UnsupportedSpeech(),
     super.key,
   });
 
@@ -42,6 +45,9 @@ class NowScreen extends StatefulWidget {
 
   /// Which calendars planning is allowed to see.
   final CalendarPreferences calendarPreferences;
+
+  /// Turns speech into text for the capture field, on the device only.
+  final Speech speech;
 
   @override
   State<NowScreen> createState() => _NowScreenState();
@@ -145,6 +151,18 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
   }
 
   static String _blocks(int n) => n == 1 ? 'block' : 'blocks';
+
+  /// Puts a transcript in the field, without capturing it.
+  ///
+  /// Appended rather than assigned when something is already typed: the
+  /// microphone is beside a field the user may have started filling in, and
+  /// silently replacing their words with a recogniser's guess is the one
+  /// thing worse than not hearing them.
+  void _fill(String heard) {
+    final existing = _input.text.trim();
+    _input.text = existing.isEmpty ? heard : '$existing $heard';
+    _input.selection = TextSelection.collapsed(offset: _input.text.length);
+  }
 
   /// Submitting either captures a new task or answers Van's question about
   /// the last one. The bar above the field says which, and there is no third
@@ -371,6 +389,8 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
             _CaptureField(
               controller: _input,
               busy: _busy,
+              speech: widget.speech,
+              onHeard: _fill,
               onSubmit: _submit,
               hint: _asking == null
                   ? 'finish the assignment by friday, 2 hours'
@@ -468,12 +488,20 @@ class _CaptureField extends StatelessWidget {
   const _CaptureField({
     required this.controller,
     required this.busy,
+    required this.speech,
+    required this.onHeard,
     required this.onSubmit,
     required this.hint,
   });
 
   final TextEditingController controller;
   final bool busy;
+
+  /// The recogniser behind the microphone button.
+  final Speech speech;
+
+  /// Receives a transcript, which goes in the field rather than into a task.
+  final ValueChanged<String> onHeard;
   final VoidCallback onSubmit;
 
   /// What the empty field invites. Changes to the question while one is
@@ -499,10 +527,20 @@ class _CaptureField extends StatelessWidget {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
               )
-            : IconButton(
-                icon: const Icon(Icons.add),
-                onPressed: onSubmit,
-                tooltip: 'Capture',
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  MicButton(
+                    speech: speech,
+                    onHeard: onHeard,
+                    enabled: !busy,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add),
+                    onPressed: onSubmit,
+                    tooltip: 'Capture',
+                  ),
+                ],
               ),
       ),
     );

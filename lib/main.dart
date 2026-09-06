@@ -17,6 +17,7 @@ import 'package:van/inference/prompts.dart';
 import 'package:van/platform/calendars.dart';
 import 'package:van/platform/local_llm.dart';
 import 'package:van/platform/notifications.dart';
+import 'package:van/platform/speech.dart';
 import 'package:van/platform/system_clock.dart';
 import 'package:van/platform/timezone_watcher.dart';
 import 'package:van/ui/background.dart';
@@ -57,6 +58,7 @@ Future<void> main() async {
   // Read at plan time and never copied into Van's database: the OS owns the
   // calendar and is the source of truth for it. See VanService._freeSlots.
   const calendars = MethodChannelCalendars();
+  const speech = MethodChannelSpeech();
 
   final templates = NudgeTemplates.fromJson(
     await rootBundle.loadString('assets/nudge_templates/templates.json'),
@@ -152,6 +154,7 @@ Future<void> main() async {
       settings: settings,
       calendars: calendars,
       calendarPreferences: calendarPreferences,
+      speech: speech,
     ),
   );
 }
@@ -192,6 +195,7 @@ class VanApp extends StatelessWidget {
     required this.settings,
     required this.calendars,
     required this.calendarPreferences,
+    this.speech = const UnsupportedSpeech(),
     super.key,
   });
 
@@ -212,6 +216,9 @@ class VanApp extends StatelessWidget {
 
   /// Which calendars planning may see.
   final CalendarPreferences calendarPreferences;
+
+  /// On-device speech, for the microphone button on both composers.
+  final Speech speech;
 
   @override
   Widget build(BuildContext context) {
@@ -238,6 +245,7 @@ class VanApp extends StatelessWidget {
           notifications: notifications,
           calendars: calendars,
           calendarPreferences: calendarPreferences,
+          speech: speech,
         ),
       ),
     );

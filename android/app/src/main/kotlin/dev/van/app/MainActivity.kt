@@ -7,6 +7,7 @@ class MainActivity : FlutterActivity() {
 
     private var localLlm: LocalLlmPlugin? = null
     private var calendars: CalendarPlugin? = null
+    private var speech: SpeechPlugin? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -20,20 +21,28 @@ class MainActivity : FlutterActivity() {
         calendars = CalendarPlugin(applicationContext) { this }.also {
             it.attach(flutterEngine.dartExecutor.binaryMessenger)
         }
+        speech = SpeechPlugin(applicationContext) { this }.also {
+            it.attach(flutterEngine.dartExecutor.binaryMessenger)
+        }
     }
 
     /**
-     * Hands the calendar permission answer back to the plugin.
+     * Hands a permission answer back to whichever plugin asked for it.
      *
      * Without this the dialog appears, the user taps Allow, and the Dart side
-     * waits forever on a future nobody completes.
+     * waits forever on a future nobody completes. Each plugin recognises its
+     * own request code and returns false for anyone else's, so the order here
+     * does not matter and adding a third is one more line.
      */
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
         grantResults: IntArray,
     ) {
-        if (calendars?.onPermissionResult(requestCode, grantResults) != true) {
+        val handled =
+            calendars?.onPermissionResult(requestCode, grantResults) == true ||
+                speech?.onPermissionResult(requestCode, grantResults) == true
+        if (!handled) {
             super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         }
     }
@@ -46,6 +55,8 @@ class MainActivity : FlutterActivity() {
         localLlm = null
         calendars?.detach()
         calendars = null
+        speech?.detach()
+        speech = null
         super.onDestroy()
     }
 }

@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
+import 'package:van/platform/speech.dart';
 import 'package:van/ui/background.dart';
+import 'package:van/ui/mic_button.dart';
 import 'package:van/ui/wording.dart';
 import 'package:van_core/van_core.dart';
 
@@ -127,13 +129,21 @@ class ProposalCard extends ChatEntry {
 /// "friday" is far more expensive than one that shows its working.
 class ChatScreen extends StatefulWidget {
   /// Creates the screen.
-  const ChatScreen({required this.service, required this.clock, super.key});
+  const ChatScreen({
+    required this.service,
+    required this.clock,
+    this.speech = const UnsupportedSpeech(),
+    super.key,
+  });
 
   /// The application service.
   final VanService service;
 
   /// Source of the current time.
   final Clock clock;
+
+  /// Turns speech into text for the composer, on the device only.
+  final Speech speech;
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -199,6 +209,17 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       _answering = stalled.session.id;
     });
     _toBottom();
+  }
+
+  /// Puts a transcript in the composer, without sending it.
+  ///
+  /// Appended rather than assigned, for the same reason as on the Now
+  /// screen: replacing what someone already typed with a recogniser's guess
+  /// is worse than not hearing them at all.
+  void _fill(String heard) {
+    final existing = _input.text.trim();
+    _input.text = existing.isEmpty ? heard : '$existing $heard';
+    _input.selection = TextSelection.collapsed(offset: _input.text.length);
   }
 
   Future<void> _send() async {
@@ -441,6 +462,8 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
           _Composer(
             controller: _input,
             busy: _busy,
+            speech: widget.speech,
+            onHeard: _fill,
             answering: _answering != null,
             asking: _questionAt == null
                 ? null
@@ -650,6 +673,8 @@ class _Composer extends StatelessWidget {
   const _Composer({
     required this.controller,
     required this.busy,
+    required this.speech,
+    required this.onHeard,
     required this.answering,
     required this.asking,
     required this.onSend,
@@ -657,6 +682,12 @@ class _Composer extends StatelessWidget {
 
   final TextEditingController controller;
   final bool busy;
+
+  /// The recogniser behind the microphone button.
+  final Speech speech;
+
+  /// Receives a transcript, which goes in the composer rather than being sent.
+  final ValueChanged<String> onHeard;
 
   /// Whether what gets typed is an answer about a stalled block rather than a
   /// new task. The hint is the only thing telling the user which, so it is
@@ -697,7 +728,8 @@ class _Composer extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(width: 8),
+            MicButton(speech: speech, onHeard: onHeard, enabled: !busy),
+            const SizedBox(width: 4),
             IconButton.filled(
               onPressed: busy ? null : onSend,
               icon: busy

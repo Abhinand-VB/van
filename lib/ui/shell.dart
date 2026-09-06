@@ -3,6 +3,7 @@ import 'package:van/app/van_service.dart';
 import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/platform/calendars.dart';
 import 'package:van/platform/notifications.dart';
+import 'package:van/platform/speech.dart';
 import 'package:van/ui/calendar_screen.dart';
 import 'package:van/ui/chat_screen.dart';
 import 'package:van/ui/now_screen.dart';
@@ -31,6 +32,7 @@ class VanShell extends StatefulWidget {
     required this.notifications,
     required this.calendars,
     required this.calendarPreferences,
+    this.speech = const UnsupportedSpeech(),
     super.key,
   });
 
@@ -48,6 +50,9 @@ class VanShell extends StatefulWidget {
 
   /// Passed through to the calendar settings page.
   final CalendarPreferences calendarPreferences;
+
+  /// Passed to both composers for their microphone button.
+  final Speech speech;
 
   @override
   State<VanShell> createState() => _VanShellState();
@@ -71,6 +76,7 @@ class _VanShellState extends State<VanShell> {
             notifications: widget.notifications,
             calendars: widget.calendars,
             calendarPreferences: widget.calendarPreferences,
+            speech: widget.speech,
           ),
           CalendarScreen(
             service: widget.service,
@@ -78,7 +84,11 @@ class _VanShellState extends State<VanShell> {
             calendars: widget.calendars,
             calendarPreferences: widget.calendarPreferences,
           ),
-          ChatScreen(service: widget.service, clock: widget.clock),
+          ChatScreen(
+            service: widget.service,
+            clock: widget.clock,
+            speech: widget.speech,
+          ),
           TaskListScreen(service: widget.service, clock: widget.clock),
         ],
       ),
