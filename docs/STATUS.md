@@ -1,7 +1,7 @@
 # Van — Project Status
 
-**Last updated:** 6 September 2026, 13:00 PDT, at the end of an unattended run
-that started at 02:00 and outlasted the night. This file is the handover
+**Last updated:** 6 September 2026, 14:25 PDT, after the overnight run and two
+rounds of direct feedback from the owner. This file is the handover
 between sessions and between agents; it says what is true now. The narrative
 of how it got that way is in `docs/NIGHT_LOG.md`.
 
@@ -13,6 +13,20 @@ Sections 3w to 3aa have them; 3v is the previous session's calendar work.
 
 **The queue is empty. Section 7 is where to look next**, and the honest answer
 there is that what remains needs you or needs a week of real use.
+
+**Since then, two rounds of your feedback**: the Tasks tab (delete, time taken,
+and it being underdeveloped) and the model download being unusable without a
+link. Both are built and installed — sections 3ab and 3aa.
+
+**One thing I did to your data by accident, at 14:18.** Driving the phone I
+chained three taps without screenshotting between them, which section 5 of this
+file explicitly warns against, and they landed on the Tasks list. The result:
+**"Cook rice" now carries a recorded time of 25 minutes that you never
+entered.** My own test task "Negotiate wiring check" was also completed,
+reopened and completed again, which matters less because it is mine. Nothing
+else was touched. **The fix is one tap** — open Tasks, find "Cook rice" under
+Finished, tap the `25m` and set the right figure, or any figure; the log
+records the correction as a new row, which is how it is designed to work.
 
 **And the phone's own log now says three of them work**, which is better
 evidence than an agent driving the UI: it carries a `clarificationAsked` and a
@@ -41,18 +55,18 @@ own database with every row intact.
 
 | | |
 |---|---|
-| **Commit the phone is running** | `e77c7ae` — "Put a real engine behind the seam, and route nothing to it". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
-| **APK installed at** | **6 Sep 2026, 12:54** (device local, PDT), debug build, phone `<device-serial>` |
-| **Last launched** | **6 Sep 2026, 12:54** — `am start` delivered, process alive (pid 29264), **with the inference engine compiled in and no model file present**: no crash, nothing from MediaPipe in logcat, every deterministic path intact. |
+| **Commit the phone is running** | `8b077fa` — "Make Tasks a screen you can finish things on, and the model one you can follow". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
+| **APK installed at** | **6 Sep 2026, 14:17** (device local, PDT), debug build, phone `<device-serial>` |
+| **Last launched** | **6 Sep 2026, 14:17** — `am start` delivered, process alive, **with the inference engine compiled in and no model file present**: no crash, nothing from MediaPipe in logcat, every deterministic path intact. |
 | **Last seen rendering** | **6 Sep 2026, 11:49, this build.** The microphone button on the Now capture field and on the Chat composer, next to a live stall prompt. At 11:43 the Now card showing `1h (assumed)` against a task you captured without a duration — which is WP-13a's assumption surfacing on real data rather than on a fixture. At 11:29 the estimate sheet open over a raised keyboard with every preset reachable. At 02:18 the month grid drawing real calendar names and colours. |
 | **Last driven by hand** | **6 Sep 2026, 11:49** — opened the Chat tab and read the composer. |
 | **Proved by your own use, 12:19** | Pulled the database read-only. It holds **`clarificationAsked` and `clarificationAnswered`** — 13a asked how long about something you captured without a duration, and you answered it — plus two **`taskUpdated` rows with `source: task_list_tick`** and one with **`source: undo`**. So the question, the new tick and the undo are all confirmed working on hardware, by you rather than by an agent tapping at it. |
 | **Still unproved on hardware** | **13b's opening block** (needs a deep task long enough to be a slab — nothing captured so far has been one; all nine tasks read `depth: unknown`), **the microphone** (needs the permission, which is yours to grant — see below), **13c** (needs a block that has moved three times without ever starting), and **the model engine**, which has never produced a token because there are no weights to run. |
-| **On-device model** | **Engine compiled in and wired; routing left at `"none"`; no weights installed.** The page behind the Now screen's overflow menu was watched drawing on the phone at 12:50 — it names the file, says where it goes, and says why Van will not download it for you. `inference_config.json` routes all three capabilities to `none` and stays that way until the golden set has been run against real weights. Section 3aa. |
+| **On-device model** | **Engine compiled in and wired; routing left at `"none"`; no weights installed.** The page behind the Now screen's overflow menu now gives two numbered steps, and **step one was watched opening Chrome at the model page on this phone at 14:22**. `inference_config.json` routes all three capabilities to `none` and stays that way until the golden set has been run against real weights. Section 3aa. |
 | **Microphone** | **Not granted, deliberately.** `RECORD_AUDIO` is in the manifest and the button is on both composers, but pressing it raises the permission dialog and answering that is your decision, not an agent's — the same call that was made about the calendar. Read-only check: this phone *does* have an on-device recogniser (`com.google.android.tts` registers the `RecognitionService`), so the button should be live rather than disabled once you allow it. |
 | **Schema v4, on the phone** | **Verified, read-only, 10:54.** Pulled the real database: `user_version = 4`, `tasks.depth` and `work_sessions.is_opener` both present, 8 tasks / 25 sessions / 341 events all intact, every pre-existing row reading back as `unknown` and not-an-opener exactly as designed. This is the check section 5d wishes it had had. |
 | **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has run against the real provider. |
-| **Tests** | **825 green (512 app, 313 core)**, `dart analyze --fatal-infos` and `check_layers` clean. `extract_task` still scores **29/29** on the golden set. |
+| **Tests** | **840 green (527 app, 313 core)**, `dart analyze --fatal-infos` and `check_layers` clean. `extract_task` still scores **29/29** on the golden set. |
 
 **Two things still unverified on hardware**, both needing you: a nudge firing
 with START coming back (issue 3), and the two features built this morning
@@ -66,7 +80,7 @@ Android's inexact window. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-**825 tests, all green, on a phone that runs.** Eight things need you and all
+**840 tests, all green, on a phone that runs.** Eight things need you and all
 of them are small. **Items 6 and 7 are new this morning and take ten seconds
 each** — they are the only way the work done overnight gets seen on the
 device, so do those two even if you skip the rest:
@@ -195,7 +209,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **825 tests passing** — 313 in `packages/van_core` (pure Dart), 512 in the app.
+- **840 tests passing** — 313 in `packages/van_core` (pure Dart), 527 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -256,7 +270,8 @@ working configuration, not a degraded one.
 | Core: reading a spoken nudge answer | 10 |
 | Core: reschedule evidence and the defer rule | 12 |
 | App: gathering the evidence from the log | 8 |
-| App: the on-device model page | 11 |
+| App: the on-device model page | 15 |
+| App: deleting, timing and the finished list | 11 |
 
 ---
 
@@ -1726,6 +1741,27 @@ the same as using one; the gate in section 3e decides, and it cannot be
 evaluated until the golden set has been run on the phone against real weights
 (issue 14).
 
+### Getting the file: two steps, and a link
+
+The first version said "download it yourself" and gave no link, which the
+owner correctly called bad UX. **The constraint was never the problem; the
+missing link was.** Van still makes no request and still has no HTTP client —
+it hands a URI to the OS, the **browser** does the downloading, and the
+vendor's own page presents the licence to the person it actually binds. That
+satisfies the no-network rule and the licence at once, and leaves you one tap
+from the file.
+
+The page is now two numbered steps: *Get the file* (opens
+`litert-community/gemma-4-E2B-it-litert-lm`, verified to resolve) and *Point
+Van at it*. **Watched opening Chrome at that page on this phone at 14:22.**
+The URL is also on screen as selectable text, because the button is a
+convenience over the address rather than a replacement for it — a phone with
+no browser still has something to copy.
+
+The page also says the download **can be called anything**: Van copies
+whatever is picked to its own internal name, so showing that name as "what to
+look for" was sending someone hunting for a filename the vendor does not use.
+
 ### The weights surface receives a file; it does not fetch one
 
 Two rules in `AGENTS.md` decide this between them and they agree: **v1 has no
@@ -1747,6 +1783,59 @@ would fail in a way that reads as a bad model rather than a bad copy.
 routing stays in the config asset. The page says so out loud when weights are
 present, because someone assuming the model was in use would read Van's
 deterministic answers as breakage.
+
+---
+
+## 3ab. The Tasks tab, and the number that grades an estimate
+
+Built 6 September, early afternoon, straight from the owner: *"Tasks needs to
+be moved to done, need an option to delete, also need an option to input time
+taken, overall the UI in Tasks bottom nav seems under developed."* All four
+were fair.
+
+### Delete, and why it is not "abandoned"
+
+`TaskStatus.abandoned` means **the user gave up on this work**, and it is the
+only signal Van has for what this person follows through on. Clearing a
+mistake, a duplicate, or something that stopped being a thing is not quitting,
+and recording it as though it were would poison that signal — the same
+argument `undoCapture` has carried since August, which now delegates to the
+same method.
+
+So delete removes the task, its blocks and its armed nudges. **Nothing is
+really lost**: the `events` table is append-only, so the capture and every
+decision that followed it stay exactly where they were. The dialog says *"use
+Done instead if you actually did it"*, because the two adjacent buttons mean
+opposite things to the log.
+
+### Time taken
+
+`Task.actualMinutes`, schema v5, nullable — **the only number in Van that can
+tell an estimate it was wrong.** Everything else the app records is about
+whether work *started*; nothing until now was about whether its size was ever
+right.
+
+**It is never inferred.** Van knows how long a block ran, and that is not how
+long the work took: most of it happens outside the app. So the measured figure
+*pre-fills* the question and the sheet says which it is — "Van watched 20
+minutes of this in a block. Adjust it for anything done outside the app."
+
+**Recording it is separate from finishing.** Forcing them together makes every
+completion a two-step action and the number gets guessed to get past the
+dialog, which is worse than not having it. An open task can be told too: three
+hours in and not finished is a thing you have learned about the estimate.
+
+### The finished section
+
+It exists so that field ever gets filled in. It is the one place in Van where
+an estimate meets what actually happened, it shows both, and every row without
+a time carries an **"Add time"** button — which is the only thing that will
+ever produce one. It also fills a screen that was three rows and a lot of
+nothing.
+
+Each row has an overflow: time taken, estimate, delete. **A finished task
+cannot be re-estimated**, because replanning something that has stopped would
+put blocks on the calendar for work nobody is going to do.
 
 ---
 

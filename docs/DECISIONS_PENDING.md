@@ -458,6 +458,46 @@ invent one, because I have no valid file to test it against.
 
 ---
 
+### D78 — Tasks, time taken, and a number I put in your log by accident
+
+**Read this bit first.** At 14:18 I chained three `adb` taps without
+screenshotting between them, which section 5 of STATUS explicitly warns against
+after it wasted an hour in August. They landed on the Tasks list. **"Cook rice"
+now carries a recorded time of 25 minutes that you never entered.** My own test
+task "Negotiate wiring check" was also completed, reopened and completed again;
+that one is mine and does not matter. Nothing else was touched, and I checked
+the database rather than guessing at what I had done.
+
+I did not silently correct it, because overwriting your data twice to fix
+overwriting it once is not obviously better — and the fix is one tap: Tasks →
+Finished → tap the `25m` on "Cook rice" → set whatever is right. The log
+records the correction as a new row, which is how an append-only log is
+supposed to handle a wrong number.
+
+**Delete is a real delete, not `abandoned`.** Abandoned means you gave up on
+the work, and it is the only signal that status carries. Clearing a mistake off
+the list is not giving up, so recording it as such would poison the one thing
+Van is trying to learn. The task, its blocks and its nudges go; the event log
+keeps everything that happened. **If you would rather deleted work stayed
+visible somewhere, say so** — it is a query change, not a data change, because
+nothing is actually destroyed.
+
+**Time taken is asked for, never inferred, and never forced.** Van could add up
+the minutes between START and Done and call that the answer. It would be wrong
+most of the time, because most work happens outside the app — so the measured
+figure pre-fills the sheet and the wording says that is what it is. And
+recording it is deliberately *not* part of finishing: a dialog between you and
+a completed task gets a guessed number typed into it to make it go away, which
+is worse than an empty field.
+
+**Nothing consumes `actualMinutes` yet.** It is recorded, shown next to the
+estimate, and acted on by nothing. The obvious next step is that a person who
+consistently runs at twice their estimate should stop being offered their own
+estimate — but that is a behaviour change on data neither of us has yet, and
+it should wait for a fortnight of real numbers.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner
