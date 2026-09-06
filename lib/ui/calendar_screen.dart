@@ -1226,11 +1226,13 @@ class _MonthChips extends StatelessWidget {
     if (items.isEmpty) return const SizedBox.shrink();
 
     final scaler = MediaQuery.textScalerOf(context);
-    // Line height plus the chip's own vertical padding, plus the gap under
-    // it. Deliberately generous: a capacity one too high clips a chip, while
-    // a capacity one too low merely counts one more event instead of naming
-    // it.
-    final rowHeight = scaler.scale(_MonthCell.fontSize) * 1.45 + 4;
+    // Exact rather than generous, and the chip is then *given* this height
+    // rather than asked to fit in it. A guess with slack in it costs a whole
+    // chip on a phone - the cell has room for two and an estimate four
+    // logical pixels too cautious rounded that down to one, which is how the
+    // grid ends up naming one event and counting the other.
+    final chipHeight = scaler.scale(_MonthCell.fontSize) * _lineHeight + 2;
+    final rowHeight = chipHeight + 1;
 
     return LayoutBuilder(
       builder: (context, box) {
@@ -1258,6 +1260,7 @@ class _MonthChips extends StatelessWidget {
                   item: items[i],
                   colour: sourceColours[items[i].calendarId],
                   overflow: i == visible - 1 ? hidden : 0,
+                  height: chipHeight,
                 ),
               ),
           ],
@@ -1265,6 +1268,13 @@ class _MonthChips extends StatelessWidget {
       },
     );
   }
+
+  /// The line box a chip's text occupies, as a multiple of its font size.
+  ///
+  /// Pinned here rather than left to the font, because this number is used
+  /// twice - once to decide how many chips fit and once to draw them - and
+  /// the two must be the same number or the count is a guess again.
+  static const _lineHeight = 1.2;
 }
 
 /// One event, named, in the colour its calendar is known by.
@@ -1273,6 +1283,7 @@ class _MonthChip extends StatelessWidget {
     required this.item,
     required this.colour,
     required this.overflow,
+    required this.height,
   });
 
   final _Item item;
@@ -1283,6 +1294,10 @@ class _MonthChip extends StatelessWidget {
   /// How many further events this chip stands in for. Zero for every chip but
   /// the last one in a cell, and usually zero there too.
   final int overflow;
+
+  /// Exactly the height [_MonthChips] counted on, so what was counted and what
+  /// is drawn cannot disagree.
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -1312,12 +1327,13 @@ class _MonthChip extends StatelessWidget {
 
     return Container(
       width: double.infinity,
+      height: height,
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(3),
         border: outline == null ? null : Border.all(color: outline),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       child: Row(
         children: [
           Expanded(
@@ -1328,7 +1344,7 @@ class _MonthChip extends StatelessWidget {
               softWrap: false,
               style: TextStyle(
                 fontSize: _MonthCell.fontSize,
-                height: 1.1,
+                height: _MonthChips._lineHeight,
                 color: foreground,
                 decoration: struck ? TextDecoration.lineThrough : null,
               ),
@@ -1339,7 +1355,7 @@ class _MonthChip extends StatelessWidget {
               '+$overflow',
               style: TextStyle(
                 fontSize: _MonthCell.fontSize,
-                height: 1.1,
+                height: _MonthChips._lineHeight,
                 fontWeight: FontWeight.bold,
                 color: foreground,
               ),
