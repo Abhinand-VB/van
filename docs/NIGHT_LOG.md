@@ -1749,3 +1749,42 @@ verification, it is interference. Both features are covered by widget tests
 that drive the real screens, and both are one capture away from being seen
 for real. STATUS says so in the first table rather than rounding it up.
 
+
+## WP-12, and two tests that were nearly theatre
+
+Voice looked like the biggest item in the queue and was the smallest, for the
+reason its own work package gives: it is an input method, not a capability.
+`van_core` has no diff from the capture half at all. The interesting parts
+were all decisions rather than plumbing.
+
+**The recogniser.** Android gives you two and the default one uploads audio.
+Picking the other is a line of code; deciding what happens on a phone that
+lacks it is the actual work, and the answer had to be "the button says why and
+there is no second path", because any fallback here is the product's central
+promise traded for a convenience.
+
+**Which left two properties nothing could test.** "No audio is written" and
+"the network recogniser is never reached for" are not behaviours - they are
+absences, and no test that drives the app can see an absence. So the test
+reads the source, the way `calendar_test` greps a serialised log for a planted
+title. Then, because a grep that matches nothing looks identical to a grep
+that cannot fail, I planted a violation and watched both assertions fire. They
+did. That check took two minutes and is the only reason I believe the test.
+
+**The other near-theatre was the estimate sheet's keyboard test**, earlier the
+same hour. It passed against the unfixed code first time round - it set the
+window insets after the sheet was already laid out, on an 800x600 test
+surface, which is not a shape any phone has. Giving it 1080x2340 at 3x and
+raising the keyboard *before* the sheet opened reproduced the overflow
+exactly. Two tests in one morning that would have sat there proving nothing.
+The rule in `OVERNIGHT.md` about running a new test against the old code first
+earned its place twice.
+
+**The owner woke up in the middle of it.** At 10:41 the phone was in use, and
+from then on driving Van's UI would have been fighting them for the keyboard
+rather than verifying anything. Everything after that is code, read-only
+device checks, and one direct request - which turned out to be the most
+valuable thing in the run: tasks could not be moved to done, because the only
+route was an undiscoverable swipe and the circles that looked like checkboxes
+were `Icon` widgets. The app had been showing a picture of a control it did
+not have, on the screen people actually use, since August.

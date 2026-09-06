@@ -1,15 +1,19 @@
 # Van — Project Status
 
-**Last updated:** 6 September 2026, 11:30 PDT, at the end of an unattended run
-that started at 02:00, outlasted the night, and finished with the owner awake
-and giving direct feedback. This file is the handover
+**Last updated:** 6 September 2026, 11:50 PDT, during an unattended run that
+started at 02:00 and has outlasted the night. This file is the handover
 between sessions and between agents; it says what is true now. The narrative
 of how it got that way is in `docs/NIGHT_LOG.md`.
 
-**This run did the first three items of the `OVERNIGHT.md` 3c queue** — month
-cells that name what is on them, `WP_JUDGEMENT` 13a (Van asks how long) and
-13b (depth, and the short opening block). All three are installed. Section 3w
-has them; section 3v is the previous session's calendar work.
+**This run has done the first four items of the `OVERNIGHT.md` 3c queue** —
+month cells that name what is on them, `WP_JUDGEMENT` 13a (Van asks how long),
+13b (depth, and the short opening block), and `WP_VOICE.md` in full. All are
+installed. Sections 3w, 3x and 3y have them; 3v is the previous session's
+calendar work.
+
+**Two items left in the queue**: 13c (reschedule judgement on evidence) and
+13d (the on-device engine, which is licence-blocked and has standing
+instructions in `OVERNIGHT.md`).
 
 **Then you said two things and they were both right**: tasks could not be
 moved to done, and the card should carry an editable time with a default.
@@ -31,15 +35,16 @@ own database with every row intact.
 
 | | |
 |---|---|
-| **Commit the phone is running** | `635750b` — "Stop the estimate sheet overflowing behind the keyboard". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
-| **APK installed at** | **6 Sep 2026, 11:29** (device local, PDT), debug build, phone `<device-serial>` |
-| **Last launched** | **6 Sep 2026, 11:29** — `am start` delivered, process alive. |
-| **Last seen rendering** | **6 Sep 2026, 11:29, this build.** The Now card with its editable estimate chip and "Mark done", the "After that" rows with working tick circles and per-task estimates, and the estimate sheet open over a raised keyboard with every preset and the Save button reachable. Screenshotted. Earlier, at 02:18, the month grid drawing real calendar names and colours. |
-| **Last driven by hand** | **6 Sep 2026, 11:29** — opened the estimate editor on a real task and dismissed it without changing anything. |
-| **Still not driven by hand** | **13a's question and 13b's opening block.** Both would mean capturing a task on your phone, and between 10:41 and 11:20 you were using it. Both are covered by widget tests against the real screens; both are one capture away. Section 0 items 6 and 7. |
+| **Commit the phone is running** | `c54adeb` — "Answer a nudge by saying the answer". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
+| **APK installed at** | **6 Sep 2026, 11:48** (device local, PDT), debug build, phone `<device-serial>` |
+| **Last launched** | **6 Sep 2026, 11:48** — `am start` delivered, process alive (pid 14222). |
+| **Last seen rendering** | **6 Sep 2026, 11:49, this build.** The microphone button on the Now capture field and on the Chat composer, next to a live stall prompt. At 11:43 the Now card showing `1h (assumed)` against a task you captured without a duration — which is WP-13a's assumption surfacing on real data rather than on a fixture. At 11:29 the estimate sheet open over a raised keyboard with every preset reachable. At 02:18 the month grid drawing real calendar names and colours. |
+| **Last driven by hand** | **6 Sep 2026, 11:49** — opened the Chat tab and read the composer. |
+| **Still not driven by hand** | **13a's question, 13b's opening block, and the microphone itself.** The first two need a capture on your phone; the third needs the microphone permission, which is yours to grant — see the row below. All three are covered by tests that drive the real screens. Section 0 items 6 to 8. |
+| **Microphone** | **Not granted, deliberately.** `RECORD_AUDIO` is in the manifest and the button is on both composers, but pressing it raises the permission dialog and answering that is your decision, not an agent's — the same call that was made about the calendar. Read-only check: this phone *does* have an on-device recogniser (`com.google.android.tts` registers the `RecognitionService`), so the button should be live rather than disabled once you allow it. |
 | **Schema v4, on the phone** | **Verified, read-only, 10:54.** Pulled the real database: `user_version = 4`, `tasks.depth` and `work_sessions.is_opener` both present, 8 tasks / 25 sessions / 341 events all intact, every pre-existing row reading back as `unknown` and not-an-opener exactly as designed. This is the check section 5d wishes it had had. |
 | **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has run against the real provider. |
-| **Tests** | **754 green (463 app, 291 core)**, `dart analyze --fatal-infos` and `check_layers` clean |
+| **Tests** | **793 green (492 app, 301 core)**, `dart analyze --fatal-infos` and `check_layers` clean |
 
 **Two things still unverified on hardware**, both needing you: a nudge firing
 with START coming back (issue 3), and the two features built this morning
@@ -53,7 +58,7 @@ Android's inexact window. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-**754 tests, all green, on a phone that runs.** Seven things need you and all
+**793 tests, all green, on a phone that runs.** Eight things need you and all
 of them are small. **Items 6 and 7 are new this morning and take ten seconds
 each** — they are the only way the work done overnight gets seen on the
 device, so do those two even if you skip the rest:
@@ -120,6 +125,16 @@ device, so do those two even if you skip the rest:
    4 hours" and check it does *not* get one — an errand is not deep work, and
    the reading behind that is a verb list I would like you to disagree with in
    specific cases rather than in general. Section 3w.
+8. **Press the microphone and allow it.** It is on the capture field and on
+   the Chat composer. **Van will not send your voice anywhere** — it uses
+   Android's on-device recogniser only and has no fallback to the networked
+   one, which is asserted against the Kotlin source rather than merely
+   intended. Say "finish the assignment by friday, two hours": the words
+   should land *in the field*, not straight into a task, because recognition
+   is wrong often enough that committing from speech would put tasks nobody
+   said into a log that never deletes. Then, next time a nudge is sitting in
+   Chat, say "not today" and watch it do exactly what the button does.
+   Section 3y.
 
 **After a week, run this.** It prints what the log actually says — how many
 blocks you started, what Van held back and why, and how often moving work
@@ -172,7 +187,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **754 tests passing** — 291 in `packages/van_core` (pure Dart), 463 in the app.
+- **793 tests passing** — 301 in `packages/van_core` (pure Dart), 492 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -228,6 +243,9 @@ working configuration, not a degraded one.
 | App: schema v4 migration | 4 |
 | App: month chips | 6 |
 | App: finishing, undo and the estimate editor | 17 |
+| App: the speech channel and its two promises | 13 |
+| App: the microphone on both composers | 16 |
+| Core: reading a spoken nudge answer | 10 |
 
 ---
 
@@ -247,7 +265,7 @@ working configuration, not a degraded one.
 | WP-9 | Cloud backends (Claude / OpenAI / Gemini) | Not started (phase 3) |
 | WP-10 | Usage-stats distraction detection | Not started (phase 4) |
 | WP-11 | Device calendar as a commitment source | **Done, granted and proved on the phone** (see 3v) |
-| WP-12 | Speaking to Van — voice capture, spoken nudge answers | Not started (`docs/WP_VOICE.md`) |
+| WP-12 | Speaking to Van — voice capture, spoken nudge answers | **Done, installed, microphone not yet granted** (see 3y) |
 | WP-13 | Making the model earn its place — asking, depth, evidence, engine | **13a and 13b done and installed** (section 3w). 13c (reschedule judgement) and 13d (the engine) not started. `docs/WP_JUDGEMENT.md` |
 
 ### Commits
@@ -1497,6 +1515,78 @@ passed against the unfixed code — measuring nothing, which is exactly what
 `OVERNIGHT.md` warns about. Giving it this phone's shape (1080x2340 at 3x) and
 raising the keyboard *before* the sheet opens reproduces it precisely: `A
 RenderFlex overflowed by 189 pixels` on the old code, clean on the new.
+
+---
+
+## 3y. Speaking to Van (WP-12)
+
+Built 6 September, late morning. `docs/WP_VOICE.md` is the plan. Both halves
+are done and installed; the microphone permission has not been granted, and
+that is deliberate — see the first table.
+
+### Voice is an input method, not a capability
+
+`packages/van_core` has **no diff at all** from the capture half. That was the
+work package's own test of whether this was built correctly: speech produces a
+string, the string goes through the same `extract_task`, the same parser, the
+same planner and the same log, and if the microphone had leaked into the
+domain it would show up there. It did not.
+
+### The recogniser, and the absence of a fallback
+
+`SpeechPlugin.kt` uses **`createOnDeviceSpeechRecognizer` and nothing else**.
+Android's ordinary `SpeechRecognizer` streams audio to Google on most devices,
+and `AGENTS.md` forbids a network dependency in v1 outright. On a phone with
+no offline recogniser the button stays visible, is disabled, and says *"this
+phone has no offline speech recognition, and Van will not send your voice
+anywhere"* — which is the honest answer where a silent downgrade would have
+traded the product's central promise for a button press.
+
+**Two properties matter that no behaviour test can observe**: that audio is
+never written to disk, and that the networked recogniser is never reached for.
+They live only in the source, so the source is what is asserted against —
+`speech_test.dart` greps the Kotlin for every route Android offers to put
+bytes on disk (`FileOutputStream`, `openFileOutput`, `AudioRecord`,
+`cacheDir`, …), for `createSpeechRecognizer(`, and for an `INTERNET`
+permission in the manifest. The guard was checked by planting a violation;
+both assertions fired. Same shape as the calendar test that greps a serialised
+event log for a planted meeting title.
+
+### A transcript is a draft, except once
+
+Everywhere except a nudge, the transcript lands in the field the user was
+about to type in and **nothing else happens**. Recognition is wrong often
+enough that capturing straight from it would put tasks nobody said into a log
+that never deletes. It appends rather than replaces when something is already
+typed.
+
+**Answering a nudge is the exception**, and `WP_VOICE.md` 2.3 names it as one:
+the answer space is three actions wide and the moment Van most wants an answer
+is the moment the user is least willing to look at a screen. A spoken "not
+today" calls exactly the service method the notification's Not today button
+calls, and writes the same `sessionMissed` row. **Voice reaches nothing a
+thumb could not**, which is what keeps the action set closed.
+
+`SpokenAnswerReader` is pure and lives in van_core. Its orderings are the
+content, and each has a test named after the confusion it prevents: "not
+today" and "not right now" are opposite amounts of no, so the day-sized answer
+is tested first; "tomorrow, give me an hour" is not an hour; "I've started,
+twenty minutes in" is not a snooze. A bare number inside a sentence is never
+minutes — "in 2018" is not a duration — but a bare duration answering "are you
+starting?" is a snooze, because it cannot mean anything else.
+
+**When Van cannot tell, it asks.** An unrecognised answer says so, leaves the
+words in the composer where they make a perfectly good reason to negotiate
+with, and changes nothing. Applying the wrong action would move work the user
+never agreed to move, in a log that never deletes; silence is the cheaper
+mistake.
+
+### Degradation
+
+The same shape as the calendar. Refusing the microphone removes the button and
+breaks nothing else, and the default everywhere is `UnsupportedSpeech` — so a
+screen given no recogniser behaves like a phone that cannot listen, rather
+than offering a button that always fails.
 
 ---
 

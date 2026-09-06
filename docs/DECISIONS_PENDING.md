@@ -342,6 +342,44 @@ not a scale. 25 is there because it is the opening-block length from 13b.
 
 ---
 
+### D75 — Voice: what I did not do, and the one thing I left for you
+
+**I did not press the microphone button.** It is installed and on both
+composers, but the first press raises the `RECORD_AUDIO` dialog, and granting a
+microphone on your behalf is not an agent's call — the same reasoning that left
+the calendar grant to you. Dismissing the dialog would also have *denied* it and
+hidden the button, so I left it untouched. **This phone does have an on-device
+recogniser** (`com.google.android.tts` registers the `RecognitionService`),
+checked read-only, so the button should be live rather than disabled.
+
+**Speech acts directly on a nudge and drafts everywhere else.** That asymmetry
+is the work package's own (2.3 names 2.4 as its exception) but it is worth your
+eye, because it means a spoken "not today" changes state with no confirmation
+step. The argument for it: the action space is three wide, every one of them is
+already a one-tap button on the notification, and requiring a confirmation on
+the one input method chosen *because* the user does not want to look at the
+screen would defeat it. The argument against: recognition is wrong sometimes,
+and "not today" is not trivially undoable. **If that lands badly, the fix is one
+line** — route spoken answers through the composer like everything else.
+
+**"yes" counts as "I've started".** The thinnest entry in the word list and the
+most likely to misfire, since "yes" answers a lot of questions. It is there
+because it is what people actually say to "are you starting?". Say the word and
+it goes.
+
+**No wake word, and no always-on listening.** Push-to-talk only. An
+always-listening app needs a foreground service holding the microphone open,
+costs battery continuously, shows a permanent notification, and makes a promise
+about a household's private conversation Van cannot honestly keep — for a
+benefit that is close to zero here, because Van's whole model already has the
+phone in your hand when it interrupts you.
+
+**Reading nudges aloud is not built.** `WP_VOICE.md` puts text-to-speech out of
+scope and I agree: interrupting a room is a different decision from
+interrupting a person, and it should be taken separately.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner
