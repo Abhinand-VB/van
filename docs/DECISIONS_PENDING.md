@@ -275,6 +275,42 @@ the interruption, or is it a dialog you learned to dismiss? **Two counters in
 
 ---
 
+### D73 — Depth: one behaviour, one verb list, and a column that is not there
+
+**The verb list is the part to argue with.** `DepthReader` calls "research /
+design / write / draft / plan / decide" deep and "email / pay / book / submit
+/ send" shallow, and calls "the assignment", "the report", "chapter 3" deep on
+the noun alone. It is crude on purpose - the point was to get *a* signal that
+changes behaviour, because a model that improves a signal nothing acts on
+improves nothing. **Disagree with it in specific cases rather than in
+general**: a word in the wrong list is a one-line fix, and which words are
+wrong is something only your own tasks can say.
+
+**Confidence is recorded and not stored.** Every reading carries one, and
+nothing reads it - the planner looks at depth alone. So it goes in the
+`taskCreated` event payload as `depthConfidence` rather than becoming a column
+on `tasks`. The reasoning: it is a fact about one reading of one sentence,
+which is what the append-only log is for, and an unread column is dead weight
+that the next person has to decide whether to trust. **If a model later wants
+to refuse to act below some confidence, that is a schema change** - and I
+would rather you took that decision knowing it than found a column already
+sitting there implying it had been taken.
+
+**The opener costs a day sometimes.** `maxSessionsPerDay` is 3, and a
+four-hour deep task needs four blocks once one of them is a 25-minute opener,
+so its last thirty-five minutes move to tomorrow. I did not raise the daily
+cap to hide this - three blocks a day is a tuned number and this feature is
+not a reason to retune it - but if a deep task's tail sliding a day feels
+wrong in use, that cap is the dial, not the opener.
+
+**Nothing is backfilled.** Every task captured before this morning reads back
+as `unknown` depth and gets no opener, forever. Re-reading their titles
+through the verb list would invent a depth for work whose plan was already
+made without one, and a depth disagreeing with the plan next to it is worse
+than no depth.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner

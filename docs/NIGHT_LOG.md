@@ -1638,3 +1638,114 @@ The pleasing part: the correct on-device signal for the timezone fix is a
 **zero**. The offset has not moved, so `refreshTimezone` returns false and no
 `timezoneChanged` row is written — and the database shows none. An absence is
 weak evidence on its own, but it is the right absence.
+
+---
+
+# 6 September 2026 — unattended, and it turned into daytime
+
+Started at 02:00 with the tree green, the phone unlocked and the calendar
+permission already granted. Queue was `OVERNIGHT.md` 3c: month chips, then
+WP-13a, then 13b, then voice, then 13c, then the engine.
+
+**Three items done and installed. The run outlasted the night**, which is
+worth recording because it changes what the last hours were worth: by 10:41
+the owner was awake, on a call, and using the phone, and I stopped driving
+Van's UI rather than fight them for the keyboard. Everything after that is
+code and read-only device checks.
+
+## The month grid, and a lesson about estimates
+
+The grid has now been bars, then dots, then names. Bars said a day was busy.
+Dots said how busy. Only the third one says with what, which is the only part
+anyone can act on.
+
+The interesting part was not the chips, it was **the height of them**. The
+first version reserved a generous row height so a chip could not clip — line
+height times 1.45, plus four. Sensible-looking, and on the phone it cost a
+whole chip: the cell has room for two names and an estimate four logical
+pixels too cautious rounds that down to one, which is dots with extra steps.
+It looked fine in the widget tests, because an 800x600 test surface has
+different arithmetic from a 1080x2340 phone.
+
+The fix was not a better estimate. It was to **stop estimating**: compute the
+height once, use it to decide how many fit, and then hand it to the chip as
+its actual height. What was counted and what is drawn are now the same number
+by construction. Same shape as the argument in the calendar work about the
+planner and the screen never being allowed to disagree — a margin of error is
+a second opinion, and two opinions drift.
+
+The screenshot that settled it also produced the night's only free finding:
+eight Google accounts means Tuesdays carry "253" and "279" every week, and the
+`+1` overflow marker appears exactly where you would want it. Real data,
+first look.
+
+## WP-13a — where the decision actually was
+
+`session_planner.dart:116` substituting a default duration is one line, and
+fixing the line is not the work. The work is deciding what "ask" means when
+the app's whole promise is that saying something once is enough.
+
+Two readings of "never block capture on it" were available. The weak one:
+hold the sentence, ask, capture whatever comes back. The strong one: capture
+first, plan first, arm the ladder first, and *then* ask — so ignoring the
+question costs literally nothing. I took the strong one. It has a real price,
+which is that Van briefly schedules on a guess and throws those blocks away if
+you answer, and that price is visible in the log as `blocksReplaced`. But the
+alternative risks the one failure this app cannot have, which is a typed
+thought that does not survive.
+
+The second decision that took thinking was **a bare number**. "45" answering
+"roughly how long?" is obviously minutes; "2" is genuinely ambiguous. Reading
+it as two hours would be the invisible mistake — you would never notice a
+two-hour block that should have been two minutes until it had eaten an
+afternoon. Two minutes is visibly wrong and costs one re-answer. So: minutes,
+always, and the rule lives in `durationIn` where it only applies to answers.
+A capture sentence still ignores bare digits, because "call flat 12" is not a
+twelve-minute job.
+
+**The screen tests earned their keep immediately.** Two patch scripts had both
+applied the same block to the question bubble, so the "I did not get a length
+out of that" line rendered twice. Nothing else would have caught it — it
+analyses clean, it compiles, and it looks like a styling quirk in a
+screenshot.
+
+## WP-13b — and a test that had been lying by omission
+
+The behaviour is one sentence: a deep task long enough to need more than one
+block opens with twenty-five minutes named "Work out where to start". Both
+halves are load-bearing. Deep work that fits in one block is left alone,
+because nobody bounces off forty minutes.
+
+The consequence I did not predict and the tests found: three blocks a day is
+the cap, and adding an opener makes a four-hour deep task need four blocks. So
+the last thirty-five minutes move to tomorrow. Nothing is lost, but it is a
+real cost of the feature and it now has a test named after it rather than
+being discovered on a Tuesday.
+
+**Then the migration.** `test/data/migration_test.dart` builds a v1 database
+by hand, and its stated reason for doing so is to test "the shape that is
+actually sitting on the phone". It built one table. That was fine while every
+migration only touched `events` — and the moment v4 added a column to `tasks`,
+seven passing tests failed with `no such table: tasks`. The fixture had been
+wrong the whole time and nothing had asked it a question that could tell.
+
+Worth naming because this is section 5d's mistake wearing new clothes: that
+one shipped a column without its index and got caught on the phone. This one
+would have been caught on the phone too — an upgrade would have run fine,
+because a real phone *has* the tables — but the test would have gone on
+claiming a coverage it did not have.
+
+The v4 upgrade was then run against the real database pulled off the phone:
+`user_version = 4`, both columns present, 8 tasks, 25 sessions and 341 events
+intact, every pre-existing row reading back as `unknown` depth and
+not-an-opener. That is the check 5d wishes it had had.
+
+## What I did not do, and why
+
+**Device UI verification of 13a and 13b.** The install is current and Van was
+watched launching on it, but at 10:41 the owner picked the phone up. Driving
+`input tap` into an app while its owner is typing in another one is not
+verification, it is interference. Both features are covered by widget tests
+that drive the real screens, and both are one capture away from being seen
+for real. STATUS says so in the first table rather than rounding it up.
+

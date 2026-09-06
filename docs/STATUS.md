@@ -1,14 +1,18 @@
 # Van — Project Status
 
-**Last updated:** 6 September 2026, 00:55 PDT, with the owner present and the
-phone attached. This file is the handover between sessions and between agents;
-it says what is true now. The narrative of how it got that way is in
-`docs/NIGHT_LOG.md`.
+**Last updated:** 6 September 2026, 11:00 PDT, at the end of an unattended run
+that started at 02:00 and outlasted the night. This file is the handover
+between sessions and between agents; it says what is true now. The narrative
+of how it got that way is in `docs/NIGHT_LOG.md`.
 
-**This session built WP-11, the device calendar** (`docs/WP_CALENDAR.md`), and
-installed it. Section 3v has the decisions and the one thing still needing you.
-Note the two-week gap in this file: the phone ran the 22 August build until
-today, so nothing between those dates was observed on hardware.
+**This run did the first three items of the `OVERNIGHT.md` 3c queue** — month
+cells that name what is on them, `WP_JUDGEMENT` 13a (Van asks how long) and
+13b (depth, and the short opening block). All three are installed. Section 3w
+has them; section 3v is the previous session's calendar work.
+
+**It stopped driving the phone's UI at 10:41**, when you woke up and started
+using it. Everything after that is code and read-only device checks, and the
+first table below says exactly what was and was not seen on hardware.
 
 Read order for a new session: this file, then `AGENTS.md`, then
 `docs/ARCHITECTURE.md`. `docs/AGENT_TASKS.md` is the original plan and is
@@ -18,56 +22,38 @@ largely superseded by this file.
 
 ## Does it work?
 
-**Yes, and the calendar is now real.** The permission was granted on 6
-September, and the Schedule view was watched drawing this phone's actual
-events — a public holiday, three flights — beside Van's own blocks.
+**Yes.** The month grid was watched drawing this phone's real calendar with
+names and colours on it, and the schema v4 upgrade was run against the phone's
+own database with every row intact.
 
 | | |
 |---|---|
-| **Commit the phone is running** | `b01e4ce` — "Give the month a day to read, not just dots". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
-| **APK installed at** | **6 Sep 2026, 00:53:55** (device local, PDT), debug build, phone `<device-serial>` |
-| **Last launched** | **6 Sep 2026, 00:54** — `am start` delivered, process alive (pid 30090) |
-| **Last seen rendering** | **6 Sep 2026, 01:35, this build.** The Schedule view drawing real calendar events (Labor Day, three flights) beside Van's own blocks, the day timeline, the view menu, and the Calendars page listing this phone's calendars. Screenshotted. |
-| **Last driven by hand** | **6 Sep 2026, 01:35** — switched views through the app bar menu and read the fortnight off the schedule. |
-| **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has now run against the real provider: the settings page lists this phone's calendars (eight Google accounts, Samsung birthdays, Coursera) and the Schedule view draws real events. The least-proved code in the repository is no longer unproved. |
-| **Tests** | 683 green (414 app, 269 core), `dart analyze --fatal-infos` and `check_layers` clean |
-
-**What that gap does and does not mean.** The calendar UI was watched drawing
-on this build, and the whole feature is covered by tests against a fake
-provider. What has never run is `CalendarPlugin.kt` — the Kotlin that queries
-`CalendarContract` — because the permission behind it has not been granted.
-Everything Dart-side that consumes it is exercised; the query itself is the
-least-proved code in the repository, and the first grant is what will prove or
-disprove it. If the Calendars page comes up empty on a phone that plainly has
-calendars, that query is where to look, not the Dart.
-
-**The previous entry in this table was `1c54b0e`, the timezone fix, installed
-22 August and never seen drawing.** It has now run for two weeks on this phone
-and its UI was seen this morning, so that gap is closed by ordinary use rather
-than by an experiment. Nothing about it needs reverting.
+| **Commit the phone is running** | `3087bc4` — "Give a deep task a first block it can actually be started from". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
+| **APK installed at** | **6 Sep 2026, 10:52** (device local, PDT), debug build, phone `<device-serial>` |
+| **Last launched** | **6 Sep 2026, 10:53** — `am start` delivered, process alive (pid 21910), and it wrote to the database, which is what proves it got through its composition root. |
+| **Last seen rendering** | **6 Sep 2026, 02:18**, on commit `af793dd`. The month grid with two named chips per cell, real calendar colours, and `+1` overflow. Screenshotted. **The two builds after that were installed and launched but not watched drawing** — see the row below. |
+| **Last driven by hand** | **6 Sep 2026, 10:42.** Stopped there deliberately: you had picked the phone up. |
+| **Why the UI was not driven after 10:42** | You were awake and using the phone — a call in progress and another app in the foreground. Driving `input tap` into Van while its owner is typing elsewhere is interference, not verification. **So 13a and 13b have not been seen working on the device.** Both are covered by widget tests that drive the real screens, and both are one capture away: type "finish the assignment" into the Now field and Van should ask how long; type "write the dissertation, 4 hours" and the first block should be 25 minutes called "Work out where to start". |
+| **Schema v4, on the phone** | **Verified, read-only, 10:54.** Pulled the real database: `user_version = 4`, `tasks.depth` and `work_sessions.is_opener` both present, 8 tasks / 25 sessions / 341 events all intact, every pre-existing row reading back as `unknown` and not-an-opener exactly as designed. This is the check section 5d wishes it had had. |
+| **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has run against the real provider. |
+| **Tests** | **737 green (446 app, 291 core)**, `dart analyze --fatal-infos` and `check_layers` clean |
 
 **Two things still unverified on hardware**, both needing you: a nudge firing
-with START coming back (issue 3), and anything at all behind the calendar
-permission (section 3v).
+with START coming back (issue 3), and the two features built this morning
+(13a and 13b), which need one capture each.
 
-**The two-week gap is the same failure this section was written to catch.**
-The phone ran the 22 August build until today while `master` sat still — which
-is the harmless direction of that mistake, but it is worth naming: nothing
-between 22 August and 6 September was observed on hardware, because nothing
-was built.
-
-Two things still need you, both small: **tap the banner on the Now screen and
-grant "Alarms & reminders"**, so nudges fire to the minute instead of within
-Android's inexact window; and **tap the calendar icon and grant the calendar**,
-which is the only way any of WP-11 gets exercised. Detail in section 0 below.
+**One thing still needs you and is one tap: grant "Alarms & reminders"** from
+the banner on the Now screen, so nudges fire to the minute instead of within
+Android's inexact window. Detail in section 0 below.
 
 ---
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **683 tests, all green,
-on a phone that runs.** Five things need you, and they are small — the newest
-is last, because it is the only one that was not already here yesterday:
+**737 tests, all green, on a phone that runs.** Seven things need you and all
+of them are small. **Items 6 and 7 are new this morning and take ten seconds
+each** — they are the only way the work done overnight gets seen on the
+device, so do those two even if you skip the rest:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
    tap, and it is the first thing to do — **there is now evidence it matters.**
@@ -119,6 +105,18 @@ is last, because it is the only one that was not already here yesterday:
    and everything on them is included by default; untick from the tune icon.
    Van reads them at planning time and never writes to them. Event names are
    shown on that screen and recorded nowhere — section 3v and D71.
+6. **Type "finish the assignment" into the Now field.** Ten seconds. Van
+   should capture it, schedule it, *and* ask "Roughly how long? e.g. 45
+   minutes, or 2 hours" — saying underneath that it planned on an assumed
+   hour in the meantime. Type "3 hours" and it should replan; type nothing and
+   the plan it already made stands. This is WP-13a and it is the one thing in
+   the product that answers your "it is not asking questions". Section 3w.
+7. **Type "write the dissertation, 4 hours".** Ten seconds. The first block
+   should be **25 minutes** and say **"Work out where to start"** under the
+   title, not 90 minutes of the dissertation. Then type "email the whole list,
+   4 hours" and check it does *not* get one — an errand is not deep work, and
+   the reading behind that is a verb list I would like you to disagree with in
+   specific cases rather than in general. Section 3w.
 
 **After a week, run this.** It prints what the log actually says — how many
 blocks you started, what Van held back and why, and how often moving work
@@ -171,7 +169,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **683 tests passing** — 269 in `packages/van_core` (pure Dart), 414 in the app.
+- **737 tests passing** — 291 in `packages/van_core` (pure Dart), 446 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -220,6 +218,12 @@ working configuration, not a degraded one.
 | App: calendar preferences | 8 |
 | App: calendar screen, four views | 34 |
 | App: timezone (calendar cases added) | +4 |
+| Core: clarification and answer reading | 9 |
+| Core: depth reading and the opening block | 13 |
+| App: asking and answering at capture | 12 |
+| App: the question on the Now screen and in chat | 11 |
+| App: schema v4 migration | 4 |
+| App: month chips | 6 |
 
 ---
 
@@ -240,7 +244,7 @@ working configuration, not a degraded one.
 | WP-10 | Usage-stats distraction detection | Not started (phase 4) |
 | WP-11 | Device calendar as a commitment source | **Done, granted and proved on the phone** (see 3v) |
 | WP-12 | Speaking to Van — voice capture, spoken nudge answers | Not started (`docs/WP_VOICE.md`) |
-| WP-13 | Making the model earn its place — asking, depth, evidence, engine | Not started (`docs/WP_JUDGEMENT.md`) |
+| WP-13 | Making the model earn its place — asking, depth, evidence, engine | **13a and 13b done and installed** (section 3w). 13c (reschedule judgement) and 13d (the engine) not started. `docs/WP_JUDGEMENT.md` |
 
 ### Commits
 
@@ -1309,6 +1313,116 @@ needed no fix: `FreeSlotFinder` merges overlapping commitments, so eight
 copies of a holiday always cost what one copy costs. This is the standing
 argument for getting a build onto the phone, in miniature.
 
+## 3w. Van asks, and a deep task gets a way in (WP-13 a and b)
+
+Built 6 September, overnight. `docs/WP_JUDGEMENT.md` is the plan; this is what
+is in the code and where it went further or narrower than the plan.
+
+### The month grid names what is on it
+
+Not part of WP-13, but it shipped first and it is what the grid does now. A
+chip per event carrying its name, filled in the colour the phone gives that
+calendar; Van's own blocks in Van's green; `+2` on the last chip that fits
+rather than on a row of its own. **The number of chips is measured, not
+chosen** — the cell divides its own height by the height a chip needs at the
+user's text scale, so a larger font draws fewer chips instead of clipped ones,
+and a cell too short for even one name falls back to a dot. Two per cell on
+this phone.
+
+`CalendarOccurrence` now carries `calendarId` so the screen can look a colour
+up. **It goes exactly as far as the title does and no further**: the planner
+still receives nameless, sourceless commitments from `CalendarFilter`, and the
+test that plants a sensitive title and greps the serialised log still passes.
+D71's boundary is unchanged; one more field crosses it in the same direction.
+
+The timeline views (day, week, schedule) were deliberately *not* recoloured.
+D72 says why, and reversing that is a few lines.
+
+### 13a — Van asks how long, and captures anyway
+
+**The defect was one line.** `session_planner.dart:116` substituted
+`defaultEstimateMinutes` for a task nobody had given a duration for, and
+blocked out time as though the user had said so. A plan built on a statement
+and a plan built on a guess looked identical.
+
+**The order is the decision.** Van captures the task, plans it, arms the
+ladder, *and then* asks. Not the other way round. Ignoring the question
+therefore costs nothing at all, which is the difference between a question and
+a form — and it means the one failure this app cannot have, a typed thought
+that does not survive, is impossible by construction. The price is that Van
+briefly schedules on a guess and throws those blocks away if you answer, which
+shows in the log as `clarificationAnswered` with `blocksReplaced`.
+
+**One question, never two.** `CaptureQuestions` (van_core, pure) asks about
+duration and nothing else: without a duration the planner *has* to invent one,
+while without a deadline it schedules soon rather than wrongly. `TaskField`
+can carry `deadline` anyway so a model is not blocked behind a type change,
+which is the trap WP_JUDGEMENT section 1 is about.
+
+**The answer goes in the same field.** On the Now screen a bar appears under
+the composer and the hint becomes the question; in chat the question is a
+transcript card behind the plan card, with a "Leave it" button. The next line
+typed answers it. An answer with no length in it leaves the question standing
+and says why — a question that closed on a typo would have taken an answer it
+never got. Work already started is never re-planned out from under the person
+sitting in it.
+
+**A bare number is minutes, and only when answering.** "45" is forty-five
+minutes; "2" is two minutes and lands on the planner's quarter-hour floor.
+Reading it as two *hours* would be the invisible mistake. The rule lives in
+`TemporalParser.durationIn` and is not used when reading a captured sentence,
+so "call flat 12" is still not a twelve-minute job. D72.
+
+**Two rows in the log**, `clarificationAsked` and `clarificationAnswered`,
+because whether asking earns its interruption is answered by counting. **They
+are not in the week report** and that is the omission I am least comfortable
+with — D72's last paragraph makes the case for adding them and it is ten
+minutes' work if you agree.
+
+### 13b — depth, and the block that makes starting possible
+
+**The behaviour, which is the whole point:** a deep task that is long enough
+to need more than one block opens with **25 minutes named "Work out where to
+start"**, instead of 90 minutes named after the whole job. A four-hour "write
+the dissertation" is not short of time, it is short of a first step.
+
+Both conditions matter. Deep work that already fits in one block is left
+alone — nobody bounces off forty minutes, and splitting it would fragment a
+length the user agreed to.
+
+**The cost, which has its own test:** three blocks a day is the cap, so a
+four-hour deep task needs four blocks once one of them is an opener, and the
+last thirty-five minutes land tomorrow. Nothing is lost. It is later.
+
+**The label is half the feature.** A 25-minute block called "Write the
+dissertation" reads as Van mis-estimating; called "Work out where to start" it
+reads as sensible. One constant in `lib/ui/wording.dart`, shown on the Now
+card, on the focus timer while it runs, and as "first step" on the calendar,
+because three screens naming one block three ways is how that drifts.
+
+**The reading is a verb list and it says so.** `DepthReader` returns a
+`DepthReading` with a confidence, and the low ones are where it earns its
+keep: "email the design brief" is two kinds of verb in one sentence and comes
+back at 0.35. **Nothing acts on confidence yet** — the planner reads depth
+alone — so it is recorded in the `taskCreated` event rather than given a
+column. See D73.
+
+**Schema v4** adds `tasks.depth` and `work_sessions.is_opener`, both with
+defaults, because `addColumn` on a NOT NULL column with no default fails
+against a table that already has rows — which is every database on this phone.
+**Nothing is backfilled**: re-reading old titles through today's verb list
+would invent a depth for work whose plan was made without one.
+
+**And the migration test had been lying by omission.** It built the `events`
+table alone, while claiming to test "the shape actually sitting on the phone".
+That was harmless while every migration only touched events; the moment v4
+touched `tasks`, seven passing tests failed with `no such table`. The fixture
+now builds `tasks` and `work_sessions` too, with four tests on the v4 upgrade
+itself — and the upgrade was then run against the phone's own database, which
+is the first table in this file.
+
+---
+
 ---
 
 ## 4. Open issues
@@ -1623,15 +1737,24 @@ What is left needs you, or needs evidence from real use.
    that marks all-day entries busy, and the answer is to untick that calendar
    rather than to change the rule.**
 
-6b. **Two new work packages are written and queued** for the next unattended
-   run: `docs/WP_VOICE.md` (capture by voice, answer a nudge by voice) and
-   `docs/WP_JUDGEMENT.md` (Van asks when it does not know, task depth,
-   reschedule judgement on evidence, and the on-device engine). The owner's
-   diagnosis that opened them is worth keeping: *"it is not analysing task
-   depth, not analysing whether a reschedule is legitimate, and not asking
-   questions."* All three are true, none is a prompt problem, and two of them
-   cannot work at all until the capability contracts have somewhere to put the
-   answer. `docs/OVERNIGHT.md` 3c is the order.
+6b. **Two of your three complaints are now answered in code.** The diagnosis
+   that opened `WP_JUDGEMENT.md` was: *"it is not analysing task depth, not
+   analysing whether a reschedule is legitimate, and not asking questions."*
+   Asking (13a) and depth (13b) are built, installed and described in section
+   3w; both needed no model, which was the argument for doing them first. What
+   is left of that queue, in `docs/OVERNIGHT.md` 3c order:
+
+   - **`docs/WP_VOICE.md`** — capture by voice, answer a nudge by voice. Not
+     started. Section 2.2 of it is a hard rule: audio never leaves the device
+     and never touches disk.
+   - **13c, reschedule judgement on evidence.** Not started. `Negotiate` still
+     sees only the ladder rung; the move count, the start history and the
+     calendar density are all in the database and none of it reaches the
+     prompt.
+   - **13d, the engine.** Not started. Note the licence: an agent cannot
+     accept one, so the instruction standing in `OVERNIGHT.md` is to build the
+     engine and the download surface, leave the routing at `"none"`, and move
+     on.
 
 7. **Only then decide about WP-6** (section 3e). My honest read: the case for
    it has got weaker, not stronger. The parser now answers every golden case
