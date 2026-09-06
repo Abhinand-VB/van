@@ -70,13 +70,15 @@ class LiteRtEngine(
                 .build(),
         )
         return session.use {
-            // The model has no system role, so the system prompt is prepended
-            // rather than passed separately. Two chunks rather than one string
-            // so the boundary is at least explicit at this end - if the
-            // goldens later show the system half being ignored, this is the
-            // line to look at first.
-            if (system.isNotBlank()) it.addQueryChunk(system)
-            it.addQueryChunk(prompt)
+            // **One chunk, not two.** The first version added the system
+            // prompt and the user prompt as separate query chunks, and the
+            // model answered with a stray `<turn|>` and then a tail of
+            // `<eos>` tokens all the way to the output cap - it had lost
+            // track of whose turn it was, so it never stopped. A single turn
+            // is a single chunk.
+            it.addQueryChunk(
+                if (system.isBlank()) prompt else system + "\n\n" + prompt,
+            )
             it.generateResponse()
         }
     }

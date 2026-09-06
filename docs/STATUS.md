@@ -1990,6 +1990,17 @@ keyguard away; this one ran long.
 dart format . && dart analyze --fatal-infos && dart run tool/check_layers.dart && flutter test
 ```
 
+**Never `rm -rf build/native_assets` and then build an APK.** It cost the
+owner a working app for ten minutes on 6 September. That directory holds the
+native assets Flutter bundles - `libsqlite3.so` among them - and an APK built
+without it installs, launches, and then throws
+`Failed to load dynamic library 'libsqlite3.so'` out of `main` before the first
+frame. The result is a **completely black screen with no Flutter error visible
+unless you read raw logcat**, because the exception happens before anything
+renders. It was deleted to unstick two concurrent `flutter test` runs fighting
+over a file lock; the right fix for that is to not run two, or to
+`flutter clean` and rebuild properly.
+
 **Do not pipe the gate's steps through `tail` and trust the result.** On 22
 Aug `dart run tool/check_layers.dart 2>&1 | tail -1` printed a blank line and
 the `&&` chain carried on to the tests, which passed — so the run looked green

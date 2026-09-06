@@ -81,7 +81,12 @@ class ExtractTask extends Capability<ExtractTaskInput, TaskDraft> {
         'schemaHint': schemaHint,
       }),
       jsonSchema: caps.supportsNativeStructuredOutput ? outputSchema : null,
-      maxOutputTokens: 200,
+      // The answer is one short JSON object - sixty tokens is generous. It
+      // was 200, and on a slow local model that budget is the runtime: the
+      // first on-device measurement spent about eighty per cent of three
+      // minutes generating padding past a valid answer. A cap cannot fix a
+      // model that will not stop, but it bounds what that costs.
+      maxOutputTokens: 128,
       temperature: 0.2,
     );
   }
