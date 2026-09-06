@@ -20,6 +20,7 @@ class NegotiationRequest {
     this.userGaveReason = false,
     this.reasonText,
     this.userRefused = false,
+    this.evidence = NegotiationEvidence.none,
   });
 
   /// What the work is called.
@@ -48,6 +49,13 @@ class NegotiationRequest {
 
   /// Whether they have said no outright.
   final bool userRefused;
+
+  /// What the log knows about this block: whether it was ever started, how
+  /// this hour of day usually goes, how full the calendar is around it.
+  ///
+  /// Every one of these was already in the database and none of it reached
+  /// the prompt. See `WP_JUDGEMENT.md` 13c.
+  final NegotiationEvidence evidence;
 
   /// The facts the ladder needs to pick a level.
   InterventionContext get interventionContext => InterventionContext(
@@ -120,12 +128,27 @@ class Negotiate extends Capability<NegotiationRequest, NegotiationProposal> {
     level: levelFor(input),
     currentMinutes: input.minutes,
     hoursToDeadline: input.hoursToDeadline,
+    evidence: input.evidence,
   );
 
   @override
   LlmRequest buildRequest(NegotiationRequest input, BackendCapabilities caps) {
     final level = levelFor(input);
-    final allowed = _rules.allowedAt(level).map((a) => a.name).join(', ');
+    // What the level permits, minus anything the evidence has taken off the
+    // table. Telling the model an action is available and then refusing it is
+    // how a model learns nothing and the user gets a template.
+    final allowed =
+        _rules
+            .allowedAt(level)
+            .where(
+              (action) => _rules.permits(
+                _probe(action, input),
+                contextFor(input),
+              ),
+            )
+            .map((a) => a.name)
+            .toList()
+          ..sort();
 
     return LlmRequest(
       system: _prompt.system,
@@ -138,8 +161,13 @@ class Negotiate extends Capability<NegotiationRequest, NegotiationProposal> {
             ? 'none'
             : input.hoursToDeadline!.toStringAsFixed(1),
         'level': level.name,
-        'allowed': allowed,
+        'allowed': allowed.join(', '),
         'reason': input.reasonText ?? 'nothing',
+        'started': input.evidence.everStarted
+            ? 'yes, at least once'
+            : 'never, not once',
+        'hourRate': _hourRate(input.evidence),
+        'calendar': _calendar(input.evidence),
       }),
       jsonSchema: caps.supportsNativeStructuredOutput ? outputSchema : null,
       maxOutputTokens: 160,
@@ -164,6 +192,37 @@ class Negotiate extends Capability<NegotiationRequest, NegotiationProposal> {
       shrinkToMinutes: JsonSalvage.readInt(json, 'shrinkToMinutes'),
       deferByMinutes: JsonSalvage.readInt(json, 'deferByMinutes'),
     );
+  }
+
+  /// A minimal well-formed proposal for [action], used only to ask the rules
+  /// whether that action is available at all.
+  ///
+  /// The amounts are the smallest legal ones rather than anything Van would
+  /// actually offer: this is a question about the *action*, and a probe that
+  /// failed on its own size would answer the wrong one.
+  NegotiationProposal _probe(
+    NegotiationAction action,
+    NegotiationRequest input,
+  ) => NegotiationProposal(
+    action: action,
+    message: '.',
+    shrinkToMinutes: input.minutes > _rules.minimumBlockMinutes
+        ? _rules.minimumBlockMinutes
+        : null,
+    deferByMinutes: _rules.minimumDeferMinutes,
+  );
+
+  static String _hourRate(NegotiationEvidence evidence) {
+    final rate = evidence.startRateAtHour;
+    if (rate == null) return 'not enough history to say';
+    return '${evidence.startsAtThisHour} of ${evidence.blocksAtThisHour} '
+        'blocks at this hour were started';
+  }
+
+  static String _calendar(NegotiationEvidence evidence) {
+    if (evidence.calendarWindowMinutes == 0) return 'not read';
+    final percent = (evidence.calendarDensity * 100).round();
+    return '$percent% of the hours around this block are already committed';
   }
 
   static NegotiationAction? _actionFrom(String? name) {

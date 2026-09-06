@@ -810,6 +810,84 @@ class VanService {
     );
   }
 
+  /// What the log already knows about [session], for judging a proposal.
+  ///
+  /// **Every one of these numbers existed before and none of them reached the
+  /// decision.** `Negotiate` saw the ladder rung and the block length while
+  /// the move count, the start history and the calendar sat in the database
+  /// being used for nothing. That is `WP_JUDGEMENT.md` 13c, and this method is
+  /// the whole of the reading half.
+  ///
+  /// Three queries on a path the user is waiting on, so each one is bounded:
+  /// the task's own sessions, four weeks of blocks at this hour, and a
+  /// four-hour window of calendar. None of them is a scan of the event log.
+  Future<NegotiationEvidence> _evidenceFor(
+    WorkSession session,
+    DateTime now,
+  ) async {
+    final siblings = await _sessions.forTask(session.taskId);
+    final byId = {for (final s in siblings) s.id: s};
+
+    // The chain of reschedules this block *is*, walked back through
+    // parentSessionId - not every block of the task. Starting the first hour
+    // of a three-hour task says nothing about whether the third hour will
+    // begin, and treating them as one history would make "ever started" mean
+    // almost nothing.
+    var everStarted = false;
+    for (
+      WorkSession? link = session;
+      link != null;
+      link = byId[link.parentSessionId]
+    ) {
+      if (link.hasStarted) {
+        everStarted = true;
+        break;
+      }
+      // A chain cannot contain itself, but a corrupt parent pointer could
+      // make it look like one. Stopping at the first repeat costs nothing and
+      // turns a hang into a shorter answer.
+      if (link.parentSessionId == link.id) break;
+    }
+
+    final hour = _waking.toLocalWall(session.plannedStart).hour;
+    var startsAtHour = 0;
+    var blocksAtHour = 0;
+    for (final past in await _sessions.plannedBetween(
+      now.subtract(const Duration(days: 28)),
+      now,
+    )) {
+      if (_waking.toLocalWall(past.plannedStart).hour != hour) continue;
+      blocksAtHour++;
+      if (past.hasStarted) startsAtHour++;
+    }
+
+    // Two hours either side, which is the stretch a "move it later today"
+    // would land in. Read for drawing rather than for planning, so it writes
+    // no row and a broken provider costs the evidence and nothing else.
+    const half = Duration(hours: 2);
+    final from = session.plannedStart.subtract(half);
+    final to = session.plannedStart.add(half);
+    var busy = 0;
+    for (final event in await calendarOccurrences(from: from, to: to)) {
+      if (!event.blocks) continue;
+      final start = event.start.isAfter(from) ? event.start : from;
+      final end = event.end.isBefore(to) ? event.end : to;
+      if (end.isAfter(start)) busy += end.difference(start).inMinutes;
+    }
+    final window = to.difference(from).inMinutes;
+
+    return NegotiationEvidence(
+      moves: session.rescheduleCount,
+      everStarted: everStarted,
+      startsAtThisHour: startsAtHour,
+      blocksAtThisHour: blocksAtHour,
+      // Overlapping meetings can add up past the window; clamped, because a
+      // density over 1 is not a fact about anything.
+      calendarBusyMinutes: busy > window ? window : busy,
+      calendarWindowMinutes: window,
+    );
+  }
+
   /// Records a failed calendar read, and never throws doing it.
   ///
   /// The guard is the point: this is called from the one path whose entire
@@ -1495,6 +1573,7 @@ class VanService {
       userGaveReason: explained,
       reasonText: explained ? reason.trim() : null,
       userRefused: priors.contains(ResponseType.dismissed),
+      evidence: await _evidenceFor(session, now),
     );
 
     final level = _negotiate.levelFor(input);
@@ -1511,6 +1590,14 @@ class VanService {
       'source': proposal.fromModel ? 'model' : 'fallback',
       'refused': ?refused?.name,
       'gaveReason': explained,
+      // The evidence the decision was taken on, so a proposal that looks
+      // wrong later can be judged against what was actually known at the
+      // time rather than against what is true now. Counts only: no titles,
+      // no calendar ids, nothing that was not already a number.
+      'everStarted': input.evidence.everStarted,
+      'startsAtHour': input.evidence.startsAtThisHour,
+      'blocksAtHour': input.evidence.blocksAtThisHour,
+      'calendarBusyPercent': (input.evidence.calendarDensity * 100).round(),
     });
 
     return NegotiationOutcome(
@@ -1570,6 +1657,7 @@ class VanService {
       userGaveReason: explained,
       reasonText: explained ? reason.trim() : null,
       userRefused: priors.contains(ResponseType.dismissed),
+      evidence: await _evidenceFor(session, now),
     );
     if (_rules.reject(proposal, _negotiate.contextFor(input)) != null) {
       return null;

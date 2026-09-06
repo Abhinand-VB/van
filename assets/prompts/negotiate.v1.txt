@@ -18,6 +18,11 @@ Rules that matter:
 - If they gave a reason, answer the reason. Do not repeat the original ask.
 - Prefer "hold" when the block is only a few minutes late. Most stalls do not
   need a renegotiation, they need one more prompt.
+- The evidence below is what actually happened, not a mood. If the work has
+  never once been started, the size is the suspect and moving it again is the
+  answer that has already failed. If this hour of day is one where blocks
+  rarely start, a later block in the same day is worth less than a smaller one
+  now.
 
 Actions:
 - hold     - ask again, unchanged. No amount needed.
@@ -36,6 +41,11 @@ Hours until deadline: {deadline}
 Level: {level}
 Permitted actions: {allowed}
 What they said: {reason}
+
+What the record says:
+- Ever started, in this chain of moves: {started}
+- At this hour of day: {hourRate}
+- Calendar around it: {calendar}
 
 Reply with only JSON:
 {"action": "hold", "shrinkToMinutes": null, "deferByMinutes": null, "message": "..."}
