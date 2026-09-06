@@ -78,6 +78,23 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  group('the overflow menu', () {
+    testWidgets('opens the on-device model page', (tester) async {
+      // Written after the menu appeared to do nothing on the phone. It
+      // passes against the version that appeared broken, so it is a guard on
+      // the route rather than a reproduction of that - the cause there was
+      // most likely a missed tap, and the honest place to settle it is the
+      // device, not here.
+      await show(tester);
+      await tester.tap(find.byTooltip('More'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('On-device model'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Not installed'), findsOneWidget);
+    });
+  });
+
   group('finishing a task', () {
     testWidgets('the circle in the list is a real tick, not a picture', (
       tester,

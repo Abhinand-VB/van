@@ -386,12 +386,24 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
           // point Van has for anything that is not a tab, and it is here
           // because the Now screen is where Van's own state is already
           // reported.
-          PopupMenuButton<void>(
+          //
+          // `onSelected` with a value rather than `PopupMenuItem.onTap`.
+          // The first attempt used onTap and did not appear to navigate when
+          // driven on the phone - but a widget test written to reproduce that
+          // passed against the onTap version too, so the cause is unproven
+          // and probably a missed tap rather than the code. This shape is
+          // kept because it is the better one regardless: the enum makes
+          // adding a second entry a compile error at the switch instead of a
+          // forgotten branch.
+          PopupMenuButton<_NowMenu>(
             tooltip: 'More',
-            itemBuilder: (_) => [
-              PopupMenuItem<void>(
-                onTap: _openModel,
-                child: const Text('On-device model'),
+            onSelected: (item) => inBackground(switch (item) {
+              _NowMenu.model => _openModel(),
+            }),
+            itemBuilder: (_) => const [
+              PopupMenuItem<_NowMenu>(
+                value: _NowMenu.model,
+                child: Text('On-device model'),
               ),
             ],
           ),
@@ -494,6 +506,15 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
       ),
     );
   }
+}
+
+/// The things behind the Now screen's overflow menu.
+///
+/// An enum for one entry, so that adding a second is a compile error at the
+/// switch rather than a forgotten branch.
+enum _NowMenu {
+  /// Where the on-device model's weights are, and how to install them.
+  model,
 }
 
 /// A question Van is waiting on, and the task it belongs to.
