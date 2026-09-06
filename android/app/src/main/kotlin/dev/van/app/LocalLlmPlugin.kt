@@ -30,18 +30,25 @@ class LocalLlmPlugin(
         /**
          * Chooses the engine for this build.
          *
-         * **This is the WP-6 wiring point.** When LiteRT-LM is added, return
-         * the real engine here when [ModelStorage.isPresent] and a
-         * [MissingEngine] otherwise — the "otherwise" branch stays forever,
-         * because the model is downloaded on first run rather than bundled.
+         * The real one when the weights are present, and a [MissingEngine]
+         * otherwise. **The "otherwise" branch stays forever**: the model is
+         * installed by the user rather than bundled, so most builds and most
+         * phones will never have one, and reporting "unavailable" honestly is
+         * a working configuration rather than a broken one.
+         *
+         * Note what this does *not* decide. Having an engine is not the same
+         * as using one: `assets/inference_config.json` routes every capability
+         * to `"none"` and stays that way until the golden set has been run on
+         * a phone with real weights. See `STATUS.md` 3e.
          */
-        fun defaultEngine(context: Context): LlmEngine = MissingEngine(
+        fun defaultEngine(context: Context): LlmEngine =
             if (ModelStorage.isPresent(context.filesDir)) {
-                "no inference engine is compiled into this build"
+                LiteRtEngine(context)
             } else {
-                "no model file at ${ModelStorage.modelFile(context.filesDir)}"
-            },
-        )
+                MissingEngine(
+                    "no model file at ${ModelStorage.modelFile(context.filesDir)}",
+                )
+            }
     }
 
     // Held through its delegate so detach can ask whether the engine was ever
