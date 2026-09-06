@@ -52,5 +52,9 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
-    implementation("com.google.mediapipe:tasks-genai:0.10.24")
+    // 0.10.35 rather than 0.10.24, and the version is the whole point: the
+    // earlier one could not read a `.litertlm` file and failed with
+    // "Error building tflite model" from model_data.cc. LiteRT-LM bundles are
+    // a newer format than that release understood.
+    implementation("com.google.mediapipe:tasks-genai:0.10.35")
 }

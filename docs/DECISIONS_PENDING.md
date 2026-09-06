@@ -580,6 +580,53 @@ and the wording changes by itself the moment `usesModel` becomes true.
 
 ---
 
+### D81 — The model runs, and it is not usable. Three numbers and a contract.
+
+**Measured on your phone, not guessed.** `ModelProbe` (Settings → On-device
+model → Try the model) runs one sentence through the real
+`ExtractTask.buildRequest`, so this is what would actually happen if
+`extract_task` were routed to the model.
+
+| | |
+|---|---|
+| First run, cold | **173,968 ms** |
+| Second run, engine already loaded | **183,643 ms** |
+| What it understood | `"Go to the shop"` |
+| What the parser understood | `"Go to the shop take a stroll cook lunch and do my remaining works also I need to do taxes"` |
+
+**Three minutes per capture, and the second run was slower than the first** -
+so that is generation, not model loading. About 1.1 tokens a second on a
+Snapdragon 8 Elite, which is far below what that chip should do and points at
+CPU inference with no GPU or NPU backend. **Nothing should be routed to this.**
+
+**Two fixable causes, in the order I would try them.** The raw reply ended in a
+long tail of `<eos><eos><eos>…`, which means the stop token is not being
+honoured and every call generates the full 200-token budget whatever the answer
+needed - so the time is roughly proportional to a cap that is mostly wasted.
+And the repository has `gemma-4-E2B-it-gpu.litertlm` and a
+`_qualcomm_sm8750.litertlm` built for exactly this chip; `LiteRtEngine` asks for
+neither and takes whatever the default backend is.
+
+**The finding that matters most is not about speed.** Your sentence was five
+jobs. The parser made it one task with a 25-word title; the model made it one
+task called "Go to the shop". **Neither can do better, because
+`extract_task` returns a `TaskDraft` and a `TaskDraft` is one task.** A perfect,
+instant model would still have thrown four of your five away. Fixing that is a
+contract change - the capability has to be able to return several - and it is
+the same shape of problem as `WP_JUDGEMENT` section 1 describes for depth and
+questions: *the type cannot hold the answer.* **I think that is the most
+valuable next piece of work in the project, and it needs no model at all** -
+the deterministic parser could split on "and", "also", "then" today.
+
+**One correction to a claim I made earlier.** I said the engine was wired and
+merely unmeasured. It was wired to the wrong runtime: MediaPipe `tasks-genai`
+0.10.24 cannot read a `.litertlm` bundle and failed with `Error building tflite
+model` in 133 ms. 0.10.35 reads it. That is why "compiled and installed" is not
+the same as "working", and why the probe was worth building before anything was
+routed anywhere.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner
