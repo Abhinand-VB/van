@@ -258,8 +258,10 @@ class _CalendarScreenState extends State<CalendarScreen>
       start: _monthGridStart,
       month: _day.month,
       today: today,
+      selected: _day,
       items: _items,
-      onDayTap: (day) => _show(day, as: CalendarView.day),
+      onSelect: _show,
+      onOpenDay: (day) => _show(day, as: CalendarView.day),
     ),
     CalendarView.schedule => _Schedule(
       from: _day,
@@ -943,18 +945,26 @@ class _ItemCard extends StatelessWidget {
   };
 }
 
-/// A month at a glance.
+/// A month at a glance, with one day read out underneath it.
 ///
-/// Deliberately does not try to name what is on each day - there is no room,
-/// and a grid of unreadable slivers is worse than a count. It answers "which
-/// days are already full", and hands the day itself to the day view.
+/// The grid alone was the first version and it was unreadable: thirty cells
+/// of identical grey bars say a day is busy without saying with what, which
+/// is the one thing worth knowing. There is no room in a seventh of a phone
+/// screen for a name, so the grid answers "which days are full" in dots and
+/// the day you tap is listed in full below it.
+///
+/// Tapping a day therefore stays in the month rather than jumping to the day
+/// view - the whole point is comparing a day against the month around it. The
+/// heading above the list opens the day properly.
 class _MonthGrid extends StatelessWidget {
   const _MonthGrid({
     required this.start,
     required this.month,
     required this.today,
+    required this.selected,
     required this.items,
-    required this.onDayTap,
+    required this.onSelect,
+    required this.onOpenDay,
   });
 
   /// The Monday the grid begins on, usually in the previous month.
@@ -966,15 +976,26 @@ class _MonthGrid extends StatelessWidget {
   /// Local today, for the highlight.
   final DateTime today;
 
+  /// The day listed underneath.
+  final DateTime selected;
+
   /// Everything loaded across the grid.
   final List<_Item> items;
 
-  /// Opens one day.
-  final Future<void> Function(DateTime) onDayTap;
+  /// Selects a day without leaving the month.
+  final Future<void> Function(DateTime) onSelect;
+
+  /// Opens a day in the day view.
+  final Future<void> Function(DateTime) onOpenDay;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final onSelected = [
+      for (final item in items)
+        if (item.isOn(selected)) item,
+    ];
+
     return Column(
       children: [
         const SizedBox(height: 4),
@@ -992,8 +1013,12 @@ class _MonthGrid extends StatelessWidget {
               ),
           ],
         ),
-        const SizedBox(height: 4),
+        const SizedBox(height: 2),
+        // Six rows of cells and then the day itself. The split is deliberate:
+        // the grid only has to be scannable, and the list is where the reading
+        // actually happens.
         Expanded(
+          flex: 5,
           child: Column(
             children: [
               for (var week = 0; week < 6; week++)
@@ -1006,14 +1031,25 @@ class _MonthGrid extends StatelessWidget {
                             day: start.add(Duration(days: week * 7 + d)),
                             month: month,
                             today: today,
+                            selected: selected,
                             items: items,
-                            onTap: onDayTap,
+                            onTap: onSelect,
                           ),
                         ),
                     ],
                   ),
                 ),
             ],
+          ),
+        ),
+        const Divider(height: 1),
+        Expanded(
+          flex: 4,
+          child: _DayList(
+            day: selected,
+            items: onSelected,
+            isToday: selected == today,
+            onOpen: onOpenDay,
           ),
         ),
       ],
@@ -1026,6 +1062,7 @@ class _MonthCell extends StatelessWidget {
     required this.day,
     required this.month,
     required this.today,
+    required this.selected,
     required this.items,
     required this.onTap,
   });
@@ -1033,6 +1070,7 @@ class _MonthCell extends StatelessWidget {
   final DateTime day;
   final int month;
   final DateTime today;
+  final DateTime selected;
   final List<_Item> items;
   final Future<void> Function(DateTime) onTap;
 
@@ -1045,58 +1083,173 @@ class _MonthCell extends StatelessWidget {
         if (item.isOn(day)) item,
     ];
     final isToday = day == today;
+    final isSelected = day == selected;
     final outside = day.month != month;
+
+    // Van's own work counted separately from everyone else's claims on the
+    // day, because "three of my blocks" and "three of their meetings" are
+    // opposite kinds of full.
+    final mine = onThisDay.where((item) => item.isVan).length;
+    final theirs = onThisDay.length - mine;
 
     return InkWell(
       onTap: () => onTap(day),
       child: Container(
-        margin: const EdgeInsets.all(1),
-        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 3),
+        margin: const EdgeInsets.all(1.5),
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: theme.dividerColor.withValues(alpha: 0.5)),
-          color: isToday ? colours.primaryContainer : null,
+          borderRadius: BorderRadius.circular(8),
+          color: isSelected ? colours.primary : null,
+          border: isToday && !isSelected
+              ? Border.all(color: colours.primary)
+              : null,
         ),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
               '${day.day}',
-              style: theme.textTheme.labelSmall?.copyWith(
-                color: outside
-                    ? colours.onSurfaceVariant.withValues(alpha: 0.5)
-                    : isToday
-                    ? colours.onPrimaryContainer
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: isSelected
+                    ? colours.onPrimary
+                    : outside
+                    ? colours.onSurfaceVariant.withValues(alpha: 0.45)
                     : null,
-                fontWeight: isToday ? FontWeight.bold : null,
+                fontWeight: isToday || isSelected ? FontWeight.bold : null,
               ),
             ),
-            const SizedBox(height: 2),
-            // Bars and a count. Van's blocks in the accent colour, the
-            // calendar's own entries in grey, so a day full of other people's
-            // time looks different from one full of your own.
-            for (final item in onThisDay.take(3))
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Container(
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: item.isVan
-                        ? colours.primary
-                        : colours.onSurfaceVariant.withValues(alpha: 0.45),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
+            const SizedBox(height: 3),
+            SizedBox(
+              height: 6,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  for (var i = 0; i < (mine > 3 ? 3 : mine); i++)
+                    _Dot(
+                      colour: isSelected ? colours.onPrimary : colours.primary,
+                    ),
+                  for (var i = 0; i < (theirs > 3 ? 3 : theirs); i++)
+                    _Dot(
+                      colour: isSelected
+                          ? colours.onPrimary.withValues(alpha: 0.55)
+                          : colours.onSurfaceVariant.withValues(alpha: 0.55),
+                    ),
+                ],
               ),
-            if (onThisDay.length > 3)
-              Text(
-                '+${onThisDay.length - 3}',
-                style: theme.textTheme.labelSmall?.copyWith(
-                  color: colours.onSurfaceVariant,
-                ),
-              ),
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _Dot extends StatelessWidget {
+  const _Dot({required this.colour});
+
+  final Color colour;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    width: 5,
+    height: 5,
+    margin: const EdgeInsets.symmetric(horizontal: 1),
+    decoration: BoxDecoration(color: colour, shape: BoxShape.circle),
+  );
+}
+
+/// One day, read out in full under the month grid.
+class _DayList extends StatelessWidget {
+  const _DayList({
+    required this.day,
+    required this.items,
+    required this.isToday,
+    required this.onOpen,
+  });
+
+  final DateTime day;
+  final List<_Item> items;
+  final bool isToday;
+  final Future<void> Function(DateTime) onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          onTap: () => onOpen(day),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    isToday ? 'Today · ${_longDate(day)}' : _longDate(day),
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: isToday ? theme.colorScheme.primary : null,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right,
+                  size: 18,
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+        Expanded(
+          child: items.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Text(
+                    'Nothing on this day.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                )
+              : ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: [
+                    for (final item in items) _ItemRow(item: item),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+}
+
+/// A time down the left and the thing itself beside it.
+///
+/// Shared by the schedule view and the month's day list so the two cannot
+/// drift into showing the same day differently.
+class _ItemRow extends StatelessWidget {
+  const _ItemRow({required this.item});
+
+  final _Item item;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 62,
+            child: Text(
+              item.isAllDay ? 'all day' : _time(item.start),
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          Expanded(child: _ItemCard(item: item)),
+        ],
       ),
     );
   }
@@ -1150,27 +1303,7 @@ class _Schedule extends StatelessWidget {
             ),
           ),
         )
-        ..addAll([
-          for (final item in onThisDay)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  SizedBox(
-                    width: 62,
-                    child: Text(
-                      item.isAllDay ? 'all day' : _time(item.start),
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                  ),
-                  Expanded(child: _ItemCard(item: item)),
-                ],
-              ),
-            ),
-        ]);
+        ..addAll([for (final item in onThisDay) _ItemRow(item: item)]);
     }
 
     if (rows.isEmpty) return const _Empty();

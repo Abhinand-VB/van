@@ -30,7 +30,7 @@ events — a public holiday, three flights — beside Van's own blocks.
 | **Last seen rendering** | **6 Sep 2026, 01:35, this build.** The Schedule view drawing real calendar events (Labor Day, three flights) beside Van's own blocks, the day timeline, the view menu, and the Calendars page listing this phone's calendars. Screenshotted. |
 | **Last driven by hand** | **6 Sep 2026, 01:35** — switched views through the app bar menu and read the fortnight off the schedule. |
 | **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has now run against the real provider: the settings page lists this phone's calendars (eight Google accounts, Samsung birthdays, Coursera) and the Schedule view draws real events. The least-proved code in the repository is no longer unproved. |
-| **Tests** | 680 green (411 app, 269 core), `dart analyze --fatal-infos` and `check_layers` clean |
+| **Tests** | 683 green (414 app, 269 core), `dart analyze --fatal-infos` and `check_layers` clean |
 
 **What that gap does and does not mean.** The calendar UI was watched drawing
 on this build, and the whole feature is covered by tests against a fake
@@ -65,7 +65,7 @@ which is the only way any of WP-11 gets exercised. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **680 tests, all green,
+Van is finished as far as an agent can take it alone. **683 tests, all green,
 on a phone that runs.** Five things need you, and they are small — the newest
 is last, because it is the only one that was not already here yesterday:
 
@@ -171,7 +171,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **680 tests passing** — 269 in `packages/van_core` (pure Dart), 411 in the app.
+- **683 tests passing** — 269 in `packages/van_core` (pure Dart), 414 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -218,7 +218,7 @@ working configuration, not a degraded one.
 | App: calendar planning | 20 |
 | App: calendar settings screen | 12 |
 | App: calendar preferences | 8 |
-| App: calendar screen, four views | 31 |
+| App: calendar screen, four views | 34 |
 | App: timezone (calendar cases added) | +4 |
 
 ---
@@ -1263,8 +1263,13 @@ of the transparency rule — birthdays and holidays are all-day and free, so the
 do not block — and changing either without the other will make Van look broken.
 
 **The Calendar tab, added 6 September, four views.** Day and week are the plan
-on a clock; month is a grid answering "which days are already full"; schedule
-is the list a person would read aloud. One `_Timeline` widget serves day and
+on a clock; month is a grid answering "which days are already full" *with the
+selected day read out underneath it*; schedule is the list a person would read
+aloud. The month grid started as bars-only and was unreadable on the phone —
+thirty cells of identical grey say a day is busy without saying with what,
+which is the one thing worth knowing. There is no room for a name in a seventh
+of a phone screen, so the grid counts in dots and the list below carries the
+names. One `_Timeline` widget serves day and
 week, because two implementations of a timeline eventually place the same
 block at two different heights.
 

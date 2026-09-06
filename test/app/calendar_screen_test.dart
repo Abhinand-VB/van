@@ -475,27 +475,70 @@ void main() {
       expect(find.text('Friday thing'), findsOneWidget);
     });
 
-    testWidgets('the month grid marks the days that have something on', (
+    testWidgets('the month lists the selected day underneath the grid', (
       tester,
     ) async {
       await plan(title: 'Write the report', start: localAt(14));
 
       await show(tester, view: CalendarView.month);
 
-      // A month cell has no room for a name, so the assertion is that the
-      // grid is drawn and the day is reachable rather than that it is legible.
-      expect(find.text('${today.day}'), findsWidgets);
-      expect(find.text('Write the report'), findsNothing);
+      // The grid alone was unreadable - thirty cells of identical bars say a
+      // day is busy without saying with what. The list below is where the
+      // reading happens.
+      expect(find.text('Write the report'), findsOneWidget);
+      expect(find.textContaining('Today ·'), findsOneWidget);
     });
 
-    testWidgets('tapping a day in the month opens that day', (tester) async {
+    testWidgets('a calendar event is named in the month list too', (
+      tester,
+    ) async {
+      event(localAt(10), localAt(11));
+
+      await show(tester, view: CalendarView.month);
+
+      expect(find.text('Standup with Priya'), findsOneWidget);
+    });
+
+    testWidgets('tapping a day lists it without leaving the month', (
+      tester,
+    ) async {
+      final tomorrow = localAt(10).add(const Duration(days: 1));
+      await plan(title: 'Today thing', start: localAt(14));
+      await plan(title: 'Tomorrow thing', start: tomorrow);
+
+      await show(tester, view: CalendarView.month);
+      expect(find.text('Today thing'), findsOneWidget);
+
+      await tester.tap(find.text('${tomorrow.day}').first);
+      await tester.pumpAndSettle();
+
+      // Still the month: comparing a day against the month around it is the
+      // whole point of the view.
+      expect(find.text('Tomorrow thing'), findsOneWidget);
+      expect(find.text('Today thing'), findsNothing);
+    });
+
+    testWidgets('a selected day with nothing on it says so', (tester) async {
+      await plan(title: 'Today thing', start: localAt(14));
+
+      await show(tester, view: CalendarView.month);
+      await tester.tap(find.text('${today.day + 1}').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Nothing on this day.'), findsOneWidget);
+    });
+
+    testWidgets('the heading above the list opens the day view', (
+      tester,
+    ) async {
       await plan(title: 'Write the report', start: localAt(14));
 
       await show(tester, view: CalendarView.month);
-      await tester.tap(find.text('${today.day}').first);
+      await tester.tap(find.textContaining('Today ·'));
       await tester.pumpAndSettle();
 
-      expect(find.text('Write the report'), findsOneWidget);
+      // The day view has an hour gutter; the month grid does not.
+      expect(find.text('14:00'), findsWidgets);
     });
 
     testWidgets('the schedule lists what is ahead, in order', (tester) async {
