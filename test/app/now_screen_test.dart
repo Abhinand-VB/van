@@ -72,6 +72,72 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  Future<void> type(WidgetTester tester, String text) async {
+    await tester.enterText(find.byType(TextField).first, text);
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+  }
+
+  group('Van asking how long', () {
+    testWidgets('capturing without a duration asks, and still captures', (
+      tester,
+    ) async {
+      await show(tester);
+      await type(tester, 'finish the assignment');
+
+      expect(find.textContaining('Roughly how long'), findsWidgets);
+      expect(find.textContaining('assumed 1 hour'), findsOneWidget);
+      expect((await service.openTasks()).single.title, 'Finish the assignment');
+    });
+
+    testWidgets('capturing with a duration asks nothing', (tester) async {
+      await show(tester);
+      await type(tester, 'finish the assignment, 2 hours');
+
+      expect(find.textContaining('Roughly how long'), findsNothing);
+    });
+
+    testWidgets('the next thing typed answers, and the plan is rebuilt', (
+      tester,
+    ) async {
+      await show(tester);
+      await type(tester, 'finish the assignment');
+      await type(tester, '3 hours');
+
+      expect(find.textContaining('Replanned'), findsOneWidget);
+      expect((await service.openTasks()).single.estimatedMinutes, 180);
+      // Question gone, so the field captures again.
+      expect(find.textContaining('Roughly how long'), findsNothing);
+    });
+
+    testWidgets('dismissing the question leaves the guess standing', (
+      tester,
+    ) async {
+      await show(tester);
+      await type(tester, 'finish the assignment');
+
+      await tester.tap(find.byTooltip('Leave it'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Roughly how long'), findsNothing);
+      // And the next line is a capture rather than an answer.
+      await type(tester, 'call the bank 20 minutes');
+      expect(
+        (await service.openTasks()).map((t) => t.title),
+        contains('Call the bank'),
+      );
+    });
+
+    testWidgets('an unreadable answer keeps the question up', (tester) async {
+      await show(tester);
+      await type(tester, 'finish the assignment');
+      await type(tester, 'no idea');
+
+      expect(find.textContaining('did not get a length'), findsOneWidget);
+      expect(find.textContaining('Roughly how long'), findsWidgets);
+    });
+  });
+
   group('the "After that" list', () {
     testWidgets('never repeats the task already on the card', (tester) async {
       await service.capture('write the report 45 minutes');

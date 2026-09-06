@@ -21,6 +21,8 @@ class CaptureResult {
     required this.task,
     required this.sessions,
     this.shortfallMinutes = 0,
+    this.clarification,
+    this.assumedMinutes,
   });
 
   /// The task that was stored.
@@ -32,8 +34,55 @@ class CaptureResult {
   /// Minutes that would not fit before the deadline. Zero when it all fit.
   final int shortfallMinutes;
 
+  /// The one thing Van wants to be told about this, if anything.
+  ///
+  /// The task is already captured and already planned when this is set. It is
+  /// a question, not a condition - see [VanService.capture].
+  final Clarification? clarification;
+
+  /// The duration Van invented because nobody stated one, in minutes.
+  ///
+  /// Null when the user said how long. Set here rather than left implicit so
+  /// the screen can *say* what was assumed: a plan built on a guess and a
+  /// plan built on a statement look identical, and the difference is the
+  /// whole reason to ask.
+  final int? assumedMinutes;
+
   /// Whether some of the work could not be placed.
   bool get isPartial => shortfallMinutes > 0;
+}
+
+/// What came of answering one of Van's questions.
+///
+/// Three outcomes rather than a bool, because "I did not understand that" and
+/// "that work has already started" call for different things to be said and
+/// the caller cannot tell them apart from a failure.
+enum AnswerOutcome {
+  /// The plan was rebuilt on what the user said.
+  replanned,
+
+  /// Nothing in the answer looked like a duration. The question still stands.
+  notUnderstood,
+
+  /// The task is gone, or a block of it is already under way, so there is
+  /// nothing left to re-plan. Changing the estimate under work in progress
+  /// would move a block the user is sitting in.
+  tooLate,
+}
+
+/// The result of answering a question Van asked at capture time.
+class AnswerResult {
+  /// Creates a result.
+  const AnswerResult(this.outcome, {this.task, this.sessions = const []});
+
+  /// What happened.
+  final AnswerOutcome outcome;
+
+  /// The task as it now stands, when it was re-planned.
+  final Task? task;
+
+  /// The blocks that replaced the ones planned on the guess.
+  final List<WorkSession> sessions;
 }
 
 /// One event from the device calendar, resolved to real instants and ready to
@@ -254,6 +303,7 @@ class VanService {
     NegotiationRules rules = const NegotiationRules(),
     ImportanceScorer scorer = const ImportanceScorer(),
     SuppressionPolicy? suppression,
+    PlannerConstraints constraints = const PlannerConstraints(),
     int giveUpAfterMinutes = 60,
   }) : _tasks = tasks,
        _sessions = sessions,
@@ -296,6 +346,7 @@ class VanService {
        ),
        _policy = policy,
        _rules = rules,
+       _constraints = constraints,
        _sweep = StaleSessionSweep(
          rescheduler: Rescheduler(ids: ids),
          giveUpAfterMinutes: giveUpAfterMinutes,
@@ -322,6 +373,15 @@ class VanService {
   final InterventionPolicy _policy;
   final StaleSessionSweep _sweep;
   final NegotiationRules _rules;
+
+  /// Held rather than defaulted at the call site, because the planner's
+  /// assumed duration is now quoted back to the user. The number Van plans
+  /// with and the number Van admits to have to be the same object or the
+  /// admission is a second guess about the first one.
+  final PlannerConstraints _constraints;
+
+  /// Decides whether a captured sentence left Van guessing.
+  static const _questions = CaptureQuestions();
 
   /// Operations that pick a time by reading the current plan, run one at a
   /// time.
@@ -424,6 +484,15 @@ class VanService {
   ///
   /// Serialised against the sweep and against other captures - see
   /// [_planQueue].
+  ///
+  /// **When the sentence never said how long, the result carries a question
+  /// and the plan is still built.** Not asking at all was the sharper defect
+  /// - `SessionPlanner` substituted its default and blocked out time as
+  /// though the user had said so - but asking *instead of* capturing would be
+  /// a worse one. A thought held hostage to a question is a thought lost, and
+  /// this app's entire promise is that saying it once is enough. So Van
+  /// guesses, says what it guessed, asks, and rebuilds the plan if anyone
+  /// answers: see [answerDuration].
   Future<CaptureResult> capture(String text) =>
       _serialised(() => _capture(text));
 
@@ -434,6 +503,11 @@ class VanService {
       _extractTask,
       ExtractTaskInput(text, now: now),
     );
+    // A model that asked for something specific wins over the standing rule;
+    // otherwise the rule decides. Either way the question is about the draft,
+    // not about the sentence, so a duration the parser found in the text
+    // silences it exactly as one the model found does.
+    final clarification = draft.clarification ?? _questions.about(draft);
 
     final task = Task(
       id: _ids.next(),
@@ -453,8 +527,73 @@ class VanService {
       'estimatedMinutes': task.estimatedMinutes,
     });
 
+    if (clarification != null) {
+      await _events.append(EventType.clarificationAsked, {
+        'taskId': task.id,
+        'field': clarification.field.name,
+      });
+    }
+
     final planned = await _planFor(task, now);
-    return planned;
+    return CaptureResult(
+      task: planned.task,
+      sessions: planned.sessions,
+      shortfallMinutes: planned.shortfallMinutes,
+      clarification: clarification,
+      assumedMinutes: task.estimatedMinutes == null
+          ? _constraints.defaultEstimateMinutes
+          : null,
+    );
+  }
+
+  /// Answers a question [capture] asked, and rebuilds the plan on the answer.
+  ///
+  /// Serialised with capture and the sweep, because it chooses times: it
+  /// throws away the blocks that were planned on Van's guess and plans the
+  /// task again on what the user actually said.
+  ///
+  /// **Only untouched work is re-planned.** If a block of this task has been
+  /// started, or resolved, the answer arrives too late and nothing moves -
+  /// re-planning under someone mid-session would take away the block they are
+  /// sitting in, which is a worse outcome than an estimate staying wrong.
+  Future<AnswerResult> answerDuration(String taskId, String answer) =>
+      _serialised(() => _answerDuration(taskId, answer));
+
+  Future<AnswerResult> _answerDuration(String taskId, String answer) async {
+    final minutes = _extractTask.parser.durationIn(answer);
+    if (minutes == null || minutes <= 0) {
+      return const AnswerResult(AnswerOutcome.notUnderstood);
+    }
+
+    final task = await _tasks.byId(taskId);
+    if (task == null) return const AnswerResult(AnswerOutcome.tooLate);
+
+    final existing = await _sessions.forTask(taskId);
+    if (existing.any((s) => s.hasStarted || s.isResolved)) {
+      return const AnswerResult(AnswerOutcome.tooLate);
+    }
+
+    for (final session in existing) {
+      await _notifications.cancelForSession(session.id);
+      await _nudges.deleteForSession(session.id);
+      await _sessions.delete(session.id);
+    }
+
+    final revised = task.copyWith(estimatedMinutes: minutes);
+    await _tasks.save(revised);
+    await _events.append(EventType.clarificationAnswered, {
+      'taskId': taskId,
+      'field': TaskField.duration.name,
+      'minutes': minutes,
+      'blocksReplaced': existing.length,
+    });
+
+    final planned = await _planFor(revised, _clock.now());
+    return AnswerResult(
+      AnswerOutcome.replanned,
+      task: planned.task,
+      sessions: planned.sessions,
+    );
   }
 
   Future<CaptureResult> _planFor(Task task, DateTime now) async {
@@ -464,6 +603,7 @@ class VanService {
     final result = SessionPlanner(
       ids: _ids,
       waking: _waking,
+      constraints: _constraints,
     ).plan(task: task, slots: slots, clock: _clock);
 
     final sessions = result.okOrNull ?? result.errOrNull!.scheduled;

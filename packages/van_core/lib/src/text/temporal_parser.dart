@@ -1,5 +1,6 @@
 import 'package:meta/meta.dart';
 import 'package:van_core/src/model/task.dart';
+import 'package:van_core/src/text/clarification.dart';
 
 /// A task pulled out of a sentence, before anything has been persisted.
 ///
@@ -13,6 +14,7 @@ class TaskDraft {
     this.deadline,
     this.estimatedMinutes,
     this.priority = Priority.normal,
+    this.clarification,
   });
 
   /// What to call it, with any date or duration phrasing removed.
@@ -27,6 +29,14 @@ class TaskDraft {
   /// How much it matters.
   final Priority priority;
 
+  /// What whoever produced this draft wants asked about it, if anything.
+  ///
+  /// Only ever set by a model - the deterministic path leaves it null and
+  /// `CaptureQuestions` decides. Here so a model can say "I read this but I
+  /// am not sure what you meant" instead of the caller having to infer that
+  /// from the fields being empty.
+  final Clarification? clarification;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -34,10 +44,12 @@ class TaskDraft {
           title == other.title &&
           deadline == other.deadline &&
           estimatedMinutes == other.estimatedMinutes &&
-          priority == other.priority;
+          priority == other.priority &&
+          clarification == other.clarification;
 
   @override
-  int get hashCode => Object.hash(title, deadline, estimatedMinutes, priority);
+  int get hashCode =>
+      Object.hash(title, deadline, estimatedMinutes, priority, clarification);
 
   @override
   String toString() =>
@@ -100,6 +112,29 @@ class TemporalParser {
       estimatedMinutes: minutes,
       priority: priority,
     );
+  }
+
+  /// The duration [text] states, read as an answer rather than as a capture.
+  ///
+  /// Same patterns as [parse] uses, plus one rule that only makes sense here:
+  /// **a bare number is minutes.** "45" is a perfectly good answer to "how
+  /// long?" and a nonsensical thing to find in the middle of "email the
+  /// landlord 45" - which is why the rule lives in this method and not in
+  /// [_parseDuration], where it would start reading digits out of ordinary
+  /// sentences.
+  ///
+  /// Minutes rather than hours because that is what the question's own
+  /// examples ask for. A bare "2" therefore means two minutes and lands on
+  /// the planner's floor of a quarter of an hour, which is visibly wrong and
+  /// cheap - where reading it as two hours would be invisibly wrong and
+  /// expensive.
+  int? durationIn(String text) {
+    final lower = text.toLowerCase();
+    final stated = _parseDuration(lower, <_Span>[]);
+    if (stated != null) return stated;
+
+    final bare = RegExp(r'^\s*(\d{1,4})\s*$').firstMatch(lower);
+    return bare == null ? null : int.parse(bare.group(1)!);
   }
 
   // --- duration -------------------------------------------------------------

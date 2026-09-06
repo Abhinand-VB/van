@@ -270,6 +270,87 @@ void main() {
     });
   });
 
+  group('Van asking how long', () {
+    testWidgets('a sentence with no duration is answered with a question', (
+      tester,
+    ) async {
+      await showChat(tester);
+      await send(tester, 'finish the assignment');
+
+      // The plan card is there too. Van asks *and* captures; a question that
+      // held the capture would lose the thought it was asked about.
+      expect(find.text('Finish the assignment'), findsOneWidget);
+      expect(find.textContaining('Roughly how long'), findsWidgets);
+      expect(find.textContaining('assumed 1 hour'), findsOneWidget);
+    });
+
+    testWidgets('a sentence that says how long is not asked about', (
+      tester,
+    ) async {
+      await showChat(tester);
+      await send(tester, 'finish the assignment, 2 hours');
+
+      expect(find.textContaining('Roughly how long'), findsNothing);
+    });
+
+    testWidgets('the next line answers the question, and replans', (
+      tester,
+    ) async {
+      await showChat(tester);
+      await send(tester, 'finish the assignment');
+      await send(tester, '3 hours');
+
+      expect(find.textContaining('Replanned'), findsOneWidget);
+      final open = await service.openTasks();
+      expect(open.single.estimatedMinutes, 180);
+    });
+
+    testWidgets('and the line after that captures again, not answers', (
+      tester,
+    ) async {
+      // The mode has to close, or every subsequent sentence is read as a
+      // duration and no task is ever captured again.
+      await showChat(tester);
+      await send(tester, 'finish the assignment');
+      await send(tester, '3 hours');
+      await send(tester, 'call the bank 20 minutes');
+
+      final open = await service.openTasks();
+      expect(open.map((t) => t.title), contains('Call the bank'));
+    });
+
+    testWidgets('an answer with no length in it leaves the question open', (
+      tester,
+    ) async {
+      await showChat(tester);
+      await send(tester, 'finish the assignment');
+      await send(tester, 'as long as it takes');
+
+      expect(find.textContaining('did not get a length'), findsOneWidget);
+      // Still asking. A question that closed on a typo would have taken an
+      // answer it never got.
+      expect(find.text('Leave it'), findsOneWidget);
+
+      await send(tester, '90 minutes');
+      final open = await service.openTasks();
+      expect(open.single.estimatedMinutes, 90);
+    });
+
+    testWidgets('"Leave it" keeps the plan Van already made', (tester) async {
+      await showChat(tester);
+      await send(tester, 'finish the assignment');
+
+      await tester.tap(find.text('Leave it'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining("Left on Van's guess"), findsOneWidget);
+      // And the next line is a capture again.
+      await send(tester, 'call the bank 20 minutes');
+      final open = await service.openTasks();
+      expect(open.map((t) => t.title), contains('Call the bank'));
+    });
+  });
+
   group('renegotiating a stalled block in chat', () {
     /// Captures a task and walks the clock past its block without starting it.
     Future<WorkSession> stall(String sentence, {int late = 20}) async {

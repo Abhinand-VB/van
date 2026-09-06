@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/ui/background.dart';
+import 'package:van/ui/clarify.dart';
 import 'package:van_core/van_core.dart';
 
 /// One line in the conversation.
@@ -36,6 +37,55 @@ class PlanCard extends ChatEntry {
 
   /// Whether the user has taken it back.
   final bool undone;
+}
+
+/// Van asking the one thing the sentence did not say.
+///
+/// A transcript line rather than a bar, because in a conversation the
+/// question belongs where the sentence it is about already is - the user can
+/// see what they typed, what Van made of it, and what Van still does not
+/// know, in that order.
+class QuestionCard extends ChatEntry {
+  /// Creates a question about [taskId].
+  const QuestionCard({
+    required this.taskId,
+    required this.clarification,
+    this.assumed,
+    this.settled,
+    this.note,
+  });
+
+  /// The task the answer would revise.
+  final String taskId;
+
+  /// What Van wants to know.
+  final Clarification clarification;
+
+  /// The duration Van used in the meantime, in minutes.
+  final int? assumed;
+
+  /// What became of it, or null while it is still open.
+  final String? settled;
+
+  /// Something to say while the question is still open - so far only that an
+  /// answer arrived with no duration in it.
+  final String? note;
+
+  /// A copy of this card, closed with [outcome].
+  QuestionCard closed(String outcome) => QuestionCard(
+    taskId: taskId,
+    clarification: clarification,
+    assumed: assumed,
+    settled: outcome,
+  );
+
+  /// A copy of this card, still open, with [complaint] added underneath.
+  QuestionCard saying(String complaint) => QuestionCard(
+    taskId: taskId,
+    clarification: clarification,
+    assumed: assumed,
+    note: complaint,
+  );
 }
 
 /// Van opening a conversation about a block that did not start.
@@ -99,6 +149,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
   /// new task instead. Chat has exactly two modes and the composer says which.
   String? _answering;
 
+  /// The index of the open question card, when Van has asked how long
+  /// something takes and is still waiting.
+  ///
+  /// An index rather than a task id because answering has to close the card
+  /// that asked, and a transcript is addressed by position. Cleared whenever
+  /// the card is settled, so there is never more than one question live.
+  int? _questionAt;
+
   @override
   void initState() {
     super.initState();
@@ -148,12 +206,22 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     if (text.isEmpty || _busy) return;
 
     final answering = _answering;
+    final question = _questionAt;
     setState(() {
       _entries.add(UserLine(text));
       _busy = true;
     });
     _input.clear();
     _toBottom();
+
+    // An open question is answered first. It cannot coexist with a stall
+    // prompt in practice - a stall prompt blocks capture, and a question only
+    // ever follows a capture - but the order is stated rather than left to
+    // luck, because the two modes mean opposite things about what was typed.
+    if (question != null) {
+      await _answerQuestion(question, text);
+      return;
+    }
 
     final ChatEntry entry;
     try {
@@ -187,8 +255,63 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
     setState(() {
       _entries.add(entry);
       _busy = false;
+      // A capture that left Van guessing gets its question appended right
+      // behind the plan it produced, so the two are read together.
+      if (entry case PlanCard(:final result)) {
+        if (result.clarification case final asked?) {
+          _entries.add(
+            QuestionCard(
+              taskId: result.task.id,
+              clarification: asked,
+              assumed: result.assumedMinutes,
+            ),
+          );
+          _questionAt = _entries.length - 1;
+        }
+      }
     });
     _toBottom();
+  }
+
+  /// Takes [text] as the answer to the question at [index].
+  Future<void> _answerQuestion(int index, String text) async {
+    final card = _entries[index] as QuestionCard;
+    final result = await widget.service.answerDuration(card.taskId, text);
+    if (!mounted) return;
+
+    setState(() {
+      _busy = false;
+      switch (result.outcome) {
+        case AnswerOutcome.notUnderstood:
+          // The question stays open, and says why it is still there. A
+          // question that closed on a typo would have taken an answer it did
+          // not get.
+          _entries[index] = card.saying(
+            'I did not get a length out of that - try "45 minutes".',
+          );
+        case AnswerOutcome.tooLate:
+          _entries[index] = card.closed('That one has already started.');
+          _questionAt = null;
+        case AnswerOutcome.replanned:
+          final task = result.task;
+          _entries[index] = card.closed(
+            'Replanned ${task == null ? "it" : '"${task.title}"'} into '
+            '${result.sessions.length} '
+            '${result.sessions.length == 1 ? "block" : "blocks"}.',
+          );
+          _questionAt = null;
+      }
+    });
+    _toBottom();
+  }
+
+  /// Drops the open question without answering it.
+  void _skipQuestion(int index) {
+    final card = _entries[index] as QuestionCard;
+    setState(() {
+      _entries[index] = card.closed("Left on Van's guess.");
+      _questionAt = null;
+    });
   }
 
   Future<ChatEntry> _proposalFor(String sessionId, String reason) async {
@@ -298,6 +421,10 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
                         clock: widget.clock,
                         onUndo: () => _undo(i, result),
                       ),
+                      final QuestionCard card => _QuestionBubble(
+                        card: card,
+                        onSkip: () => _skipQuestion(i),
+                      ),
                       StallPrompt(:final session, :final task) => _StallBubble(
                         session: session,
                         task: task,
@@ -315,6 +442,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
             controller: _input,
             busy: _busy,
             answering: _answering != null,
+            asking: _questionAt == null
+                ? null
+                : (_entries[_questionAt!] as QuestionCard).clarification,
             onSend: _send,
           ),
         ],
@@ -521,6 +651,7 @@ class _Composer extends StatelessWidget {
     required this.controller,
     required this.busy,
     required this.answering,
+    required this.asking,
     required this.onSend,
   });
 
@@ -531,6 +662,10 @@ class _Composer extends StatelessWidget {
   /// new task. The hint is the only thing telling the user which, so it is
   /// not decoration.
   final bool answering;
+
+  /// The question the next line would answer, when one is open. Outranks
+  /// [answering] here exactly as it does in the send path.
+  final Clarification? asking;
   final VoidCallback onSend;
 
   @override
@@ -548,9 +683,11 @@ class _Composer extends StatelessWidget {
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => onSend(),
                 decoration: InputDecoration(
-                  hintText: answering
-                      ? "what's in the way?"
-                      : 'finish the assignment by friday, 2 hours',
+                  hintText: switch ((asking, answering)) {
+                    (final Clarification it, _) => questionFor(it),
+                    (_, true) => "what's in the way?",
+                    _ => 'finish the assignment by friday, 2 hours',
+                  },
                   border: const OutlineInputBorder(),
                   isDense: true,
                   contentPadding: const EdgeInsets.symmetric(
@@ -572,6 +709,80 @@ class _Composer extends StatelessWidget {
                   : const Icon(Icons.arrow_upward),
               tooltip: 'Send',
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Van asking how long something takes, in the transcript.
+class _QuestionBubble extends StatelessWidget {
+  const _QuestionBubble({required this.card, required this.onSkip});
+
+  final QuestionCard card;
+  final VoidCallback onSkip;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colours = theme.colorScheme;
+    final settled = card.settled;
+    final assumed = card.assumed;
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12, right: 40),
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: colours.secondaryContainer,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              questionFor(card.clarification),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colours.onSecondaryContainer,
+              ),
+            ),
+            if (assumed != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Planned on an ${assumptionOf(assumed)} until you say.',
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colours.onSecondaryContainer.withValues(alpha: 0.75),
+                ),
+              ),
+            ],
+            if (card.note case final complaint?) ...[
+              const SizedBox(height: 6),
+              Text(
+                complaint,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colours.error,
+                ),
+              ),
+            ],
+            if (settled == null)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton(
+                  onPressed: onSkip,
+                  child: const Text('Leave it'),
+                ),
+              )
+            else ...[
+              const SizedBox(height: 8),
+              Text(
+                settled,
+                style: theme.textTheme.labelSmall?.copyWith(
+                  color: colours.onSecondaryContainer,
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -33,6 +33,15 @@ class ExtractTask extends Capability<ExtractTaskInput, TaskDraft> {
   final PromptTemplate _prompt;
   final TemporalParser _parser;
 
+  /// The parser this capability falls back to, at the device's own offset.
+  ///
+  /// Exposed because answering "roughly how long?" has to read a duration the
+  /// same way capturing the sentence would have, and because there is exactly
+  /// one correctly-configured parser in the app - the one built with the
+  /// current UTC offset and rebuilt whenever it moves. A second one made at
+  /// the call site is issue 19 waiting to happen again.
+  TemporalParser get parser => _parser;
+
   @override
   String get id => 'extract_task';
 

@@ -6,6 +6,7 @@ import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/platform/calendars.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/ui/background.dart';
+import 'package:van/ui/clarify.dart';
 import 'package:van/ui/focus_screen.dart';
 import 'package:van/ui/settings_screen.dart';
 import 'package:van_core/van_core.dart';
@@ -52,6 +53,9 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
   List<Task> _open = const [];
   bool _busy = false;
   String? _message;
+
+  /// The one question Van is waiting on, or null when it is not asking.
+  _Asking? _asking;
   NudgePermissions _permissions = const NudgePermissions(
     canPost: true,
     canScheduleExactly: true,
@@ -142,6 +146,12 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
 
   static String _blocks(int n) => n == 1 ? 'block' : 'blocks';
 
+  /// Submitting either captures a new task or answers Van's question about
+  /// the last one. The bar above the field says which, and there is no third
+  /// state to get lost in.
+  Future<void> _submit() =>
+      _asking == null ? _capture() : _answer(_asking!.taskId);
+
   Future<void> _capture() async {
     final text = _input.text.trim();
     if (text.isEmpty) return;
@@ -154,6 +164,17 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
 
     setState(() {
       _busy = false;
+      // A new capture replaces any question still standing about the last
+      // one. Two questions queued behind a composer is the form this was
+      // written to avoid.
+      _asking = result.clarification == null
+          ? null
+          : _Asking(
+              taskId: result.task.id,
+              about: result.task.title,
+              clarification: result.clarification!,
+              assumed: result.assumedMinutes,
+            );
       _message = result.sessions.isEmpty
           ? 'Captured "${result.task.title}", but there was no room to '
                 'schedule it.'
@@ -163,6 +184,33 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
                 'deadline.'
           : 'Scheduled ${result.sessions.length} '
                 '${result.sessions.length == 1 ? "block" : "blocks"}.';
+    });
+  }
+
+  Future<void> _answer(String taskId) async {
+    final text = _input.text.trim();
+    if (text.isEmpty) return;
+    setState(() => _busy = true);
+
+    final result = await widget.service.answerDuration(taskId, text);
+    if (result.outcome != AnswerOutcome.notUnderstood) _input.clear();
+    await _refresh();
+    if (!mounted) return;
+
+    setState(() {
+      _busy = false;
+      // Only a re-plan closes the question. "I did not follow that" has to
+      // leave it open or the user has answered into a void, and a question
+      // that vanishes on a typo is worse than one that was never asked.
+      if (result.outcome != AnswerOutcome.notUnderstood) _asking = null;
+      _message = switch (result.outcome) {
+        AnswerOutcome.replanned =>
+          'Replanned into ${result.sessions.length} '
+              '${result.sessions.length == 1 ? "block" : "blocks"}.',
+        AnswerOutcome.notUnderstood =>
+          'I did not get a length out of that - try "45 minutes".',
+        AnswerOutcome.tooLate => 'That one has already started; leaving it.',
+      };
     });
   }
 
@@ -231,8 +279,20 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
             _CaptureField(
               controller: _input,
               busy: _busy,
-              onSubmit: _capture,
+              onSubmit: _submit,
+              hint: _asking == null
+                  ? 'finish the assignment by friday, 2 hours'
+                  : questionFor(_asking!.clarification),
             ),
+            if (_asking case final asking?) ...[
+              const SizedBox(height: 8),
+              ClarifyBar(
+                clarification: asking.clarification,
+                about: asking.about,
+                assumed: asking.assumed,
+                onDismiss: () => setState(() => _asking = null),
+              ),
+            ],
             if (_message != null) ...[
               const SizedBox(height: 12),
               Text(_message!, style: theme.textTheme.bodySmall),
@@ -274,16 +334,36 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
   }
 }
 
+/// A question Van is waiting on, and the task it belongs to.
+class _Asking {
+  const _Asking({
+    required this.taskId,
+    required this.about,
+    required this.clarification,
+    this.assumed,
+  });
+
+  final String taskId;
+  final String about;
+  final Clarification clarification;
+  final int? assumed;
+}
+
 class _CaptureField extends StatelessWidget {
   const _CaptureField({
     required this.controller,
     required this.busy,
     required this.onSubmit,
+    required this.hint,
   });
 
   final TextEditingController controller;
   final bool busy;
   final VoidCallback onSubmit;
+
+  /// What the empty field invites. Changes to the question while one is
+  /// standing, so the field says what typing into it will do.
+  final String hint;
 
   @override
   Widget build(BuildContext context) {
@@ -293,7 +373,7 @@ class _CaptureField extends StatelessWidget {
       textInputAction: TextInputAction.done,
       onSubmitted: (_) => onSubmit(),
       decoration: InputDecoration(
-        hintText: 'finish the assignment by friday, 2 hours',
+        hintText: hint,
         border: const OutlineInputBorder(),
         suffixIcon: busy
             ? const Padding(

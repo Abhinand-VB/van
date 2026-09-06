@@ -95,6 +95,20 @@ enum EventType {
   /// out is otherwise indistinguishable from a scheduling bug, and this is
   /// the row that tells them apart.
   timezoneChanged,
+
+  /// Van captured something and asked the user for one thing it was not
+  /// told - today, always how long the work takes.
+  ///
+  /// Worth a row because the whole question is whether asking is worth the
+  /// interruption, and that is answered by counting: how often Van asks,
+  /// against how often anyone answers. Paired with [clarificationAnswered],
+  /// the two say whether this feature earns its place or is a dialog the user
+  /// learned to dismiss.
+  clarificationAsked,
+
+  /// The user answered one of those questions, and the plan was rebuilt on
+  /// what they said rather than on Van's default.
+  clarificationAnswered,
 }
 
 /// One immutable fact, timestamped.

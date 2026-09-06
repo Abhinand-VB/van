@@ -136,6 +136,17 @@ class WeekReview {
         // a change to what the report *is*, and that is the owner's call.
         case EventType.calendarRead:
         case EventType.calendarUnavailable:
+        // Left out for now, and this one is the least comfortable omission in
+        // the list. "How often did Van have to ask you something, and how
+        // often did you answer" is exactly the kind of thing this report is
+        // for - it is behaviour toward the user, like the nudge counters, not
+        // bookkeeping like `calendarRead`. It is left out only because adding
+        // a section to the report changes what the report *is*, which the
+        // calendar rows already established is the owner's call rather than
+        // an agent's. Both rows are in the log; the report is two counters
+        // away. See `DECISIONS_PENDING.md` D72.
+        case EventType.clarificationAsked:
+        case EventType.clarificationAnswered:
           break;
       }
     }
