@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/data/db/database.dart';
+import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/data/repositories/event_repo.dart';
 import 'package:van/data/repositories/nudge_repo.dart';
 import 'package:van/data/repositories/session_repo.dart';
@@ -12,6 +13,7 @@ import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/router.dart';
 import 'package:van/main.dart';
+import 'package:van/platform/calendars.dart';
 import 'package:van_core/van_core.dart';
 
 import '../support/fake_notifications.dart';
@@ -59,6 +61,8 @@ void main() {
         clock: FakeClock(DateTime.utc(2026, 8, 19, 9)),
         notifications: notifications,
         settings: settings,
+        calendars: const UnsupportedCalendars(),
+        calendarPreferences: CalendarPreferences(settings),
       ),
     );
     await tester.pumpAndSettle();

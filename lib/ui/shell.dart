@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
+import 'package:van/data/repositories/calendar_prefs.dart';
+import 'package:van/platform/calendars.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/ui/chat_screen.dart';
 import 'package:van/ui/now_screen.dart';
@@ -19,6 +21,8 @@ class VanShell extends StatefulWidget {
     required this.service,
     required this.clock,
     required this.notifications,
+    required this.calendars,
+    required this.calendarPreferences,
     super.key,
   });
 
@@ -30,6 +34,12 @@ class VanShell extends StatefulWidget {
 
   /// Passed to the Now screen for its permission banner.
   final Notifications notifications;
+
+  /// Passed through to the calendar settings page.
+  final Calendars calendars;
+
+  /// Passed through to the calendar settings page.
+  final CalendarPreferences calendarPreferences;
 
   @override
   State<VanShell> createState() => _VanShellState();
@@ -51,6 +61,8 @@ class _VanShellState extends State<VanShell> {
             service: widget.service,
             clock: widget.clock,
             notifications: widget.notifications,
+            calendars: widget.calendars,
+            calendarPreferences: widget.calendarPreferences,
           ),
           ChatScreen(service: widget.service, clock: widget.clock),
           TaskListScreen(service: widget.service, clock: widget.clock),

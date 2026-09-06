@@ -1,8 +1,14 @@
 # Van — Project Status
 
-**Last updated:** 22 August 2026, 05:40, during unattended overnight work.
-This file is the handover between sessions and between agents; it says what is
-true now. The narrative of how it got that way is in `docs/NIGHT_LOG.md`.
+**Last updated:** 6 September 2026, 00:55 PDT, with the owner present and the
+phone attached. This file is the handover between sessions and between agents;
+it says what is true now. The narrative of how it got that way is in
+`docs/NIGHT_LOG.md`.
+
+**This session built WP-11, the device calendar** (`docs/WP_CALENDAR.md`), and
+installed it. Section 3v has the decisions and the one thing still needing you.
+Note the two-week gap in this file: the phone ran the 22 August build until
+today, so nothing between those dates was observed on hardware.
 
 Read order for a new session: this file, then `AGENTS.md`, then
 `docs/ARCHITECTURE.md`. `docs/AGENT_TASKS.md` is the original plan and is
@@ -12,57 +18,56 @@ largely superseded by this file.
 
 ## Does it work?
 
-**Yes — with one honest gap at the end of the run: the phone locked at 05:56,
-so the last install was verified by evidence rather than by eye.**
+**Yes. The build on the phone was watched drawing its UI, including the new
+calendar screen — but Van has not yet been given permission to read the
+calendar, so the feature is installed and unexercised against real data.**
 
 | | |
 |---|---|
-| **Commit the phone is running** | `1c54b0e` — "Let the timezone move under a running process". That is the newest commit that changes code; anything after it on `master` is documentation only and does not alter the APK. |
-| **APK installed at** | **22 Aug 2026, 05:56:19** (device local, PDT) |
-| **Last launched** | **22 Aug 2026, 05:56:21** — `am start` delivered, the process is alive (pid 4377), and Van wrote an `appOpened` event two seconds after the install. **I did not see this build's UI**; the keyguard engaged at 05:56. |
-| **Last seen rendering** | **05:44**, on the build one commit earlier (`b347b41`). Now screen, task list and all. |
-| **Last driven by hand** | **05:39** — typed "review the fatigue probe today 30 minutes" into Chat, watched Van plan a block at 11:10, pulled the database and confirmed the task row, the session, and a full three-rung ladder with **nothing suppressed** |
-| **Tests** | 588 green (336 app, 252 core), `dart analyze --fatal-infos` and `check_layers` clean |
+| **Commit the phone is running** | The WP-11 calendar commit — see `git log -1`. It is the newest commit that changes code. |
+| **APK installed at** | **6 Sep 2026, 00:53:55** (device local, PDT), debug build, phone `<device-serial>` |
+| **Last launched** | **6 Sep 2026, 00:54** — `am start` delivered, process alive (pid 30090) |
+| **Last seen rendering** | **6 Sep 2026, 00:54, this build.** Now screen with the new calendar action in the app bar, and the Calendars page reached by tapping it. Both screenshotted. |
+| **Last driven by hand** | **6 Sep 2026, 00:54** — opened the Calendars page on the device and confirmed it shows the ungranted explanation rather than an empty list. |
+| **Calendar permission** | **Not granted.** `READ_CALENDAR` is declared and sits at the platform default. Until you tap Allow, Van plans exactly as it did before — this is the one thing WP-11 still needs from you. |
+| **Tests** | 649 green (380 app, 269 core), `dart analyze --fatal-infos` and `check_layers` clean |
 
-**What that gap does and does not mean.** The code between `b347b41` (seen
-working) and `1c54b0e` is the timezone fix. It installed cleanly, the process
-started, and it reached its composition root far enough to write to the
-database — that is more than "the APK is present", but it is less than having
-watched the Now screen draw. If Van misbehaves this morning, `1c54b0e` is the
-only commit that has not been looked at, and reverting it is one command:
+**What that gap does and does not mean.** The calendar UI was watched drawing
+on this build, and the whole feature is covered by tests against a fake
+provider. What has never run is `CalendarPlugin.kt` — the Kotlin that queries
+`CalendarContract` — because the permission behind it has not been granted.
+Everything Dart-side that consumes it is exercised; the query itself is the
+least-proved code in the repository, and the first grant is what will prove or
+disprove it. If the Calendars page comes up empty on a phone that plainly has
+calendars, that query is where to look, not the Dart.
 
-```bash
-git revert 1c54b0e
-```
-
-**Device work stopped at 05:56, and not for the reason the brief predicts.**
-`isKeyguardShowing=true`, wakefulness `Dozing`. Per OVERNIGHT.md 3a that ends
-device work rather than being something to get past, so it was not. But note
-that iterations were **one to two minutes apart** with `KEYCODE_WAKEUP` sent
-throughout, and it locked anyway — so the standing advice that "iterations
-less than 30 minutes apart keep the keyguard away" is **wrong**. Waking the
-display is not the same as user activity, and it does not reset the lock
-timer. Section 5 has the detail.
+**The previous entry in this table was `1c54b0e`, the timezone fix, installed
+22 August and never seen drawing.** It has now run for two weeks on this phone
+and its UI was seen this morning, so that gap is closed by ordinary use rather
+than by an experiment. Nothing about it needs reverting.
 
 **Two things still unverified on hardware**, both needing you: a nudge firing
-with START coming back (issue 3), and this morning's build drawing its UI.
+with START coming back (issue 3), and anything at all behind the calendar
+permission (section 3v).
 
-**Yesterday's failure was that this section did not exist.** The phone spent
-21 August running an APK from 06:11 while the tip moved on without it, and
-nothing checked whether the app still behaved. When this run began the phone
-was *still* on that 06:11 build — 18.5 hours behind — so the first act of the
-night was to build and install before touching the queue.
+**The two-week gap is the same failure this section was written to catch.**
+The phone ran the 22 August build until today while `master` sat still — which
+is the harmless direction of that mistake, but it is worth naming: nothing
+between 22 August and 6 September was observed on hardware, because nothing
+was built.
 
-The one thing still needing you is unchanged and small: **tap the banner on
-the Now screen and grant "Alarms & reminders"**, so nudges fire to the minute
-instead of within Android's inexact window. Detail in section 0 below.
+Two things still need you, both small: **tap the banner on the Now screen and
+grant "Alarms & reminders"**, so nudges fire to the minute instead of within
+Android's inexact window; and **tap the calendar icon and grant the calendar**,
+which is the only way any of WP-11 gets exercised. Detail in section 0 below.
 
 ---
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **582 tests, all green,
-on a phone that runs.** Four things need you, and they are small:
+Van is finished as far as an agent can take it alone. **649 tests, all green,
+on a phone that runs.** Five things need you, and they are small — the newest
+is last, because it is the only one that was not already here yesterday:
 
 1. **Tap the banner on the Now screen** and grant "Alarms & reminders". One
    tap, and it is the first thing to do — **there is now evidence it matters.**
@@ -108,6 +113,12 @@ on a phone that runs.** Four things need you, and they are small:
    only part of the negotiation loop never reached on hardware.
 4. **Listen to the drum.** Nobody ever has. Your ringer was muted every time
    I looked, so unmute first.
+5. **Grant the calendar.** Tap the calendar icon in the Now screen's app bar,
+   then Allow. Until you do, WP-11 is installed and doing nothing: Van still
+   plans your day as if nothing else is on it. Afterwards, the page lists your
+   calendars and you can untick any that turn out to be noise. Van reads them
+   at planning time, never writes to them, and never reads an event's name —
+   section 3v says exactly what it records instead.
 
 **After a week, run this.** It prints what the log actually says — how many
 blocks you started, what Van held back and why, and how often moving work
@@ -160,7 +171,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **582 tests passing** — 252 in `packages/van_core` (pure Dart), 330 in the app.
+- **649 tests passing** — 269 in `packages/van_core` (pure Dart), 380 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -203,6 +214,11 @@ working configuration, not a degraded one.
 | App: week report rendering | 5 |
 | App: ladder ids | 9 |
 | Core: negotiation rules | 19 |
+| Core: calendar filter | 17 |
+| App: calendar planning | 20 |
+| App: calendar settings screen | 12 |
+| App: calendar preferences | 8 |
+| App: timezone (calendar cases added) | +4 |
 
 ---
 
@@ -221,6 +237,7 @@ working configuration, not a degraded one.
 | WP-6 | On-device model backend | **Groundwork done, engine not wired** |
 | WP-9 | Cloud backends (Claude / OpenAI / Gemini) | Not started (phase 3) |
 | WP-10 | Usage-stats distraction detection | Not started (phase 4) |
+| WP-11 | Device calendar as a commitment source | **Done, ungranted on the phone** (see 3v) |
 
 ### Commits
 
@@ -1182,6 +1199,77 @@ morning are accurate.
 
 ---
 
+## 3v. The device calendar, and what it deliberately cannot say
+
+WP-11, built 6 September. `docs/WP_CALENDAR.md` is the plan and its section 3
+is still the argument; this records what was actually built and where it went
+further than the plan.
+
+**The domain change was one call site, as predicted.** `VanService._freeSlots`
+now merges calendar commitments with session commitments and everything
+downstream — `FreeSlotFinder`, `SessionPlanner`, `Rescheduler`,
+`StaleSessionSweep` — is untouched and does not know the difference. No core
+test needed rewriting. `Commitment` was designed for this and it held.
+
+**Van never reads an event title, and that is stronger than the plan asked
+for.** WP_CALENDAR 3.3 said the label was for in-memory planning only and must
+never reach the log. The title is not read at all: `CalendarPlugin.kt` does not
+put TITLE, DESCRIPTION, LOCATION or ORGANIZER in its projection, `CalendarEntry`
+has no field to hold one, and every calendar-derived `Commitment` carries the
+constant label `calendar`. Carrying a secret carefully is a weaker guarantee
+than not having it, and nothing in planning wanted the string. A test asserts
+the serialised event log contains neither the calendar id nor any of the field
+names that would only be there if someone had started carrying content.
+
+**What the log does say.** One `calendarRead` row per planning pass with three
+counts — entries seen, commitments made, calendars excluded — and a
+`calendarUnavailable` row when a read fails. The distinction is the point: an
+empty calendar and an unreadable one produce identical plans and mean opposite
+things. Neither row reaches the week report, which is a judgement call recorded
+in D70 rather than an oversight.
+
+**The four behavioural rules are in `CalendarFilter`, in van_core, pure.**
+Transparency decides rather than duration, so an all-day birthday costs
+nothing and an all-day "out of office" costs the day. A declined entry does not
+block and an unanswered one does. They are unit-tested as rules, not inferred
+from planner behaviour, which is what makes them arguable later.
+
+**All-day entries were the trap.** Providers store them as UTC midnights
+*naming local dates*. Read as instants on this phone they would have blocked
+from 17:00 the previous day — most of the wrong day, leaving the evening
+looking free. `CalendarFilter` carries a `utcOffset` for exactly this, and
+`refreshTimezone` now rebuilds four things rather than three. `timezone_test`
+covers it at the device's real offset; issue 19 being fixed first is what made
+this safe, and WP_CALENDAR 7 was right to insist on the ordering.
+
+**A failed calendar read cannot cost you a capture.** The read is wrapped, a
+failure returns no commitments, plans continue against Van's own sessions, and
+the degradation surfaces as a banner on the Now screen rather than an error on
+the thing you were doing. This is the same shape as the failed-alarm defect in
+3l, and it was written that way from the start because of it.
+
+**Not having the grant is not a degradation.** No permission means no read, no
+banner, no event rows, and no cost — the resume path does not even ask the
+provider. The banner appears only when Van *had* permission, tried, and could
+not, because that is the case where the plan on screen looks entirely normal
+and is quietly wrong.
+
+**The settings surface is a page, not a fourth tab.** Reached from the calendar
+icon in the Now screen's app bar. Every calendar is included by default and the
+user unticks; the *excluded* set is what is stored, so a calendar added to the
+phone next month counts without Van being told. That default only works because
+of the transparency rule — birthdays and holidays are all-day and free, so they
+do not block — and changing either without the other will make Van look broken.
+
+**What has not been proved on hardware.** Everything above is tested and the
+screen was watched drawing, but `READ_CALENDAR` has never been granted on this
+phone, so no line of `CalendarPlugin.kt` has ever run against a real provider.
+The Kotlin is the least-exercised code in the repository. First thing to check
+after granting: that the Calendars page lists real calendars, and that a
+`calendarRead` row appears in the log with a non-zero `entries` count.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -1470,13 +1558,16 @@ What is left needs you, or needs evidence from real use.
    `SuppressionPolicy.fatigueProbeMinutes` (see D69 — it is the number I had
    least evidence for), and whether halving a block is the right first
    concession.
-6. **Consider the calendar before WP-6.** Van plans your day as if nothing else is
-   on it, which is a correctness problem rather than a missing feature. Written up
-   as `docs/WP_CALENDAR.md` — the domain work is genuinely small (one call site;
-   `Commitment` was designed for it), and the real cost is a settings surface Van
-   does not have plus four behavioural decisions that matter more than the
-   plumbing. The phase numbering in `ARCHITECTURE.md` contradicted itself on this
-   and the WP explains why.
+6. **Grant Van the calendar, and watch what changes.** WP-11 is built and
+   installed (section 3v) but `READ_CALENDAR` has never been granted on this
+   phone, so the Kotlin has never run against a real provider. Open the
+   calendar icon on the Now screen, tap Allow, and then: check the Calendars
+   page lists your real calendars, capture something that would have landed
+   during a meeting, and confirm it does not. The log row to look for is
+   `calendarRead` with a non-zero `entries` count. **If a birthday calendar
+   starts eating whole days, the transparency rule (3v) has met a provider
+   that marks all-day entries busy, and the answer is to untick that calendar
+   rather than to change the rule.**
 
 7. **Only then decide about WP-6** (section 3e). My honest read: the case for
    it has got weaker, not stronger. The parser now answers every golden case

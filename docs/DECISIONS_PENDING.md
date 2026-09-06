@@ -126,6 +126,48 @@ side effect. Both halves are pinned by tests in `test/app/loop_test.dart`.
 
 ---
 
+### D70 — Three calls made while building the calendar (WP-11)
+
+None is expensive to reverse and none needed you to be awake, but all three are
+places where a different answer is defensible.
+
+**1. Van does not read event titles at all.** WP_CALENDAR 3.3 asked for the
+title to be planning-only and never logged. I went further: the Kotlin
+projection does not include TITLE, `CalendarEntry` has no field for it, and
+calendar commitments carry the constant label `calendar`. Nothing in planning
+wanted the string, and not having it is a stronger guarantee than handling it
+carefully. **The cost:** Van can never say "you have a meeting then" or show
+you which entry blocked a slot; it can only say that something did. If you want
+that, the title has to cross the channel and the privacy rule in 3.3 becomes a
+discipline rather than a fact. *Reversing it is one projection column and one
+field, plus a decision about the log.*
+
+**2. Cancelled events still block.** A calendar entry with `STATUS_CANCELED`
+that has not been deleted is treated like any other: if it is marked busy and
+not declined, it takes the time. This follows WP_CALENDAR's own "when in doubt,
+block", and cancelled-but-undeleted entries are rare, but it is a real case the
+plan does not mention and I did not add a rule for it — the acceptance criteria
+name declined and transparency, and inventing a third rule would have been
+scope I was told not to take. *Reversing it: one column, one clause in
+`CalendarFilter`, one test.*
+
+**3. The week report says nothing about the calendar.** `calendarRead` and
+`calendarUnavailable` are both ignored by `WeekReview`. `calendarRead` is
+bookkeeping and does not belong in a week's totals. `calendarUnavailable` is
+arguably different — a week spent planning around a calendar Van could not see
+is worth knowing — but it is already surfaced live, on the Now screen, at the
+moment it matters, and adding a line to the report changes what the report *is*.
+That felt like your call rather than mine. *Reversing it: one counter, one
+field on `WeekReview`, one line in `tool/week_report.dart`.*
+
+**Two defaults that only work together, so change them as a pair.** Every
+calendar is included until you untick it, *and* all-day entries block only when
+marked busy. Make the list opt-in and the feature does nothing on the day you
+grant it. Make all-day entries always block while everything is included and
+your birthday calendar eats one day in five.
+
+---
+
 ## Blocked — cannot proceed without the owner
 
 These are genuinely impossible for an agent to resolve alone. Do not burn time

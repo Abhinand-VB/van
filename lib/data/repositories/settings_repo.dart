@@ -10,6 +10,14 @@ abstract final class SettingKeys {
   /// Asking is a one-time event, not a state: whether permission was *granted*
   /// is read from the OS every time, and must never be cached here.
   static const askedForPermission = 'asked_for_permission';
+
+  /// Device calendars the user has taken out of planning, as a JSON array of
+  /// provider ids.
+  ///
+  /// Exclusions rather than inclusions, so a calendar added to the phone
+  /// later is respected without Van being told about it. See
+  /// `CalendarPreferences`, which owns the encoding.
+  static const excludedCalendars = 'excluded_calendars';
 }
 
 /// Small key/value store for things that are not worth a table.

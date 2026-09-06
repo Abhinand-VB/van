@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/data/db/database.dart';
+import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/data/repositories/event_repo.dart';
 import 'package:van/data/repositories/nudge_repo.dart';
 import 'package:van/data/repositories/session_repo.dart';
@@ -13,6 +14,7 @@ import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/config.dart';
 import 'package:van/inference/prompts.dart';
+import 'package:van/platform/calendars.dart';
 import 'package:van/platform/local_llm.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/platform/system_clock.dart';
@@ -49,8 +51,12 @@ Future<void> main() async {
   final events = EventRepo(db, clock);
   final nudges = NudgeRepo(db);
   final settings = SettingsRepo(db);
+  final calendarPreferences = CalendarPreferences(settings);
 
   final notifications = AndroidNotifications(FlutterLocalNotificationsPlugin());
+  // Read at plan time and never copied into Van's database: the OS owns the
+  // calendar and is the source of truth for it. See VanService._freeSlots.
+  const calendars = MethodChannelCalendars();
 
   final templates = NudgeTemplates.fromJson(
     await rootBundle.loadString('assets/nudge_templates/templates.json'),
@@ -100,6 +106,8 @@ Future<void> main() async {
     nudges: nudges,
     router: router,
     notifications: notifications,
+    calendars: calendars,
+    calendarPreferences: calendarPreferences,
     templates: templates,
     prompts: prompts,
     clock: clock,
@@ -142,6 +150,8 @@ Future<void> main() async {
       clock: clock,
       notifications: notifications,
       settings: settings,
+      calendars: calendars,
+      calendarPreferences: calendarPreferences,
     ),
   );
 }
@@ -180,6 +190,8 @@ class VanApp extends StatelessWidget {
     required this.clock,
     required this.notifications,
     required this.settings,
+    required this.calendars,
+    required this.calendarPreferences,
     super.key,
   });
 
@@ -194,6 +206,12 @@ class VanApp extends StatelessWidget {
 
   /// Persists the one-time record that permission has been asked for.
   final SettingsRepo settings;
+
+  /// The device calendar, for the settings page.
+  final Calendars calendars;
+
+  /// Which calendars planning may see.
+  final CalendarPreferences calendarPreferences;
 
   @override
   Widget build(BuildContext context) {
@@ -218,6 +236,8 @@ class VanApp extends StatelessWidget {
           service: service,
           clock: clock,
           notifications: notifications,
+          calendars: calendars,
+          calendarPreferences: calendarPreferences,
         ),
       ),
     );

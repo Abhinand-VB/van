@@ -17,6 +17,12 @@ adaptively — escalate, shrink the task, or reschedule. Log every step.
 **Explicitly out of v1:** cloud models, Google Calendar sync, link understanding, voice,
 usage-stats/distraction detection, iOS, multi-user, sync.
 
+"Google Calendar sync" means accounts, an API and a network dependency, and it is
+still out. Reading the *device* calendar provider is a different thing — local, no
+network, and already aggregating whatever accounts the phone has — and it shipped as
+WP-11 on 6 Sep 2026. The two were conflated by this line for a while; see
+`docs/WP_CALENDAR.md`.
+
 **The two things v1 must not foreclose:**
 
 - Swapping any AI capability to Claude / OpenAI / Gemini via config (section 5).
@@ -552,7 +558,14 @@ practice. Replace them if that ever matters.
 | **1 — offline core** | scaffold, data, scheduling, nudge engine, policy, simulation, alarms, notifications, UI | WP-0 … WP-5, WP-7, WP-8 |
 | **2 — on-device model** | Kotlin LiteRT channel, Gemma backend, real `extract_task` / `compose_nudge` | WP-6 |
 | **3 — cloud optional** | Claude / OpenAI / Gemini backends, key storage, per-capability routing | WP-9 |
-| **4 — context** | usage-stats distraction detection, calendar, learned intervention policy | WP-10+ |
+| **4 — context** | usage-stats distraction detection, learned intervention policy | WP-10+ |
+| — | device calendar as a second commitment source | **WP-11, done** |
+
+The calendar row sits outside the phases on purpose. These phases are tiers of
+*model* capability, and the calendar is not a model capability at all — it is a
+second source for a type the domain already had. Sorting it into that ladder is
+what let this table, and two other lines in this document, give three different
+answers about when it would arrive.
 
 Phase 3 must require **zero changes** to `core/`, `app/`, or `ui/`. If it does not, the
 abstraction failed and should be fixed before shipping phase 2.

@@ -2,9 +2,12 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:van/app/van_service.dart';
+import 'package:van/data/repositories/calendar_prefs.dart';
+import 'package:van/platform/calendars.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van/ui/background.dart';
 import 'package:van/ui/focus_screen.dart';
+import 'package:van/ui/settings_screen.dart';
 import 'package:van_core/van_core.dart';
 
 /// The home screen, and deliberately the only thing on it.
@@ -18,6 +21,8 @@ class NowScreen extends StatefulWidget {
     required this.service,
     required this.clock,
     required this.notifications,
+    required this.calendars,
+    required this.calendarPreferences,
     super.key,
   });
 
@@ -29,6 +34,13 @@ class NowScreen extends StatefulWidget {
 
   /// Read to tell the user when the OS will not let Van reach them.
   final Notifications notifications;
+
+  /// Handed to the settings page, which is reached from this screen's app bar
+  /// rather than from a fourth tab.
+  final Calendars calendars;
+
+  /// Which calendars planning is allowed to see.
+  final CalendarPreferences calendarPreferences;
 
   @override
   State<NowScreen> createState() => _NowScreenState();
@@ -44,6 +56,7 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
     canPost: true,
     canScheduleExactly: true,
   );
+  bool _calendarUnreadable = false;
 
   @override
   void initState() {
@@ -80,12 +93,34 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
       _next = next;
       _open = open;
       _permissions = permissions;
+      // Set by the plan that just ran, so this says whether the schedule on
+      // screen was made with the calendar or without it.
+      _calendarUnreadable = widget.service.calendarIsUnreadable;
       if (!swept.isEmpty) _message = _sweepMessage(swept);
     });
   }
 
   Future<void> _requestPermission() async {
     await widget.notifications.requestPermission();
+    await _refresh();
+  }
+
+  /// Opens the calendar settings page.
+  ///
+  /// A page and not a tab. The shell is three tabs on purpose and a fourth
+  /// would be spent on something opened twice a year; the Now screen already
+  /// owns this kind of concern, which is where the permission banner lives.
+  Future<void> _openSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => SettingsScreen(
+          calendars: widget.calendars,
+          preferences: widget.calendarPreferences,
+        ),
+      ),
+    );
+    // The excluded set may have changed, and the plan on screen was made
+    // against the old one.
     await _refresh();
   }
 
@@ -173,6 +208,11 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
             onPressed: _refresh,
             tooltip: 'Refresh',
           ),
+          IconButton(
+            icon: const Icon(Icons.calendar_month_outlined),
+            onPressed: _openSettings,
+            tooltip: 'Calendars',
+          ),
         ],
       ),
       body: RefreshIndicator(
@@ -185,6 +225,10 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
                 permissions: _permissions,
                 onFix: _requestPermission,
               ),
+              const SizedBox(height: 20),
+            ],
+            if (_calendarUnreadable) ...[
+              _CalendarBanner(onOpen: _openSettings),
               const SizedBox(height: 20),
             ],
             _CaptureField(
@@ -374,6 +418,49 @@ String _shortDate(DateTime local) {
     'Dec',
   ];
   return '${local.day} ${months[local.month - 1]}';
+}
+
+/// Says so when a plan was made without the calendar it was meant to use.
+///
+/// Deliberately separate from the permission banner and deliberately quieter.
+/// Not having the grant is a choice and produces nothing here; this appears
+/// only when Van had permission, tried to read and could not - the case that
+/// is otherwise invisible, because the resulting plan looks entirely normal
+/// and is quietly wrong. It is the same lesson as the exact-alarm banner: a
+/// degradation the user cannot see is one they cannot act on.
+class _CalendarBanner extends StatelessWidget {
+  const _CalendarBanner({required this.onOpen});
+
+  final Future<void> Function() onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainerHighest,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onOpen,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              const Icon(Icons.event_busy, size: 20),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Van could not read your calendar, so this plan ignores '
+                  'anything already on it. Tap to check.',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Says so when the OS will not let Van do its job.

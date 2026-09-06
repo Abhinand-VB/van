@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/data/repositories/event_repo.dart';
 import 'package:van/data/repositories/nudge_repo.dart';
 import 'package:van/data/repositories/session_repo.dart';
@@ -9,6 +10,7 @@ import 'package:van/inference/capabilities/extract_task.dart';
 import 'package:van/inference/capabilities/negotiate.dart';
 import 'package:van/inference/prompts.dart';
 import 'package:van/inference/router.dart';
+import 'package:van/platform/calendars.dart';
 import 'package:van/platform/notifications.dart';
 import 'package:van_core/van_core.dart';
 
@@ -166,6 +168,8 @@ class VanService {
     required Prompts prompts,
     required Clock clock,
     required IdGenerator ids,
+    Calendars calendars = const UnsupportedCalendars(),
+    CalendarPreferences? calendarPreferences,
     WakingHours waking = const WakingHours(),
     InterventionPolicy policy = const InterventionPolicy(),
     NegotiationRules rules = const NegotiationRules(),
@@ -180,6 +184,9 @@ class VanService {
        _scorer = scorer,
        _suppression = suppression ?? SuppressionPolicy(waking: waking),
        _notifications = notifications,
+       _calendars = calendars,
+       _calendarPreferences = calendarPreferences,
+       _calendarFilter = CalendarFilter(utcOffset: waking.utcOffset),
        _templates = templates,
        _prompts = prompts,
        // Both `policy` and `rules` have to reach Negotiate, not just policy.
@@ -223,6 +230,9 @@ class VanService {
   final ImportanceScorer _scorer;
   SuppressionPolicy _suppression;
   final Notifications _notifications;
+  final Calendars _calendars;
+  final CalendarPreferences? _calendarPreferences;
+  CalendarFilter _calendarFilter;
   final NudgeTemplates _templates;
   final Prompts _prompts;
   ExtractTask _extractTask;
@@ -274,6 +284,16 @@ class VanService {
   /// a proposal does not fire a nudge in the same breath.
   static const _negotiatedLeadMinutes = 5;
 
+  /// Whether the last plan was made without the calendar Van was told to use.
+  ///
+  /// False when there is no permission at all: that is the user's choice, not
+  /// a fault, and a banner about it would follow around every person who
+  /// never wanted the feature. True only when Van had the grant, tried, and
+  /// could not read - which is worth saying out loud, because the resulting
+  /// plan looks perfectly normal and is quietly wrong.
+  bool get calendarIsUnreadable => _calendarIsUnreadable;
+  bool _calendarIsUnreadable = false;
+
   /// The timezone offset Van is currently planning and parsing in.
   Duration get utcOffset => _waking.utcOffset;
 
@@ -293,10 +313,11 @@ class VanService {
   /// `lib/platform/` and `main.dart` is a build failure, and deliberately so.
   /// The offset therefore arrives as an argument, from the composition root.
   ///
-  /// Three things derive from it and all three are rebuilt together, because
+  /// Four things derive from it and all four are rebuilt together, because
   /// leaving any one behind reproduces the original bug in a narrower place:
   /// quiet hours and free-slot finding through [WakingHours], the suppression
-  /// gate, and the temporal parser that turns "friday" into an instant. The
+  /// gate, the temporal parser that turns "friday" into an instant, and the
+  /// calendar filter that resolves all-day entries onto local days. The
   /// suppression policy is copied rather than reconstructed so tuning set by
   /// the composition root survives - see [SuppressionPolicy.withWaking].
   ///
@@ -307,6 +328,12 @@ class VanService {
 
     _waking = _waking.withUtcOffset(offset);
     _suppression = _suppression.withWaking(_waking);
+    // Four things now, not three. All-day calendar entries are stored as
+    // dates rather than instants, so the filter resolves them against the
+    // offset exactly as the waking window does - and left behind here it
+    // would place someone else's all-day commitment on the wrong day, which
+    // is issue 18 wearing a different hat.
+    _calendarFilter = _calendarFilter.withUtcOffset(offset);
     _extractTask = ExtractTask(
       prompt: _prompts.extractTask,
       parser: TemporalParser(utcOffset: offset),
@@ -353,7 +380,7 @@ class VanService {
 
   Future<CaptureResult> _planFor(Task task, DateTime now) async {
     final existing = await _sessions.unresolved();
-    final slots = _freeSlots(around: existing, from: now);
+    final slots = await _freeSlots(around: existing, from: now);
 
     final result = SessionPlanner(
       ids: _ids,
@@ -388,17 +415,98 @@ class VanService {
   /// A week is the planning horizon everywhere in Van: far enough that a
   /// missed morning has somewhere to land, near enough that the plan is still
   /// about this week rather than a fantasy of next month.
-  List<FreeSlot> _freeSlots({
+  /// Every stretch of the next week the user is actually free.
+  ///
+  /// Commitments arrive from two sources and the finder cannot tell them
+  /// apart: Van's own unresolved sessions, and whatever the device calendar
+  /// says. That second half is not a feature so much as a correctness fix -
+  /// before it, Van planned every day as if nothing else were on it and would
+  /// cheerfully schedule work into a meeting the user had already agreed to.
+  Future<List<FreeSlot>> _freeSlots({
     required Iterable<WorkSession> around,
     required DateTime from,
-  }) => FreeSlotFinder(waking: _waking).find(
-    commitments: [
-      for (final s in around)
-        Commitment(start: s.plannedStart, end: s.plannedEnd, label: s.taskId),
-    ],
-    from: from,
-    to: from.add(const Duration(days: 7)),
-  );
+  }) async {
+    final to = from.add(const Duration(days: 7));
+    return FreeSlotFinder(waking: _waking).find(
+      commitments: [
+        for (final s in around)
+          Commitment(start: s.plannedStart, end: s.plannedEnd, label: s.taskId),
+        ...await _calendarCommitments(from, to),
+      ],
+      from: from,
+      to: to,
+    );
+  }
+
+  /// What the device calendar claims of the stretch between [from] and [to].
+  ///
+  /// **Read at plan time and never copied into Van's database.** The OS
+  /// already persists the calendar and is the source of truth for it, so a
+  /// copy here would only have to be invalidated - and the `events` table is
+  /// append-only, which means anything written into it about a meeting is
+  /// there permanently. This runs on capture and on sweep: a handful of
+  /// platform calls a day, not a hot path.
+  ///
+  /// **A failed read must never fail the capture.** If the permission was
+  /// revoked, the provider errored or the read timed out, Van plans with its
+  /// own sessions and carries on - the user's typed sentence is worth more
+  /// than a perfect plan. That is the lesson from a failed alarm once taking
+  /// a whole capture down with it, in exactly this shape. The degradation is
+  /// surfaced on the Now screen through [calendarIsUnreadable] rather than as
+  /// an error on the thing the user was doing.
+  Future<List<Commitment>> _calendarCommitments(
+    DateTime from,
+    DateTime to,
+  ) async {
+    try {
+      // Not having the grant is not a degradation, it is a choice, and
+      // reporting it as one would put a banner on the screen of every user
+      // who never wanted this.
+      if (!await _calendars.hasPermission()) {
+        _calendarIsUnreadable = false;
+        return const [];
+      }
+
+      final excluded =
+          await _calendarPreferences?.excluded() ?? const <String>{};
+      final entries = await _calendars.between(
+        from: from,
+        to: to,
+        exclude: excluded,
+      );
+      final commitments = _calendarFilter.commitments(entries);
+      _calendarIsUnreadable = false;
+
+      // The count, never the content. Without this row, a day where Van
+      // scheduled almost nothing looks identical to a day where it worked
+      // correctly around a full calendar.
+      await _events.append(EventType.calendarRead, {
+        'commitments': commitments.length,
+        'entries': entries.length,
+        'excludedCalendars': excluded.length,
+      });
+      return commitments;
+    } on Object catch (error) {
+      _calendarIsUnreadable = true;
+      await _noteCalendarFailure(error);
+      return const [];
+    }
+  }
+
+  /// Records a failed calendar read, and never throws doing it.
+  ///
+  /// The guard is the point: this is called from the one path whose entire
+  /// promise is that a broken calendar cannot cost the user their capture,
+  /// and an unguarded log write would hand that promise straight back.
+  Future<void> _noteCalendarFailure(Object error) async {
+    try {
+      await _events.append(EventType.calendarUnavailable, {
+        // The type and message of Van's own platform exception. Nothing here
+        // comes from a calendar row.
+        'reason': '${error.runtimeType}',
+      });
+    } on Object catch (_) {}
+  }
 
   /// Pre-schedules the escalation ladder for [session].
   ///
@@ -864,7 +972,7 @@ class VanService {
     // The stale blocks are the ones being vacated, so their time is free
     // again and they must not be passed in as commitments against themselves.
     final staleIds = stale.map((s) => s.id).toSet();
-    final slots = _freeSlots(
+    final slots = await _freeSlots(
       around: unresolved.where((s) => !staleIds.contains(s.id)),
       from: now,
     );

@@ -4,13 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:van/app/van_service.dart';
 import 'package:van/data/db/database.dart';
+import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/data/repositories/event_repo.dart';
 import 'package:van/data/repositories/nudge_repo.dart';
 import 'package:van/data/repositories/session_repo.dart';
+import 'package:van/data/repositories/settings_repo.dart';
 import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/router.dart';
+import 'package:van/platform/calendars.dart';
 import 'package:van/ui/now_screen.dart';
 import 'package:van_core/van_core.dart';
 
@@ -61,6 +64,8 @@ void main() {
           service: service,
           clock: clock,
           notifications: notifications,
+          calendars: const UnsupportedCalendars(),
+          calendarPreferences: CalendarPreferences(SettingsRepo(db)),
         ),
       ),
     );

@@ -9,6 +9,12 @@
     <!-- A pre-scheduled ladder is armed once and must survive a restart.
          Without this every rung is silently dropped on reboot. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
+    <!-- A planner that schedules you into a meeting you already agreed to is
+         wrong, not merely limited. Van reads the device calendar at plan time
+         and never writes to it, so there is no matching WRITE_CALENDAR here
+         and there should not be. Requested at runtime; a refusal degrades
+         planning to Van's own sessions rather than failing anything. -->
+    <uses-permission android:name="android.permission.READ_CALENDAR"/>
     <application
         android:label="Van"
         android:name="${applicationName}"

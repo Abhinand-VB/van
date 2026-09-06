@@ -65,6 +65,28 @@ enum EventType {
   /// The app went to the background.
   appBackgrounded,
 
+  /// The device calendar was read while planning, and how much of the day it
+  /// claimed.
+  ///
+  /// Records the *number* of commitments considered and nothing about what
+  /// they were. Meeting titles are never read, never cross the platform
+  /// channel and never reach this table, which is append-only and never
+  /// deletes - a title written here would live on the phone permanently.
+  ///
+  /// Worth a row despite that thinness: without it, a day where Van scheduled
+  /// almost nothing is indistinguishable from a day where it was working
+  /// correctly around a full calendar.
+  calendarRead,
+
+  /// The device calendar could not be read, and planning fell back to Van's
+  /// own sessions.
+  ///
+  /// Distinct from [calendarRead] with zero commitments, and the distinction
+  /// is the point: an empty calendar and an unreadable one produce the same
+  /// plan and mean opposite things. Permission revoked mid-session, a
+  /// provider error, a read that timed out.
+  calendarUnavailable,
+
   /// The device's UTC offset moved under a running process - a DST change or
   /// a flight - and Van rebuilt everything that derives from it.
   ///

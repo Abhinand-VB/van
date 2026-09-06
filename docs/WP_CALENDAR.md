@@ -1,6 +1,12 @@
 # WP-11 — Device calendar as a commitment source
 
-**Status:** proposed, not started. Written 21 Aug 2026.
+**Status:** **built and installed, 6 Sep 2026.** Written 21 Aug 2026 as a
+proposal; kept as written because its section 3 is still the argument for why
+the code behaves the way it does. What was actually built, and the one place it
+went further than this plan asked, is in `docs/STATUS.md` section 3v. The
+acceptance criteria in section 5 are all met and all covered by tests, with one
+qualification: `READ_CALENDAR` has not been granted on the phone, so none of
+this has run against a real calendar provider.
 
 **Goal.** Van currently plans your day as if nothing else is on it. Every block it
 places assumes the only claims on your time are the ones it made itself. Reading the

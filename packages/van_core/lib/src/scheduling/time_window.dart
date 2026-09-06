@@ -2,8 +2,9 @@ import 'package:meta/meta.dart';
 
 /// A stretch of time that is already spoken for.
 ///
-/// In v1 these come from Van's own sessions. Phase 4 adds the device
-/// calendar, at which point classes and meetings arrive through the same type.
+/// These come from two places and the planner cannot tell them apart, which
+/// is the point: Van's own work sessions, and the device calendar through
+/// `CalendarFilter`. Adding a third source costs the domain nothing.
 @immutable
 class Commitment {
   /// Creates a commitment. Both instants must be UTC and [start] must precede

@@ -10,8 +10,10 @@ import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/router.dart';
+import 'package:van/platform/calendars.dart';
 import 'package:van_core/van_core.dart';
 
+import '../support/fake_calendars.dart';
 import '../support/fake_notifications.dart';
 import '../support/prompts.dart';
 
@@ -28,7 +30,7 @@ void main() {
   /// Wednesday 19 August 2026, 09:00 UTC — 02:00 in Pacific.
   final start = DateTime.utc(2026, 8, 19, 9);
 
-  VanService serviceAt(Duration offset) {
+  VanService serviceAt(Duration offset, {Calendars? calendars}) {
     final events = EventRepo(db, clock);
     return VanService(
       tasks: TaskRepo(db),
@@ -37,6 +39,7 @@ void main() {
       nudges: NudgeRepo(db),
       router: InferenceRouter(defaultBackend: const NullBackend()),
       notifications: FakeNotifications(),
+      calendars: calendars ?? const UnsupportedCalendars(),
       templates: NudgeTemplates.fromJson(
         File('assets/nudge_templates/templates.json').readAsStringSync(),
       ),
@@ -190,6 +193,120 @@ void main() {
 
       final captured = await service.capture('email the landlord today');
       expect(asLocalWall(captured.task.deadline!).hour, 23);
+    });
+  });
+
+  group('the calendar lands where the user is', () {
+    /// A calendar holding one entry, with the grant already given.
+    FakeCalendars calendarWith(CalendarEntry entry) => FakeCalendars()
+      ..granted = true
+      ..entries.add(entry);
+
+    test(
+      'an all-day busy entry blocks the local day, not the UTC one',
+      () async {
+        // Providers store all-day entries as UTC midnights *naming local
+        // dates*. Read as instants they would block 00:00-00:00 UTC, which at
+        // this offset is 17:00 on the 18th to 17:00 on the 19th locally - most
+        // of the wrong day, and it would leave the evening of the 19th looking
+        // free. This is issue 18 in a new place, and it is why CalendarFilter
+        // carries an offset at all.
+        final service = serviceAt(
+          pacific,
+          calendars: calendarWith(
+            CalendarEntry(
+              calendarId: 'work',
+              start: DateTime.utc(2026, 8, 19),
+              end: DateTime.utc(2026, 8, 20),
+              isAllDay: true,
+            ),
+          ),
+        );
+
+        final captured = await service.capture('write the report 60 minutes');
+
+        // The whole of Wednesday local is spoken for, so the work goes to
+        // Thursday morning - 08:00 local, which is 15:00 UTC.
+        expect(
+          captured.sessions.single.plannedStart,
+          DateTime.utc(2026, 8, 20, 15),
+        );
+        expect(asLocalWall(captured.sessions.single.plannedStart).day, 20);
+      },
+    );
+
+    test('an all-day transparent entry still costs nothing', () async {
+      final service = serviceAt(
+        pacific,
+        calendars: calendarWith(
+          CalendarEntry(
+            calendarId: 'birthdays',
+            start: DateTime.utc(2026, 8, 19),
+            end: DateTime.utc(2026, 8, 20),
+            isAllDay: true,
+            isBusy: false,
+          ),
+        ),
+      );
+
+      final captured = await service.capture('write the report 60 minutes');
+
+      // First thing on Wednesday local, unaffected.
+      expect(
+        captured.sessions.single.plannedStart,
+        DateTime.utc(2026, 8, 19, 15),
+      );
+    });
+
+    test(
+      'a timed entry from another timezone lands at the right instant',
+      () async {
+        // 08:00-09:00 Pacific, which is how the provider reports a meeting
+        // someone in another country put on the calendar: as a UTC instant.
+        final service = serviceAt(
+          pacific,
+          calendars: calendarWith(
+            CalendarEntry(
+              calendarId: 'work',
+              start: DateTime.utc(2026, 8, 19, 15),
+              end: DateTime.utc(2026, 8, 19, 16),
+            ),
+          ),
+        );
+
+        final captured = await service.capture('write the report 60 minutes');
+
+        expect(
+          captured.sessions.single.plannedStart,
+          DateTime.utc(2026, 8, 19, 16),
+        );
+        expect(asLocalWall(captured.sessions.single.plannedStart).hour, 9);
+      },
+    );
+
+    test('the filter follows the device to a new zone', () async {
+      // The half-moved failure again: a waking window in one zone and a
+      // calendar filter in another would place an all-day commitment on a
+      // day the planner is not looking at.
+      final service = serviceAt(
+        Duration.zero,
+        calendars: calendarWith(
+          CalendarEntry(
+            calendarId: 'work',
+            start: DateTime.utc(2026, 8, 19),
+            end: DateTime.utc(2026, 8, 20),
+            isAllDay: true,
+          ),
+        ),
+      );
+      expect(service.refreshTimezone(pacific), isTrue);
+
+      final captured = await service.capture('write the report 60 minutes');
+
+      expect(
+        captured.sessions.single.plannedStart,
+        DateTime.utc(2026, 8, 20, 15),
+      );
     });
   });
 

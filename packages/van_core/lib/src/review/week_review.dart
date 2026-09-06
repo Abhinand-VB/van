@@ -127,6 +127,15 @@ class WeekReview {
         // rather than saying anything about the week's work, and rolling it
         // into a total would make a flight look like activity.
         case EventType.timezoneChanged:
+        // The calendar rows are deliberately absent from the report as well,
+        // and one of them is a judgement call worth recording. `calendarRead`
+        // is bookkeeping and belongs nowhere near a week's totals. A week of
+        // `calendarUnavailable` genuinely says something - Van planned around
+        // a calendar it could not see - but it is already said live, on the
+        // Now screen, at the moment it matters. Surfacing it here as well is
+        // a change to what the report *is*, and that is the owner's call.
+        case EventType.calendarRead:
+        case EventType.calendarUnavailable:
           break;
       }
     }
