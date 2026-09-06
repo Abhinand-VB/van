@@ -44,12 +44,74 @@ class ModelFileStatus {
 /// model cannot drift apart. Verified to resolve on 6 September 2026; if the
 /// vendor moves it, this constant is the only thing to change.
 abstract final class ModelSource {
-  /// The page that hosts the file, where the licence is accepted.
+  /// The page the file lives on, for anyone who wants to look before they
+  /// fetch two and a half gigabytes.
   static const url =
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm';
 
-  /// What to download once you are there.
-  static const description = 'a .litertlm file, roughly 2.5 GB';
+  /// The file itself.
+  ///
+  /// **Not licence-gated.** An earlier version of this screen said it was,
+  /// which was wrong: `litert-community` republishes these weights under
+  /// Apache 2.0 and the repository answers an anonymous request. There is
+  /// nothing to accept and nobody to sign in as, which is what makes a
+  /// one-tap download honest here.
+  static const fileUrl =
+      '$url/resolve/main/gemma-4-E2B-it.litertlm?download=true';
+
+  /// What is being fetched, for a person deciding whether to.
+  static const description = 'Gemma 4 E2B, about 2.6 GB';
+}
+
+/// How a download is getting on.
+enum DownloadState {
+  /// Nothing is downloading.
+  idle,
+
+  /// In progress.
+  running,
+
+  /// Waiting for Wi-Fi. The expected state on mobile data, not a fault.
+  paused,
+
+  /// The bytes are on the phone and want moving into place.
+  done,
+
+  /// It stopped and will not resume on its own.
+  failed,
+}
+
+/// A download in flight.
+class DownloadProgress {
+  /// Creates a progress report.
+  const DownloadProgress({
+    required this.state,
+    this.bytes = 0,
+    this.total = 0,
+  });
+
+  /// Nothing is happening.
+  static const idle = DownloadProgress(state: DownloadState.idle);
+
+  /// What it is doing.
+  final DownloadState state;
+
+  /// Bytes fetched so far.
+  final int bytes;
+
+  /// Bytes expected, or zero before the server has said.
+  final int total;
+
+  /// Fraction complete, or null while the size is unknown - which is the
+  /// difference between a progress bar and a spinner, and they should not be
+  /// made to look the same.
+  double? get fraction => total <= 0 ? null : (bytes / total).clamp(0.0, 1.0);
+
+  /// How far along, for a person to read.
+  String get readable => total <= 0
+      ? '${(bytes / (1 << 20)).round()} MB'
+      : '${(bytes / (1 << 30)).toStringAsFixed(1)} of '
+            '${(total / (1 << 30)).toStringAsFixed(1)} GB';
 }
 
 /// Installs and removes the on-device model's weights.
@@ -85,11 +147,28 @@ abstract interface class ModelFile {
   /// Opens [ModelSource.url] in the phone's browser.
   ///
   /// **Van makes no request and gains no HTTP client.** A URI is handed to the
-  /// OS; the browser does the downloading and the vendor's own page presents
-  /// the licence, which is the only place it can honestly be accepted. That
-  /// keeps `AGENTS.md`'s no-network rule intact and still leaves the user one
-  /// tap from the file instead of a filename to go and search for.
+  /// OS and the browser does everything after that. Kept alongside the
+  /// download for anyone who would rather look at the source first, or fetch
+  /// it on a computer.
   Future<void> openSourcePage();
+
+  /// Asks Android to fetch the weights.
+  ///
+  /// **Still no HTTP client in Van.** `DownloadManager` is a system service in
+  /// its own process; this hands it a URL exactly as [openSourcePage] hands a
+  /// browser one. It survives Van being closed, resumes by itself, and waits
+  /// for Wi-Fi rather than spending two and a half gigabytes of someone's
+  /// mobile data. See `DECISIONS_PENDING.md` D79.
+  Future<DownloadProgress> startDownload();
+
+  /// How the download is getting on. Polled; there is no push.
+  Future<DownloadProgress> downloadProgress();
+
+  /// Abandons a download in flight.
+  Future<DownloadProgress> cancelDownload();
+
+  /// Moves a finished download to where the engine looks.
+  Future<ModelFileStatus> adoptDownload();
 }
 
 /// The Android implementation, over a method channel.
@@ -120,6 +199,47 @@ class MethodChannelModelFile implements ModelFile {
       // as selectable text, so this is a lost convenience rather than a dead
       // end.
     } on MissingPluginException catch (_) {}
+  }
+
+  @override
+  Future<DownloadProgress> startDownload() =>
+      _progress('download', {'url': ModelSource.fileUrl});
+
+  @override
+  Future<DownloadProgress> downloadProgress() => _progress('downloadStatus');
+
+  @override
+  Future<DownloadProgress> cancelDownload() => _progress('cancelDownload');
+
+  @override
+  Future<ModelFileStatus> adoptDownload() => _call('adoptDownload');
+
+  Future<DownloadProgress> _progress(
+    String method, [
+    Map<String, Object?>? arguments,
+  ]) async {
+    try {
+      final row = await channel.invokeMapMethod<String, Object?>(
+        method,
+        arguments,
+      );
+      if (row == null) return DownloadProgress.idle;
+      return DownloadProgress(
+        state: switch (row['state'] as String?) {
+          'running' => DownloadState.running,
+          'paused' => DownloadState.paused,
+          'done' => DownloadState.done,
+          'failed' => DownloadState.failed,
+          _ => DownloadState.idle,
+        },
+        bytes: (row['bytes'] as num?)?.toInt() ?? 0,
+        total: (row['total'] as num?)?.toInt() ?? 0,
+      );
+    } on PlatformException catch (_) {
+      return const DownloadProgress(state: DownloadState.failed);
+    } on MissingPluginException catch (_) {
+      return DownloadProgress.idle;
+    }
   }
 
   Future<ModelFileStatus> _call(String method) async {
@@ -159,4 +279,16 @@ class UnsupportedModelFile implements ModelFile {
 
   @override
   Future<void> openSourcePage() async {}
+
+  @override
+  Future<DownloadProgress> startDownload() async => DownloadProgress.idle;
+
+  @override
+  Future<DownloadProgress> downloadProgress() async => DownloadProgress.idle;
+
+  @override
+  Future<DownloadProgress> cancelDownload() async => DownloadProgress.idle;
+
+  @override
+  Future<ModelFileStatus> adoptDownload() async => ModelFileStatus.unknown;
 }

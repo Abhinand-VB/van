@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:van/platform/model_file.dart';
 import 'package:van/ui/background.dart';
@@ -10,11 +12,17 @@ import 'package:van/ui/background.dart';
 /// routing stays at `"none"` until somebody who has measured the model against
 /// the golden set decides otherwise.
 ///
-/// **Nor is it a downloader.** Van has no HTTP client and is not getting one
-/// in v1, and the weights are licence-gated so whoever installs them must have
-/// accepted that licence. Both point the same way: the page says where the
-/// file must go and takes it when the user has it. See `DECISIONS_PENDING.md`
-/// D77.
+/// **It does download, and Van still has no HTTP client.** The button hands a
+/// URL to Android's `DownloadManager`, a system service in its own process -
+/// the same shape as handing a URI to a browser. An earlier version of this
+/// page refused to download at all and told the user to go and find a 2.6 GB
+/// file themselves, on the grounds that the weights were licence-gated. That
+/// was two mistakes: the repository is Apache 2.0 and answers an anonymous
+/// request, and "no network dependency" never meant "no button". See
+/// `DECISIONS_PENDING.md` D79.
+///
+/// The manual route stays underneath, because a computer and a cable is often
+/// the better way to move two and a half gigabytes.
 class ModelScreen extends StatefulWidget {
   /// Creates the page.
   const ModelScreen({required this.modelFile, super.key});
@@ -28,7 +36,9 @@ class ModelScreen extends StatefulWidget {
 
 class _ModelScreenState extends State<ModelScreen> {
   ModelFileStatus? _status;
+  DownloadProgress _download = DownloadProgress.idle;
   bool _busy = false;
+  Timer? _poll;
 
   @override
   void initState() {
@@ -36,10 +46,68 @@ class _ModelScreenState extends State<ModelScreen> {
     inBackground(_refresh());
   }
 
+  @override
+  void dispose() {
+    _poll?.cancel();
+    super.dispose();
+  }
+
   Future<void> _refresh() async {
     final status = await widget.modelFile.status();
+    final download = await widget.modelFile.downloadProgress();
     if (!mounted) return;
-    setState(() => _status = status);
+    setState(() {
+      _status = status;
+      _download = download;
+    });
+    _watch();
+  }
+
+  /// Polls while something is in flight, and stops the moment it is not.
+  ///
+  /// A timer rather than a stream from the platform: `DownloadManager` will
+  /// tell Van when it finished and nothing in between, and a bar that moves
+  /// once at the end is worse than none at all on a file this size.
+  void _watch() {
+    final live =
+        _download.state == DownloadState.running ||
+        _download.state == DownloadState.paused;
+    if (!live) {
+      _poll?.cancel();
+      _poll = null;
+      return;
+    }
+    _poll ??= Timer.periodic(const Duration(seconds: 1), (_) async {
+      final progress = await widget.modelFile.downloadProgress();
+      if (!mounted) return;
+      setState(() => _download = progress);
+      // A finished download is not an installed model until it has been moved
+      // to where the engine looks, and doing that without being asked is the
+      // whole point - the user pressed one button and expects one outcome.
+      if (progress.state == DownloadState.done) {
+        _poll?.cancel();
+        _poll = null;
+        await _run(widget.modelFile.adoptDownload);
+      } else if (progress.state != DownloadState.running &&
+          progress.state != DownloadState.paused) {
+        _poll?.cancel();
+        _poll = null;
+      }
+    });
+  }
+
+  Future<void> _startDownload() async {
+    final progress = await widget.modelFile.startDownload();
+    if (!mounted) return;
+    setState(() => _download = progress);
+    _watch();
+  }
+
+  Future<void> _cancelDownload() async {
+    final progress = await widget.modelFile.cancelDownload();
+    if (!mounted) return;
+    setState(() => _download = progress);
+    _watch();
   }
 
   Future<void> _run(Future<ModelFileStatus> Function() action) async {
@@ -107,46 +175,62 @@ class _ModelScreenState extends State<ModelScreen> {
                   style: theme.textTheme.bodyMedium,
                 ),
                 const SizedBox(height: 24),
-                // Two steps, numbered, because "go and find a file" is not an
-                // instruction anybody can follow. Van cannot do step one -
-                // there is no HTTP client in it and the licence is not an
-                // app's to accept - but it can take you to the exact page,
-                // which is the difference between a rule and an obstacle.
-                _Step(
-                  number: 1,
-                  title: 'Get the file',
-                  body:
-                      'Opens the model page in your browser. Accept the '
-                      'licence there and download ${ModelSource.description}. '
-                      'Van makes no network request of its own — your browser '
-                      'does the downloading.',
-                  action: FilledButton.icon(
-                    onPressed: _busy
-                        ? null
-                        : () => inBackground(widget.modelFile.openSourcePage()),
-                    icon: const Icon(Icons.open_in_new),
-                    label: const Text('Open the model page'),
+                // One button, because "go and find a 2.6 GB file" is not an
+                // instruction anybody follows. The rule was never the
+                // problem - the missing button was.
+                _Download(
+                  progress: _download,
+                  present: status.present,
+                  busy: _busy,
+                  onStart: () => inBackground(_startDownload()),
+                  onCancel: () => inBackground(_cancelDownload()),
+                ),
+                const SizedBox(height: 28),
+                Text('Or do it yourself', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 4),
+                Text(
+                  // Kept, because a 2.6 GB download over a phone connection is
+                  // not always the best route: a computer and a cable often
+                  // is, and a phone that already has the file should not be
+                  // made to fetch it twice.
+                  'Fetch it on a computer, copy it across, and point Van at '
+                  'it. Van copies whatever you pick into its own storage '
+                  'under its own name, so the download can be called '
+                  'anything.',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
-                const SizedBox(height: 20),
-                _Step(
-                  number: 2,
-                  title: 'Point Van at it',
-                  body:
-                      'Pick the downloaded file. Van copies it into its own '
-                      'private storage under its own name, so it does not '
-                      'matter what the download is called.',
-                  action: FilledButton.tonalIcon(
-                    onPressed: _busy
-                        ? null
-                        : () => inBackground(_run(widget.modelFile.install)),
-                    icon: const Icon(Icons.folder_open),
-                    label: Text(
-                      status.present ? 'Replace the file' : 'Choose the file',
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _busy
+                            ? null
+                            : () => inBackground(
+                                widget.modelFile.openSourcePage(),
+                              ),
+                        icon: const Icon(Icons.open_in_new, size: 18),
+                        label: const Text('Model page'),
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: _busy
+                            ? null
+                            : () =>
+                                  inBackground(_run(widget.modelFile.install)),
+                        icon: const Icon(Icons.folder_open, size: 18),
+                        label: Text(
+                          status.present ? 'Replace' : 'Choose a file',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 16),
                 SelectableText(
                   ModelSource.url,
                   style: theme.textTheme.bodySmall?.copyWith(
@@ -182,54 +266,91 @@ class _ModelScreenState extends State<ModelScreen> {
   }
 }
 
-/// One numbered step, with the thing it asks you to do attached to it.
-class _Step extends StatelessWidget {
-  const _Step({
-    required this.number,
-    required this.title,
-    required this.body,
-    required this.action,
+/// The one-button route: Android fetches it, Van puts it away.
+class _Download extends StatelessWidget {
+  const _Download({
+    required this.progress,
+    required this.present,
+    required this.busy,
+    required this.onStart,
+    required this.onCancel,
   });
 
-  final int number;
-  final String title;
-  final String body;
-  final Widget action;
+  final DownloadProgress progress;
+  final bool present;
+  final bool busy;
+  final VoidCallback onStart;
+  final VoidCallback onCancel;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colours = theme.colorScheme;
 
-    return Row(
+    if (progress.state == DownloadState.running ||
+        progress.state == DownloadState.paused) {
+      final waiting = progress.state == DownloadState.paused;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            waiting ? 'Waiting for Wi-Fi' : 'Downloading',
+            style: theme.textTheme.titleSmall,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            waiting
+                // Said plainly, because a download that appears stuck is
+                // indistinguishable from a broken one, and this is deliberate.
+                ? 'It is ${ModelSource.description}, so Van will not spend '
+                      'your mobile data on it. Connect to Wi-Fi and it '
+                      'continues by itself.'
+                : '${progress.readable}  ·  carries on if you leave the app',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: colours.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 12),
+          LinearProgressIndicator(value: progress.fraction),
+          const SizedBox(height: 12),
+          OutlinedButton(onPressed: onCancel, child: const Text('Cancel')),
+        ],
+      );
+    }
+
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: 26,
-          height: 26,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: colours.surfaceContainerHighest,
-            shape: BoxShape.circle,
-          ),
-          child: Text('$number', style: theme.textTheme.labelMedium),
+        Text(
+          present ? 'Download it again' : 'Download it',
+          style: theme.textTheme.titleSmall,
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: theme.textTheme.titleSmall),
-              const SizedBox(height: 4),
-              Text(
-                body,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  color: colours.onSurfaceVariant,
-                ),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(width: double.infinity, child: action),
-            ],
+        const SizedBox(height: 4),
+        Text(
+          '${ModelSource.description}, fetched once and then it works '
+          'offline forever. Android does the downloading, so it survives '
+          'you closing Van and resumes on its own.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colours.onSurfaceVariant,
+          ),
+        ),
+        if (progress.state == DownloadState.failed) ...[
+          const SizedBox(height: 8),
+          Text(
+            'That download stopped. Trying again usually works; if it does '
+            'not, fetch it on a computer instead.',
+            style: theme.textTheme.bodySmall?.copyWith(color: colours.error),
+          ),
+        ],
+        const SizedBox(height: 12),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: busy ? null : onStart,
+            icon: const Icon(Icons.download),
+            label: Text(
+              present ? 'Download again' : 'Download the model',
+            ),
           ),
         ),
       ],

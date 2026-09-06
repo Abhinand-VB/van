@@ -40,6 +40,40 @@ class _FakeModelFile implements ModelFile {
 
   @override
   Future<void> openSourcePage() async => opened++;
+
+  /// What the next progress poll reports. Drives every download state the
+  /// page can be in without a network or a system service.
+  DownloadProgress progress = DownloadProgress.idle;
+  int downloads = 0;
+  int cancels = 0;
+  int adopts = 0;
+
+  @override
+  Future<DownloadProgress> startDownload() async {
+    downloads++;
+    return progress = const DownloadProgress(
+      state: DownloadState.running,
+      bytes: 0,
+      total: 2588147712,
+    );
+  }
+
+  @override
+  Future<DownloadProgress> downloadProgress() async => progress;
+
+  @override
+  Future<DownloadProgress> cancelDownload() async {
+    cancels++;
+    return progress = DownloadProgress.idle;
+  }
+
+  @override
+  Future<ModelFileStatus> adoptDownload() async {
+    adopts++;
+    present = true;
+    progress = DownloadProgress.idle;
+    return _status;
+  }
 }
 
 void main() {
@@ -77,60 +111,113 @@ void main() {
       expect(find.textContaining('works fully without this'), findsOneWidget);
     });
 
-    testWidgets('gives two numbered steps, not a filename to go hunt', (
-      tester,
-    ) async {
+    testWidgets('offers one button that downloads it', (tester) async {
       await show(tester);
 
-      // "Download it yourself" with no link is an obstacle, not a rule. Van
-      // still makes no request - the browser does - but a tap gets you to the
-      // exact page instead of a search.
-      expect(find.text('Get the file'), findsOneWidget);
-      expect(find.text('Point Van at it'), findsOneWidget);
+      // The previous version refused to download and told the user to find a
+      // 2.6 GB file themselves. The rule it cited - no network dependency -
+      // never meant "no button": Android's DownloadManager does the fetching
+      // in its own process, exactly as a browser would.
       expect(
-        find.widgetWithText(FilledButton, 'Open the model page'),
+        find.widgetWithText(FilledButton, 'Download the model'),
         findsOneWidget,
       );
-      expect(find.textContaining('.litertlm'), findsWidgets);
+      expect(find.textContaining('Gemma 4 E2B, about 2.6 GB'), findsWidgets);
+      expect(find.textContaining('works offline'), findsOneWidget);
     });
 
-    testWidgets('says the browser does the downloading, not Van', (
+    testWidgets('pressing it starts a download and shows progress', (
       tester,
     ) async {
-      await show(tester);
-
-      // The honest version of the constraint. Van has no HTTP client, so it
-      // hands a URI to the OS and the vendor's own page presents the licence
-      // - which is the only place it can be accepted by the person it binds.
-      expect(
-        find.textContaining('Van makes no network request of its own'),
-        findsOneWidget,
-      );
-      expect(find.textContaining('Accept the licence there'), findsOneWidget);
-    });
-
-    testWidgets('the first step opens the source page', (tester) async {
       await show(tester);
       await tester.tap(
-        find.widgetWithText(FilledButton, 'Open the model page'),
+        find.widgetWithText(FilledButton, 'Download the model'),
       );
+      await tester.pump();
+
+      expect(model.downloads, 1);
+      expect(find.text('Downloading'), findsOneWidget);
+      expect(find.byType(LinearProgressIndicator), findsOneWidget);
+      // Said out loud, because a phone download that dies when the app is
+      // backgrounded is the thing people expect and this one does not.
+      expect(
+        find.textContaining('carries on if you leave the app'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('waiting for Wi-Fi is explained, not left looking stuck', (
+      tester,
+    ) async {
+      model.progress = const DownloadProgress(
+        state: DownloadState.paused,
+        bytes: 100,
+        total: 2588147712,
+      );
+
+      await show(tester);
+
+      // A download that has stopped moving is indistinguishable from a broken
+      // one unless it says why. 2.6 GB of someone's mobile data is a bill,
+      // not a convenience, so waiting is the deliberate behaviour.
+      expect(find.text('Waiting for Wi-Fi'), findsOneWidget);
+      expect(find.textContaining('mobile data'), findsOneWidget);
+    });
+
+    testWidgets('a download can be abandoned', (tester) async {
+      model.progress = const DownloadProgress(
+        state: DownloadState.running,
+        bytes: 100,
+        total: 2588147712,
+      );
+
+      await show(tester);
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(model.cancels, 1);
+      expect(
+        find.widgetWithText(FilledButton, 'Download the model'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a failed download says so and offers another go', (
+      tester,
+    ) async {
+      model.progress = const DownloadProgress(state: DownloadState.failed);
+
+      await show(tester);
+
+      expect(find.textContaining('That download stopped'), findsOneWidget);
+      expect(
+        find.widgetWithText(FilledButton, 'Download the model'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the manual route is still there underneath', (tester) async {
+      await show(tester);
+
+      // A computer and a cable is often the better way to move 2.6 GB, and a
+      // phone that already has the file should not be made to fetch it twice.
+      expect(find.text('Or do it yourself'), findsOneWidget);
+      expect(
+        find.widgetWithText(OutlinedButton, 'Choose a file'),
+        findsOneWidget,
+      );
+      expect(
+        find.widgetWithText(OutlinedButton, 'Model page'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('the model page still opens in a browser', (tester) async {
+      await show(tester);
+      await tester.tap(find.widgetWithText(OutlinedButton, 'Model page'));
       await tester.pumpAndSettle();
 
       expect(model.opened, 1);
-    });
-
-    testWidgets('the URL is on screen even if no browser opens', (
-      tester,
-    ) async {
-      await show(tester);
-
-      // The button is a convenience over the address, not a replacement for
-      // it: a phone with no browser, or an intent that is refused, still
-      // leaves something to copy.
-      expect(
-        find.textContaining('huggingface.co/litert-community'),
-        findsOneWidget,
-      );
     });
 
     testWidgets('says the download can be called anything', (tester) async {
@@ -140,30 +227,14 @@ void main() {
       // its internal filename as "what to look for" would send someone
       // hunting for a name the vendor does not use.
       expect(
-        find.textContaining('does not matter what the download is called'),
+        find.textContaining('the download can be called'),
         findsOneWidget,
       );
-      await reveal(
-        tester,
-        find.textContaining('files/models/gemma-e2b-int4.litertlm'),
-      );
-      expect(
-        find.textContaining('files/models/gemma-e2b-int4.litertlm'),
-        findsOneWidget,
-      );
-    });
-
-    testWidgets('there is nothing to remove', (tester) async {
-      await show(tester);
-
-      expect(find.text('Remove it'), findsNothing);
     });
 
     testWidgets('choosing a file installs it', (tester) async {
       await show(tester);
-      await tester.tap(
-        find.text('Choose the file'),
-      );
+      await tester.tap(find.text('Choose a file'));
       await tester.pumpAndSettle();
 
       expect(model.installs, 1);
@@ -174,10 +245,16 @@ void main() {
       model.picks = null;
 
       await show(tester);
-      await tester.tap(find.text('Choose the file'));
+      await tester.tap(find.text('Choose a file'));
       await tester.pumpAndSettle();
 
       expect(find.text('Not installed'), findsOneWidget);
+    });
+
+    testWidgets('there is nothing to remove', (tester) async {
+      await show(tester);
+
+      expect(find.text('Remove it'), findsNothing);
     });
   });
 

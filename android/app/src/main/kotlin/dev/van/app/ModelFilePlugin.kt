@@ -1,8 +1,10 @@
 package dev.van.app
 
 import android.app.Activity
+import android.app.DownloadManager
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -12,21 +14,25 @@ import java.util.concurrent.Executors
 /**
  * Puts the on-device model's weights where [ModelStorage] expects them.
  *
- * **It receives a file. It does not fetch one, and there is nothing here that
- * could.** Two constraints decide that and they agree: `AGENTS.md` forbids a
- * network dependency in v1 outright, and the weights are licence-gated, so
- * whoever installs them has to have accepted that licence - which is the user.
- * A downloader would need both an HTTP client Van does not have and a token
- * Van has no right to hold.
+ * Two routes in, and a deliberate line between them.
  *
- * The file is taken through the storage access framework, so Van needs no
- * storage permission at all: the user picks a document and Android grants
- * access to that one document. It is then copied into app-private storage,
- * which means it disappears when Van is uninstalled and nothing else on the
- * phone can read it.
+ * **Van still has no HTTP client and opens no socket.** It hands a URL to
+ * Android's [DownloadManager], a system service that runs in its own process -
+ * the same shape as handing a URI to a browser or to the document picker, and
+ * the reason this app declares no `INTERNET` permission in its release
+ * manifest. `AGENTS.md` forbids adding a *network dependency*; asking the
+ * operating system to fetch a file is not one, and the alternative was a
+ * feature nobody could use. See `DECISIONS_PENDING.md` D79.
  *
- * Copying runs on a background thread. The file is measured in gigabytes and
- * doing it on the platform thread would freeze the UI for the whole copy.
+ * The manual route stays: a file picked through the storage access framework,
+ * which needs no storage permission at all because Android grants access to
+ * that one document. It is the fallback for a phone that already has the file,
+ * or a download that will not start.
+ *
+ * Either way the file lands in app-private storage, so it disappears when Van
+ * is uninstalled and nothing else on the phone can read it. Copying runs on a
+ * background thread: the file is measured in gigabytes and doing it on the
+ * platform thread would freeze the UI for the whole copy.
  */
 class ModelFilePlugin(
     private val context: Context,
@@ -37,11 +43,20 @@ class ModelFilePlugin(
 
         /** Arbitrary but stable, and matched in [onActivityResult]. */
         const val PICK_REQUEST: Int = 4713
+
+        /** What the download is called on its way in. */
+        const val DOWNLOAD_NAME: String = "van-model-download.litertlm"
     }
 
     private var channel: MethodChannel? = null
     private var worker: ExecutorService? = null
     private var pendingPick: MethodChannel.Result? = null
+
+    /** The download in flight, so it can be watched and cancelled. */
+    private var downloadId: Long? = null
+
+    private val downloads: DownloadManager?
+        get() = context.getSystemService(DownloadManager::class.java)
 
     /** Starts listening on [CHANNEL]. */
     fun attach(messenger: BinaryMessenger) {
@@ -125,6 +140,21 @@ class ModelFilePlugin(
                 ModelStorage.modelFile(context.filesDir).delete()
                 result.success(status())
             }
+            "download" -> {
+                val url = call.argument<String>("url")
+                if (url == null) {
+                    result.error("bad_arguments", "url is required", null)
+                } else {
+                    result.success(startDownload(url))
+                }
+            }
+            "downloadStatus" -> result.success(downloadStatus())
+            "cancelDownload" -> {
+                downloadId?.let { downloads?.remove(it) }
+                downloadId = null
+                result.success(downloadStatus())
+            }
+            "adoptDownload" -> adoptDownload(result)
             "openPage" -> {
                 val url = call.argument<String>("url")
                 if (url == null) {
@@ -167,6 +197,128 @@ class ModelFilePlugin(
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             },
         )
+    }
+
+    /**
+     * Asks Android to fetch [url] into Van's own external files directory.
+     *
+     * `setAllowedOverMetered(false)` because this is two and a half gigabytes.
+     * Starting that on someone's mobile data without asking is not a
+     * convenience, it is a bill - so the download waits for Wi-Fi, and the
+     * Dart side is told that is what it is doing rather than it appearing
+     * stuck.
+     *
+     * The destination is `getExternalFilesDir`, which needs no permission and
+     * is removed on uninstall. It is not the final home - [adoptDownload]
+     * moves it to internal storage where the engine looks - because
+     * `DownloadManager` cannot write there directly.
+     */
+    private fun startDownload(url: String): Map<String, Any?> {
+        val manager = downloads ?: return downloadStatus()
+        if (downloadId != null) return downloadStatus()
+
+        val request = DownloadManager.Request(Uri.parse(url))
+            .setTitle("Van language model")
+            .setDescription("Downloaded once, then it works offline")
+            .setAllowedOverMetered(false)
+            .setAllowedOverRoaming(false)
+            .setNotificationVisibility(
+                DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED,
+            )
+            .setDestinationInExternalFilesDir(context, null, DOWNLOAD_NAME)
+        downloadId = manager.enqueue(request)
+        return downloadStatus()
+    }
+
+    /**
+     * Where the download has got to.
+     *
+     * Polled rather than pushed. A broadcast receiver would tell Van the
+     * moment it finished and nothing in between, and a progress bar that moves
+     * only once is worse than no progress bar on a file this size.
+     */
+    private fun downloadStatus(): Map<String, Any?> {
+        val id = downloadId ?: return mapOf("state" to "idle")
+        val manager = downloads ?: return mapOf("state" to "idle")
+
+        manager.query(DownloadManager.Query().setFilterById(id)).use { c ->
+            if (c == null || !c.moveToFirst()) {
+                downloadId = null
+                return mapOf("state" to "idle")
+            }
+            val status = c.getInt(
+                c.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS),
+            )
+            val soFar = c.getLong(
+                c.getColumnIndexOrThrow(
+                    DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR,
+                ),
+            )
+            val total = c.getLong(
+                c.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES),
+            )
+            return mapOf(
+                "state" to when (status) {
+                    DownloadManager.STATUS_SUCCESSFUL -> "done"
+                    DownloadManager.STATUS_FAILED -> "failed"
+                    // Paused waiting for Wi-Fi is the expected state on mobile
+                    // data, not a fault, and the page says so.
+                    DownloadManager.STATUS_PAUSED -> "paused"
+                    else -> "running"
+                },
+                "bytes" to soFar,
+                "total" to total,
+            )
+        }
+    }
+
+    /**
+     * Moves a finished download into the place the engine looks.
+     *
+     * A rename first, because internal and external storage are usually the
+     * same volume on a modern phone and renaming two and a half gigabytes is
+     * instant where copying it is a minute. The copy is the fallback for the
+     * phones where they are not.
+     */
+    private fun adoptDownload(result: MethodChannel.Result) {
+        val executor = worker
+        if (executor == null) {
+            result.error("detached", "the model channel is not attached", null)
+            return
+        }
+        executor.execute {
+            val outcome = runCatching {
+                val source = java.io.File(
+                    context.getExternalFilesDir(null),
+                    DOWNLOAD_NAME,
+                )
+                check(source.isFile && source.length() > 0) {
+                    "no finished download to adopt"
+                }
+                val target = ModelStorage.modelFile(context.filesDir)
+                target.parentFile?.mkdirs()
+                target.delete()
+                if (!source.renameTo(target)) {
+                    source.inputStream().use { input ->
+                        target.outputStream().use(input::copyTo)
+                    }
+                    source.delete()
+                }
+                downloadId = null
+                status()
+            }
+            android.os.Handler(context.mainLooper).post {
+                outcome
+                    .onSuccess(result::success)
+                    .onFailure { error ->
+                        result.error(
+                            "adopt_failed",
+                            error.message ?: error::class.java.simpleName,
+                            null,
+                        )
+                    }
+            }
+        }
     }
 
     private fun install(result: MethodChannel.Result) {
