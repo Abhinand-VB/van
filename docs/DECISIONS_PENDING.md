@@ -541,6 +541,45 @@ shown to run.
 
 ---
 
+### D80 — Settings, the refresh button, and the download that went nowhere
+
+**The model is on the phone.** 2,588,147,712 bytes at
+`files/models/gemma-e2b-int4.litertlm`, verified on the filesystem rather than
+believed from a label. `LocalLlmPlugin.defaultEngine` will now build a real
+`LiteRtEngine` instead of a `MissingEngine` — **and nothing calls it**, because
+every capability is still routed to `"none"`. That is the gate in STATUS 3e
+doing its job, and lifting it is your decision, not mine: the golden set has
+still never been run against the model (issue 14).
+
+**The download bug was structural, not a slip.** The only record that a
+download existed was a variable on the plugin, and the only thing that moved a
+finished file into place was a one-second timer owned by the page. Close the
+page and both vanished. It is the filesystem's job now — `status` reads from
+disk every time — because a fact that only exists while a screen is open is not
+a fact the app can rely on.
+
+**The refresh button is gone and tab switches reload instead.** The shell keeps
+every tab alive in an `IndexedStack`, which is what stops Chat losing a
+half-typed sentence, and is also why none of them noticed data changing while
+hidden. Each tab is now poked when it becomes visible. Tapping the tab you are
+already on also reloads, since that is what people do when a refresh button
+disappears.
+
+**Settings is a hub, not a control panel.** Each row says what is true and
+opens the page that changes it, so no setting is edited in two places. The
+Calendar tab's own tune icon still goes straight to calendars — being one tap
+from the thing you are looking at beats symmetry.
+
+**The first-run offer tells the truth, which is currently unflattering.** On a
+fresh install Van now mentions the on-device model once, after the notification
+permission and never again. While nothing is routed to the model the dialog
+says so in as many words: optional, Van works fully without it, nothing uses it
+yet. **If you would rather it did not mention the model at all until routing is
+live**, that is one condition — but I would rather it were honest than silent,
+and the wording changes by itself the moment `usesModel` becomes true.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner

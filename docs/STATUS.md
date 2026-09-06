@@ -62,11 +62,11 @@ own database with every row intact.
 | **Last driven by hand** | **6 Sep 2026, 11:49** — opened the Chat tab and read the composer. |
 | **Proved by your own use, 12:19** | Pulled the database read-only. It holds **`clarificationAsked` and `clarificationAnswered`** — 13a asked how long about something you captured without a duration, and you answered it — plus two **`taskUpdated` rows with `source: task_list_tick`** and one with **`source: undo`**. So the question, the new tick and the undo are all confirmed working on hardware, by you rather than by an agent tapping at it. |
 | **Still unproved on hardware** | **13b's opening block** (needs a deep task long enough to be a slab — nothing captured so far has been one; all nine tasks read `depth: unknown`), **the microphone** (needs the permission, which is yours to grant — see below), **13c** (needs a block that has moved three times without ever starting), and **the model engine**, which has never produced a token because there are no weights to run. |
-| **On-device model** | **Engine compiled in and wired; routing left at `"none"`; no weights installed.** The page behind the Now screen's overflow menu now gives two numbered steps, and **step one was watched opening Chrome at the model page on this phone at 14:22**. `inference_config.json` routes all three capabilities to `none` and stays that way until the golden set has been run against real weights. Section 3aa. |
+| **On-device model** | **THE WEIGHTS ARE ON THE PHONE.** 2,588,147,712 bytes at `files/models/gemma-e2b-int4.litertlm`, checked on the filesystem at 15:51. `defaultEngine` now builds a real `LiteRtEngine`, and **nothing calls it** — every capability is still routed to `"none"`, which is the gate in 3e working as designed. The app was force-stopped and relaunched with the model present: clean, nothing from MediaPipe in logcat. **The engine has still never produced a token**, and running the golden set against it (issue 14) is what would justify changing the routing. Old note follows:** Engine compiled in and wired; routing left at `"none"`.** The page behind the Now screen's overflow menu now gives two numbered steps, and **step one was watched opening Chrome at the model page on this phone at 14:22**. `inference_config.json` routes all three capabilities to `none` and stays that way until the golden set has been run against real weights. Section 3aa. |
 | **Microphone** | **Not granted, deliberately.** `RECORD_AUDIO` is in the manifest and the button is on both composers, but pressing it raises the permission dialog and answering that is your decision, not an agent's — the same call that was made about the calendar. Read-only check: this phone *does* have an on-device recogniser (`com.google.android.tts` registers the `RecognitionService`), so the button should be live rather than disabled once you allow it. |
 | **Schema v4, on the phone** | **Verified, read-only, 10:54.** Pulled the real database: `user_version = 4`, `tasks.depth` and `work_sessions.is_opener` both present, 8 tasks / 25 sessions / 341 events all intact, every pre-existing row reading back as `unknown` and not-an-opener exactly as designed. This is the check section 5d wishes it had had. |
 | **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has run against the real provider. |
-| **Tests** | **843 green (530 app, 313 core)**, `dart analyze --fatal-infos` and `check_layers` clean. `extract_task` still scores **29/29** on the golden set. |
+| **Tests** | **856 green (543 app, 313 core)**, `dart analyze --fatal-infos` and `check_layers` clean. `extract_task` still scores **29/29** on the golden set. |
 
 **Two things still unverified on hardware**, both needing you: a nudge firing
 with START coming back (issue 3), and the two features built this morning
@@ -80,7 +80,7 @@ Android's inexact window. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-**843 tests, all green, on a phone that runs.** Eight things need you and all
+**856 tests, all green, on a phone that runs.** Eight things need you and all
 of them are small. **Items 6 and 7 are new this morning and take ten seconds
 each** — they are the only way the work done overnight gets seen on the
 device, so do those two even if you skip the rest:
@@ -209,7 +209,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **843 tests passing** — 313 in `packages/van_core` (pure Dart), 530 in the app.
+- **856 tests passing** — 313 in `packages/van_core` (pure Dart), 543 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
