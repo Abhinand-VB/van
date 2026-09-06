@@ -3,18 +3,26 @@ import 'package:van/app/van_service.dart';
 import 'package:van/data/repositories/calendar_prefs.dart';
 import 'package:van/platform/calendars.dart';
 import 'package:van/platform/notifications.dart';
+import 'package:van/ui/calendar_screen.dart';
 import 'package:van/ui/chat_screen.dart';
 import 'package:van/ui/now_screen.dart';
 import 'package:van/ui/task_list_screen.dart';
 import 'package:van_core/van_core.dart';
 
-/// The three things Van does, one tap apart.
+/// The four things Van does, one tap apart.
 ///
 /// Now is first and is the default, because the whole product is one next
 /// action. Chat and Tasks exist for the two moments Now cannot serve: getting
 /// something out of your head while checking Van understood it, and seeing
-/// everything you have not done. Three is the ceiling - a fourth tab would be
-/// the beginning of a productivity system.
+/// everything you have not done.
+///
+/// **Calendar is the fourth, added at the owner's request**, and this comment
+/// used to say three was the ceiling. What changed is that Van now plans
+/// around commitments it will not name: a block moves to the afternoon and
+/// the reason is a meeting the app can show as a shape but never describe.
+/// Without a timeline, that reason is invisible everywhere in Van. The
+/// original objection still stands as a warning rather than a rule - the
+/// danger of a fourth tab is that it invites a fifth.
 class VanShell extends StatefulWidget {
   /// Creates the shell.
   const VanShell({
@@ -64,6 +72,12 @@ class _VanShellState extends State<VanShell> {
             calendars: widget.calendars,
             calendarPreferences: widget.calendarPreferences,
           ),
+          CalendarScreen(
+            service: widget.service,
+            clock: widget.clock,
+            calendars: widget.calendars,
+            calendarPreferences: widget.calendarPreferences,
+          ),
           ChatScreen(service: widget.service, clock: widget.clock),
           TaskListScreen(service: widget.service, clock: widget.clock),
         ],
@@ -76,6 +90,11 @@ class _VanShellState extends State<VanShell> {
             icon: Icon(Icons.bolt_outlined),
             selectedIcon: Icon(Icons.bolt),
             label: 'Now',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.calendar_month_outlined),
+            selectedIcon: Icon(Icons.calendar_month),
+            label: 'Calendar',
           ),
           NavigationDestination(
             icon: Icon(Icons.forum_outlined),

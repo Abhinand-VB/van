@@ -14,6 +14,7 @@ import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/router.dart';
 import 'package:van/platform/calendars.dart';
+import 'package:van/ui/calendar_screen.dart';
 import 'package:van/ui/now_screen.dart';
 import 'package:van/ui/settings_screen.dart';
 import 'package:van_core/van_core.dart';
@@ -212,11 +213,21 @@ void main() {
     });
   });
 
-  group('reaching it from the Now screen', () {
-    testWidgets('the app bar opens the page', (tester) async {
+  group('reaching it from the app', () {
+    testWidgets('the Calendar tab app bar opens the page', (tester) async {
       withCalendars([work]);
 
-      await showNow(tester);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: CalendarScreen(
+            service: service,
+            clock: clock,
+            calendars: calendars,
+            calendarPreferences: preferences,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('Calendars'));
       await tester.pumpAndSettle();
 

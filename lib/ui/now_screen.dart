@@ -105,11 +105,13 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
     await _refresh();
   }
 
-  /// Opens the calendar settings page.
+  /// Opens the calendar settings page, for the banner below to tap through
+  /// to.
   ///
-  /// A page and not a tab. The shell is three tabs on purpose and a fourth
-  /// would be spent on something opened twice a year; the Now screen already
-  /// owns this kind of concern, which is where the permission banner lives.
+  /// The Calendar tab's app bar is where this normally lives. It is reachable
+  /// from here as well because the banner has to lead somewhere: being told
+  /// the calendar could not be read is only useful next to the screen that
+  /// says which calendars there are.
   Future<void> _openSettings() async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -207,11 +209,6 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
             icon: const Icon(Icons.refresh),
             onPressed: _refresh,
             tooltip: 'Refresh',
-          ),
-          IconButton(
-            icon: const Icon(Icons.calendar_month_outlined),
-            onPressed: _openSettings,
-            tooltip: 'Calendars',
           ),
         ],
       ),

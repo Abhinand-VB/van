@@ -27,10 +27,10 @@ calendar, so the feature is installed and unexercised against real data.**
 | **Commit the phone is running** | `de2c910` — "Plan around the calendar, without ever reading a meeting's name". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
 | **APK installed at** | **6 Sep 2026, 00:53:55** (device local, PDT), debug build, phone `<device-serial>` |
 | **Last launched** | **6 Sep 2026, 00:54** — `am start` delivered, process alive (pid 30090) |
-| **Last seen rendering** | **6 Sep 2026, 00:54, this build.** Now screen with the new calendar action in the app bar, and the Calendars page reached by tapping it. Both screenshotted. |
-| **Last driven by hand** | **6 Sep 2026, 00:54** — opened the Calendars page on the device and confirmed it shows the ungranted explanation rather than an empty list. |
+| **Last seen rendering** | **6 Sep 2026, 01:08, this build.** The Calendar tab drawing today's real blocks on a timeline — "Why is not working" at 08:00 and "Negotiate wiring check" after it — plus the four-tab nav and the Calendars settings page. Screenshotted. |
+| **Last driven by hand** | **6 Sep 2026, 01:08** — tapped through to the Calendar tab and read the day off the timeline. |
 | **Calendar permission** | **Not granted.** `READ_CALENDAR` is declared and sits at the platform default. Until you tap Allow, Van plans exactly as it did before — this is the one thing WP-11 still needs from you. |
-| **Tests** | 649 green (380 app, 269 core), `dart analyze --fatal-infos` and `check_layers` clean |
+| **Tests** | 666 green (397 app, 269 core), `dart analyze --fatal-infos` and `check_layers` clean |
 
 **What that gap does and does not mean.** The calendar UI was watched drawing
 on this build, and the whole feature is covered by tests against a fake
@@ -65,7 +65,7 @@ which is the only way any of WP-11 gets exercised. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-Van is finished as far as an agent can take it alone. **649 tests, all green,
+Van is finished as far as an agent can take it alone. **666 tests, all green,
 on a phone that runs.** Five things need you, and they are small — the newest
 is last, because it is the only one that was not already here yesterday:
 
@@ -171,7 +171,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **649 tests passing** — 269 in `packages/van_core` (pure Dart), 380 in the app.
+- **666 tests passing** — 269 in `packages/van_core` (pure Dart), 397 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -218,6 +218,7 @@ working configuration, not a degraded one.
 | App: calendar planning | 20 |
 | App: calendar settings screen | 12 |
 | App: calendar preferences | 8 |
+| App: calendar screen and timeline | 17 |
 | App: timezone (calendar cases added) | +4 |
 
 ---
@@ -1261,6 +1262,23 @@ phone next month counts without Van being told. That default only works because
 of the transparency rule — birthdays and holidays are all-day and free, so they
 do not block — and changing either without the other will make Van look broken.
 
+**The Calendar tab, added 6 September.** A day timeline reached from the
+bottom nav: Van's own blocks drawn on a clock, coloured by status, with the
+calendar's claimed time behind them as shaded bands. Van's blocks carry their
+task titles because they are Van's; the bands say `Busy` and nothing else,
+because that is the entire truth of what Van knows about a meeting. That is
+not a placeholder for a title that failed to load, and a future contributor
+who "fixes" it will be undoing D70 rather than completing it.
+
+Drawing a day is not planning, and the screen is careful about the difference:
+`VanService.calendarBusy` reads without writing a `calendarRead` row (a row
+per scroll would drown the log), leaves `calendarIsUnreadable` alone (that flag
+is a statement about the *plan*, not about a redraw), and swallows a failed
+read so a broken provider costs the shading rather than the screen. The
+calendar settings page moved to this tab's app bar; the Now banner still
+reaches it, because being told the calendar is unreadable is only useful next
+to the list of calendars.
+
 **What has not been proved on hardware.** Everything above is tested and the
 screen was watched drawing, but `READ_CALENDAR` has never been granted on this
 phone, so no line of `CalendarPlugin.kt` has ever run against a real provider.
@@ -1521,6 +1539,14 @@ EXPLAIN QUERY PLAN SELECT * FROM events WHERE session_id = ?
   in `van_core` or `lib/ui/`.
 - **Android only for now**, but the domain core stays platform-free so the
   proactive engine could move server-side for an iOS port later.
+- **The shell has four tabs, at the owner's request (6 Sep 2026).** The rule
+  in `shell.dart` used to be that three was the ceiling and a fourth tab was
+  the beginning of a productivity system. That still reads correctly as a
+  warning, and the reason it was overruled is worth keeping: once Van plans
+  around calendar commitments it will never name, a block that moved to the
+  afternoon has a reason the app could not show anywhere. The Calendar tab is
+  where that reason lives. **The danger has not gone away — it has been spent.
+  A fifth tab needs a better argument than this one had.**
 - **Gemma 4 (E2B/E4B) is the current candidate** for WP-6, and looks better than
   the Gemma 3n assumption the architecture was written against: native function
   calling at 2–4B, LiteRT-LM support on both Android and iOS, and under 1.5 GB
