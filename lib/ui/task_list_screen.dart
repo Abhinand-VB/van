@@ -107,6 +107,9 @@ class _TaskListScreenState extends State<TaskListScreen>
     final minutes = await showModalBottomSheet<int>(
       context: context,
       showDragHandle: true,
+      // Without this the sheet is capped at half the screen, and a raised
+      // keyboard then has nowhere to push the Save button to.
+      isScrollControlled: true,
       builder: (_) => EstimateSheet(
         title: task.title,
         initialMinutes:

@@ -143,6 +143,17 @@ String estimateLabel(int? stated, int fallback) {
 /// fights the keyboard for the card it is editing. Opens pre-filled and with
 /// the presets people actually pick, so the common case is one tap and the
 /// uncommon one is still typeable.
+///
+/// **The field does not autofocus, and that is a fix rather than an
+/// omission.** It did, and on the phone the keyboard came straight up over
+/// the presets and overflowed the sheet by 152 pixels - which no widget test
+/// could see, because a test surface has no keyboard. Presets are the common
+/// case; the keyboard belongs to the uncommon one and can wait to be asked
+/// for. The sheet scrolls as well, so the same mistake cannot cost a layout
+/// again.
+///
+/// Open it with `isScrollControlled: true` or it is capped at half the
+/// screen with a keyboard up.
 class EstimateSheet extends StatefulWidget {
   /// Creates the sheet.
   const EstimateSheet({
@@ -191,7 +202,7 @@ class _EstimateSheetState extends State<EstimateSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
 
-    return Padding(
+    return SingleChildScrollView(
       padding: EdgeInsets.fromLTRB(
         20,
         0,
@@ -227,7 +238,6 @@ class _EstimateSheetState extends State<EstimateSheet> {
               Expanded(
                 child: TextField(
                   controller: _field,
-                  autofocus: true,
                   keyboardType: TextInputType.number,
                   textInputAction: TextInputAction.done,
                   onSubmitted: (_) => _save(),

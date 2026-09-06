@@ -267,6 +267,9 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
     final minutes = await showModalBottomSheet<int>(
       context: context,
       showDragHandle: true,
+      // Without this the sheet is capped at half the screen, and a raised
+      // keyboard then has nowhere to push the Save button to.
+      isScrollControlled: true,
       builder: (_) => EstimateSheet(
         title: task.title,
         // Pre-filled with the number the planner already used, so this is a

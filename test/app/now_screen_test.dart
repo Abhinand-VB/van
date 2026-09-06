@@ -166,6 +166,39 @@ void main() {
       expect(find.textContaining('Van assumed this'), findsOneWidget);
     });
 
+    testWidgets('the editor survives a raised keyboard', (tester) async {
+      // On the phone the field autofocused, the keyboard came up over the
+      // presets, and the sheet overflowed by 152 pixels. No widget test could
+      // see it, because a test surface has no keyboard - so this one puts one
+      // there. `viewInsets` is exactly what a keyboard does to a window.
+      await service.capture('finish the assignment');
+
+      // A phone-shaped window, because the default test surface is 800x600
+      // logical and a keyboard does not fit in it in a way that resembles
+      // anything. 1080x2340 at 3x is this project's actual device.
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+
+      // The insets go on before the sheet opens, so it is laid out against a
+      // window that already has a keyboard in it - which is the real
+      // sequence, since the field used to raise one on open.
+      tester.view.viewInsets = const FakeViewPadding(bottom: 900);
+
+      await show(tester);
+      await tester.tap(find.text('1h (assumed)').first);
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      // And Save is still reachable, which is the point of it scrolling.
+      await tester.scrollUntilVisible(
+        find.widgetWithText(FilledButton, 'Save'),
+        100,
+        scrollable: find.byType(Scrollable).last,
+      );
+      expect(find.widgetWithText(FilledButton, 'Save'), findsOneWidget);
+    });
+
     testWidgets('picking a length replans the task', (tester) async {
       await service.capture('finish the assignment');
 
