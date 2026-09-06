@@ -14,6 +14,7 @@ import 'package:van/data/repositories/task_repo.dart';
 import 'package:van/inference/backends/null_backend.dart';
 import 'package:van/inference/capabilities/compose_nudge.dart';
 import 'package:van/inference/router.dart';
+import 'package:van/platform/calendars.dart';
 import 'package:van/ui/calendar_screen.dart';
 import 'package:van/ui/shell.dart';
 import 'package:van_core/van_core.dart';
@@ -475,28 +476,28 @@ void main() {
       expect(find.text('Friday thing'), findsOneWidget);
     });
 
-    testWidgets('the month lists the selected day underneath the grid', (
+    testWidgets('the month names a block in the cell and in the list', (
       tester,
     ) async {
       await plan(title: 'Write the report', start: localAt(14));
 
       await show(tester, view: CalendarView.month);
 
-      // The grid alone was unreadable - thirty cells of identical bars say a
-      // day is busy without saying with what. The list below is where the
-      // reading happens.
-      expect(find.text('Write the report'), findsOneWidget);
+      // Twice on purpose: a chip in the day's own cell, so the month can be
+      // scanned, and the full line underneath, where it is read. Bars said a
+      // day was busy and dots said how busy; neither said with what.
+      expect(find.text('Write the report'), findsNWidgets(2));
       expect(find.textContaining('Today ·'), findsOneWidget);
     });
 
-    testWidgets('a calendar event is named in the month list too', (
+    testWidgets('a calendar event is named in the cell and the list too', (
       tester,
     ) async {
       event(localAt(10), localAt(11));
 
       await show(tester, view: CalendarView.month);
 
-      expect(find.text('Standup with Priya'), findsOneWidget);
+      expect(find.text('Standup with Priya'), findsNWidgets(2));
     });
 
     testWidgets('tapping a day lists it without leaving the month', (
@@ -507,15 +508,99 @@ void main() {
       await plan(title: 'Tomorrow thing', start: tomorrow);
 
       await show(tester, view: CalendarView.month);
-      expect(find.text('Today thing'), findsOneWidget);
+      expect(find.text('Today thing'), findsNWidgets(2));
 
       await tester.tap(find.text('${tomorrow.day}').first);
       await tester.pumpAndSettle();
 
       // Still the month: comparing a day against the month around it is the
-      // whole point of the view.
-      expect(find.text('Tomorrow thing'), findsOneWidget);
-      expect(find.text('Today thing'), findsNothing);
+      // whole point of the view. Both chips stay in the grid - that is what
+      // the grid is for - and only the list below changes, so the counts are
+      // what tell the two apart.
+      expect(find.text('Tomorrow thing'), findsNWidgets(2));
+      expect(find.text('Today thing'), findsOneWidget);
+    });
+
+    testWidgets('a cell counts only what it could not name', (tester) async {
+      for (var i = 0; i < 6; i++) {
+        event(
+          localAt(9 + i),
+          localAt(10 + i),
+          title: 'Meeting $i',
+          calendarId: 'work',
+        );
+      }
+
+      await show(tester, view: CalendarView.month);
+
+      // A phone cell has room for one or two names, never six. What fits is
+      // named; the remainder is a count on the last chip that fits, not a row
+      // of its own - a row spent on a number is a name not shown.
+      // Everything today is in the list below the grid, so one match means
+      // listed only and two means named in the cell as well.
+      final named = [
+        for (var i = 0; i < 6; i++)
+          if (find.text('Meeting $i').evaluate().length == 2) i,
+      ];
+      expect(named, isNotEmpty, reason: 'the cell should name what it can');
+      expect(named.length, lessThan(6), reason: 'six will not fit on a phone');
+      expect(find.text('+${6 - named.length}'), findsOneWidget);
+    });
+
+    testWidgets("a chip is drawn in its own calendar's colour", (tester) async {
+      // Google's dark green. The point of colouring an event is that it
+      // matches the colour the user already knows that calendar by, so the
+      // colour has to come off the provider rather than out of Van's theme.
+      const green = 0xFF0B8043;
+      calendars.sourceList.add(
+        const CalendarSource(
+          id: 'work',
+          name: 'Work',
+          accountName: 'a@b.com',
+          colour: green,
+        ),
+      );
+      event(localAt(10), localAt(11), calendarId: 'work');
+
+      await show(tester, view: CalendarView.month);
+
+      final filled = tester
+          .widgetList<Container>(find.byType(Container))
+          .where(
+            (box) => switch (box.decoration) {
+              final BoxDecoration it => it.color?.toARGB32() == green,
+              _ => false,
+            },
+          );
+      expect(filled, isNotEmpty);
+    });
+
+    testWidgets('an event that takes no time is outlined, not filled', (
+      tester,
+    ) async {
+      event(localAt(10), localAt(11), title: 'Optional', isBusy: false);
+
+      await show(tester, view: CalendarView.month);
+
+      // The same rule the timeline follows. A chip filled like a meeting that
+      // costs the morning, for one that costs nothing, would contradict what
+      // the planner concluded about it.
+      //
+      // Matched on the chip's own corner radius, not merely on "outlined":
+      // the day list underneath already outlines free events, so a looser
+      // search passes against a grid that still draws dots. It did.
+      final chip = tester
+          .widgetList<Container>(find.byType(Container))
+          .where(
+            (box) => switch (box.decoration) {
+              final BoxDecoration it =>
+                it.border != null &&
+                    it.color == Colors.transparent &&
+                    it.borderRadius == BorderRadius.circular(3),
+              _ => false,
+            },
+          );
+      expect(chip, isNotEmpty);
     });
 
     testWidgets('a selected day with nothing on it says so', (tester) async {

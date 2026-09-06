@@ -82,6 +82,15 @@ class _CalendarScreenState extends State<CalendarScreen>
   late CalendarView _view = widget.initialView;
   late DateTime _day = _today;
   List<_Item> _items = const [];
+
+  /// Calendar id to the colour the phone gives that calendar.
+  ///
+  /// Read from the provider rather than assigned by Van, because the point of
+  /// colouring an event is that it matches the colour the user already knows
+  /// it by. A calendar the provider gives no colour for is simply absent and
+  /// falls back to the neutral one.
+  Map<String, Color> _sourceColours = const {};
+
   bool _loading = true;
 
   /// The local date the device is on, taken from the injected clock rather
@@ -139,11 +148,34 @@ class _CalendarScreenState extends State<CalendarScreen>
       from: from.subtract(const Duration(days: 1)).toUtc(),
       to: to.toUtc(),
     );
+    final colours = await _loadColours();
     if (!mounted) return;
     setState(() {
       _items = _Item.from(plan);
+      _sourceColours = colours;
       _loading = false;
     });
+  }
+
+  /// The provider's colour for each calendar, or nothing at all.
+  ///
+  /// Read on every load rather than once, so a calendar added or recoloured
+  /// on the phone is right the next time the screen is drawn - there is no
+  /// moment Van could otherwise invalidate a cached copy, which is the same
+  /// argument `MethodChannelCalendars` makes for holding no cache.
+  ///
+  /// A failure here costs the colours and nothing else. Losing a screen
+  /// because a provider would not say what shade a calendar is would be a
+  /// poor trade, and it is the same call `calendarOccurrences` makes.
+  Future<Map<String, Color>> _loadColours() async {
+    try {
+      return {
+        for (final source in await widget.calendars.sources())
+          if (source.colour case final argb?) source.id: Color(argb),
+      };
+    } on Object catch (_) {
+      return const {};
+    }
   }
 
   Future<void> _show(DateTime day, {CalendarView? as}) async {
@@ -260,6 +292,7 @@ class _CalendarScreenState extends State<CalendarScreen>
       today: today,
       selected: _day,
       items: _items,
+      sourceColours: _sourceColours,
       onSelect: _show,
       onOpenDay: (day) => _show(day, as: CalendarView.day),
     ),
@@ -297,6 +330,7 @@ class _Item {
     required this.blocks,
     this.session,
     this.attendance,
+    this.calendarId,
   });
 
   /// Local start, because every view is a wall clock.
@@ -319,6 +353,12 @@ class _Item {
 
   /// The user's answer to an invitation, for calendar events.
   final Attendance? attendance;
+
+  /// Which calendar this came off, for events. Null for Van's own blocks.
+  ///
+  /// Only ever used to look up a colour. Drawn, never written down - the same
+  /// rule [title] follows.
+  final String? calendarId;
 
   /// Whether Van planned this rather than merely reading it.
   bool get isVan => session != null;
@@ -371,6 +411,7 @@ class _Item {
         isAllDay: event.isAllDay,
         blocks: event.blocks,
         attendance: event.attendance,
+        calendarId: event.calendarId,
       ),
   ]..sort((a, b) => a.start.compareTo(b.start));
 
@@ -947,11 +988,19 @@ class _ItemCard extends StatelessWidget {
 
 /// A month at a glance, with one day read out underneath it.
 ///
-/// The grid alone was the first version and it was unreadable: thirty cells
-/// of identical grey bars say a day is busy without saying with what, which
-/// is the one thing worth knowing. There is no room in a seventh of a phone
-/// screen for a name, so the grid answers "which days are full" in dots and
-/// the day you tap is listed in full below it.
+/// This has been three things. Bars first, which was unreadable: thirty cells
+/// of identical grey say a day is busy without saying with what. Then dots,
+/// which said *how* busy and still not with what - and "three somethings on
+/// Thursday" is not a fact anybody can act on. Now a chip per event carrying
+/// its name, coloured the way the phone colours that calendar, which is what
+/// every month grid worth using does.
+///
+/// The chips are for scanning and the list underneath is for reading, and the
+/// split is what keeps both honest: a cell is a seventh of a phone screen
+/// wide and a sixth of half of one tall, so it can carry two or three names
+/// truncated and then it must stop counting names and start counting the
+/// remainder. [_MonthCell] measures rather than assumes, because the number
+/// that fits changes with the font the user chose.
 ///
 /// Tapping a day therefore stays in the month rather than jumping to the day
 /// view - the whole point is comparing a day against the month around it. The
@@ -963,6 +1012,7 @@ class _MonthGrid extends StatelessWidget {
     required this.today,
     required this.selected,
     required this.items,
+    required this.sourceColours,
     required this.onSelect,
     required this.onOpenDay,
   });
@@ -981,6 +1031,9 @@ class _MonthGrid extends StatelessWidget {
 
   /// Everything loaded across the grid.
   final List<_Item> items;
+
+  /// The phone's colour per calendar, for the chips.
+  final Map<String, Color> sourceColours;
 
   /// Selects a day without leaving the month.
   final Future<void> Function(DateTime) onSelect;
@@ -1033,6 +1086,7 @@ class _MonthGrid extends StatelessWidget {
                             today: today,
                             selected: selected,
                             items: items,
+                            sourceColours: sourceColours,
                             onTap: onSelect,
                           ),
                         ),
@@ -1057,6 +1111,11 @@ class _MonthGrid extends StatelessWidget {
   }
 }
 
+/// One day in the month grid: its number, and what is actually on it.
+///
+/// The cell counts nothing it could name instead. Chips carry the names and
+/// the calendar colours; only what will not fit is counted, as a `+n` on the
+/// last chip that does.
 class _MonthCell extends StatelessWidget {
   const _MonthCell({
     required this.day,
@@ -1064,6 +1123,7 @@ class _MonthCell extends StatelessWidget {
     required this.today,
     required this.selected,
     required this.items,
+    required this.sourceColours,
     required this.onTap,
   });
 
@@ -1072,7 +1132,17 @@ class _MonthCell extends StatelessWidget {
   final DateTime today;
   final DateTime selected;
   final List<_Item> items;
+  final Map<String, Color> sourceColours;
   final Future<void> Function(DateTime) onTap;
+
+  /// Font size for a chip's name.
+  ///
+  /// Fixed rather than taken from the text theme because a month cell is a
+  /// seventh of a phone screen and the smallest thing in the theme is still
+  /// too big for it. It is not fixed against the *user's* text size: the
+  /// scaler still applies, and [_MonthChips] responds by drawing fewer chips
+  /// rather than by clipping them.
+  static const fontSize = 9.0;
 
   @override
   Widget build(BuildContext context) {
@@ -1086,63 +1156,201 @@ class _MonthCell extends StatelessWidget {
     final isSelected = day == selected;
     final outside = day.month != month;
 
-    // Van's own work counted separately from everyone else's claims on the
-    // day, because "three of my blocks" and "three of their meetings" are
-    // opposite kinds of full.
-    final mine = onThisDay.where((item) => item.isVan).length;
-    final theirs = onThisDay.length - mine;
-
     return InkWell(
       onTap: () => onTap(day),
       child: Container(
         margin: const EdgeInsets.all(1.5),
+        padding: const EdgeInsets.symmetric(horizontal: 1),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(8),
-          color: isSelected ? colours.primary : null,
+          // A container tone rather than a solid primary, because the chips
+          // sit on top of this and a filled primary cell would swallow every
+          // one of them. The selected day still reads as selected; it just
+          // does not win an argument with its own contents.
+          color: isSelected ? colours.primaryContainer : null,
           border: isToday && !isSelected
               ? Border.all(color: colours.primary)
               : null,
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              '${day.day}',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: isSelected
-                    ? colours.onPrimary
-                    : outside
-                    ? colours.onSurfaceVariant.withValues(alpha: 0.45)
-                    : null,
-                fontWeight: isToday || isSelected ? FontWeight.bold : null,
+        child: Opacity(
+          // Days either side of the month are context, not content.
+          opacity: outside ? 0.45 : 1,
+          child: Column(
+            children: [
+              Text(
+                '${day.day}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: isSelected ? colours.onPrimaryContainer : null,
+                  fontWeight: isToday || isSelected ? FontWeight.bold : null,
+                ),
               ),
-            ),
-            const SizedBox(height: 3),
-            SizedBox(
-              height: 6,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  for (var i = 0; i < (mine > 3 ? 3 : mine); i++)
-                    _Dot(
-                      colour: isSelected ? colours.onPrimary : colours.primary,
-                    ),
-                  for (var i = 0; i < (theirs > 3 ? 3 : theirs); i++)
-                    _Dot(
-                      colour: isSelected
-                          ? colours.onPrimary.withValues(alpha: 0.55)
-                          : colours.onSurfaceVariant.withValues(alpha: 0.55),
-                    ),
-                ],
+              Expanded(
+                child: _MonthChips(
+                  items: onThisDay,
+                  sourceColours: sourceColours,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
+/// As many named chips as the cell is tall enough for, and a count of the
+/// rest.
+///
+/// **The number of chips is measured, never assumed.** Six rows of chips on a
+/// phone is how a month grid becomes unreadable for the third time, and the
+/// number that fits is not a constant: it moves with the device, with the
+/// font the user chose, and with how much of the screen the day list below is
+/// taking. So the capacity comes from the box this is given and the height a
+/// chip actually needs at the current text scale.
+///
+/// When something is left over it is added to the *last visible chip* rather
+/// than given a row of its own. A row spent on `+3` is a name not shown, and
+/// on a cell with room for one line that trade is plainly wrong - the count
+/// belongs beside a name, not instead of one.
+class _MonthChips extends StatelessWidget {
+  const _MonthChips({required this.items, required this.sourceColours});
+
+  /// Everything on this day, earliest first.
+  final List<_Item> items;
+
+  /// The phone's colour per calendar.
+  final Map<String, Color> sourceColours;
+
+  @override
+  Widget build(BuildContext context) {
+    if (items.isEmpty) return const SizedBox.shrink();
+
+    final scaler = MediaQuery.textScalerOf(context);
+    // Line height plus the chip's own vertical padding, plus the gap under
+    // it. Deliberately generous: a capacity one too high clips a chip, while
+    // a capacity one too low merely counts one more event instead of naming
+    // it.
+    final rowHeight = scaler.scale(_MonthCell.fontSize) * 1.45 + 4;
+
+    return LayoutBuilder(
+      builder: (context, box) {
+        final capacity = (box.maxHeight / rowHeight).floor();
+        // Nothing fits at all - a very large font, or a short screen. Say
+        // "something is on this day" the only way left, rather than drawing a
+        // clipped half-chip.
+        if (capacity < 1) {
+          return Align(
+            alignment: Alignment.topCenter,
+            child: _Dot(colour: Theme.of(context).colorScheme.primary),
+          );
+        }
+
+        final visible = items.length < capacity ? items.length : capacity;
+        final hidden = items.length - visible;
+
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (var i = 0; i < visible; i++)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 1),
+                child: _MonthChip(
+                  item: items[i],
+                  colour: sourceColours[items[i].calendarId],
+                  overflow: i == visible - 1 ? hidden : 0,
+                ),
+              ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// One event, named, in the colour its calendar is known by.
+class _MonthChip extends StatelessWidget {
+  const _MonthChip({
+    required this.item,
+    required this.colour,
+    required this.overflow,
+  });
+
+  final _Item item;
+
+  /// The phone's colour for this event's calendar, when it gave one.
+  final Color? colour;
+
+  /// How many further events this chip stands in for. Zero for every chip but
+  /// the last one in a cell, and usually zero there too.
+  final int overflow;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colours = theme.colorScheme;
+
+    // The same rule the timeline cards follow, so the two views cannot
+    // disagree about what a day contains: Van's own work is filled in Van's
+    // colour, an event that takes the time is filled in its calendar's, and
+    // one marked free or declined is outlined instead - because it is on the
+    // calendar without costing anything, which is exactly what the planner
+    // concluded about it.
+    final source = colour ?? colours.surfaceContainerHighest;
+    final (background, foreground, outline) = switch (item) {
+      final it when it.isVan => (colours.primary, colours.onPrimary, null),
+      final it when it.blocks => (
+        source,
+        ThemeData.estimateBrightnessForColor(source) == Brightness.dark
+            ? Colors.white
+            : Colors.black,
+        null,
+      ),
+      _ => (Colors.transparent, colours.onSurfaceVariant, source),
+    };
+
+    final struck = item.attendance == Attendance.declined;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(3),
+        border: outline == null ? null : Border.all(color: outline),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              item.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              softWrap: false,
+              style: TextStyle(
+                fontSize: _MonthCell.fontSize,
+                height: 1.1,
+                color: foreground,
+                decoration: struck ? TextDecoration.lineThrough : null,
+              ),
+            ),
+          ),
+          if (overflow > 0)
+            Text(
+              '+$overflow',
+              style: TextStyle(
+                fontSize: _MonthCell.fontSize,
+                height: 1.1,
+                fontWeight: FontWeight.bold,
+                color: foreground,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// The last resort when a cell is too short for even one name.
 class _Dot extends StatelessWidget {
   const _Dot({required this.colour});
 

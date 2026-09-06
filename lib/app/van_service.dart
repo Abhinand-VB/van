@@ -49,6 +49,7 @@ class CaptureResult {
 class CalendarOccurrence {
   /// Creates an occurrence.
   const CalendarOccurrence({
+    required this.calendarId,
     required this.start,
     required this.end,
     required this.title,
@@ -56,6 +57,15 @@ class CalendarOccurrence {
     required this.blocks,
     required this.attendance,
   });
+
+  /// Which calendar it came from, so a view can colour it the way the phone
+  /// does.
+  ///
+  /// **For drawing only, and it goes no further than [title] does.** Planning
+  /// never sees this type: `CalendarFilter.commitments` yields nameless,
+  /// sourceless commitments and that is what reaches the log. An id here is
+  /// no more recorded than a meeting's name is.
+  final String calendarId;
 
   /// When it begins. UTC, and real - an all-day entry is already resolved.
   final DateTime start;
@@ -599,6 +609,7 @@ class VanService {
         for (final entry in read.entries)
           if (_calendarFilter.span(entry) case final at?)
             CalendarOccurrence(
+              calendarId: entry.calendarId,
               start: at.start,
               end: at.end,
               title: entry.title,
