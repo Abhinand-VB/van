@@ -232,7 +232,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **904 tests passing** — 329 in `packages/van_core` (pure Dart), 575 in the app.
+- **906 tests passing** — 329 in `packages/van_core` (pure Dart), 577 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -263,7 +263,7 @@ working configuration, not a degraded one.
 | App: Gemma backend | 15 |
 | App: golden set and runner | 9 |
 | App: golden run on the phone (store, honest scoring) | 8 |
-| App: golden run screen | 6 |
+| App: golden run screen | 8 |
 | App: measurement timeout and declared latency | 6 |
 | App: inference config | 13 |
 | App: prompt assets | 9 |
@@ -2068,6 +2068,13 @@ same as being patient in production.
 sitting in the field any routing decision reads and telling it the model
 answers in about a second. It is now `165000`, and a test asserts it exceeds
 the default request timeout so the contradiction cannot return quietly.
+
+**The screen also has a pulse now** (`11565b8`). Three minutes of a still
+progress bar reads as a hang, and closing a hung screen throws the run away,
+so it names the case in flight and counts the seconds. The count comes from
+the timer'''s own beats rather than a `Stopwatch`: a stopwatch reads real time,
+which no widget test advances, so the display it produced could never be
+tested.
 
 ---
 
