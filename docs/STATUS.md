@@ -292,6 +292,7 @@ working configuration, not a degraded one.
 | WP-10 | Usage-stats distraction detection | Not started (phase 4) |
 | WP-11 | Device calendar as a commitment source | **Done, granted and proved on the phone** (see 3v) |
 | WP-12 | Speaking to Van — voice capture, spoken nudge answers | **Done, installed, microphone not yet granted** (see 3y) |
+| WP-14 | One sentence, several tasks | Not started (`docs/WP_CAPTURE.md`). **The highest-value item open**: the only known case where Van visibly loses something the user told it, and it needs no model. |
 | WP-13 | Making the model earn its place — asking, depth, evidence, engine | **All four done and installed** (sections 3w, 3z, 3aa). 13d is built as far as a licence allows: engine wired, routing at `none`, no weights. `docs/WP_JUDGEMENT.md` |
 
 ### Commits

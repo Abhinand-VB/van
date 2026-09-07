@@ -156,66 +156,70 @@ Latent bugs are worth fixing. They are worth fixing *fourth*.
 
 ## 3c. Tonight's queue
 
-**Every item below was completed on 6 September 2026 and the queue is now
-empty.** Do not start it again. `docs/STATUS.md` sections 3w to 3aa say what
-each one became, and section 7 says why the next queue should be written from
-a week of the log rather than in advance. If you are an agent reading this
-with no newer queue underneath it, the right move is to check the tree, check
-the build on the phone, check the app still works, fix anything broken, and
-then stop and say so — not to invent work.
+Written 7 Sep 2026, after a day of the owner using the app and reporting what
+was wrong with it. The previous queue is done and is described in `STATUS.md`
+sections 3w to 3ab. **Read the work-package document before starting each
+item** - the decisions in them are the point, the plumbing is the easy half.
+
+1. **`docs/WP_CAPTURE.md` - one sentence, several tasks.** Do this first and
+   do it properly; it is the only known case where Van visibly loses something
+   the user told it. The owner typed a sentence containing five jobs and got
+   one task with a 25-word title. **Needs no model** - `ExtractTask` returns a
+   `TaskDraft` and a `TaskDraft` is one task, so the contract is the whole
+   problem. Section 2.2 is the one to get right: over-splitting invents work
+   nobody asked for, which is worse than today's behaviour.
+
+2. **Make `actualMinutes` do something.** Section 3ab shipped the field, the
+   editor and the Finished list; **nothing reads it.** A person who
+   consistently takes twice their estimate should stop being offered their own
+   estimate. Deterministic, needs a handful of samples to be worth trusting,
+   and the honest version records its own confidence the way `DepthReader`
+   does. Check the phone's log first - if there are fewer than five recorded
+   actuals, say so in STATUS and skip it rather than tuning against noise.
+
+3. **The golden set on the phone (issue 14).** `ModelProbe` runs one sentence;
+   the gate in `STATUS.md` 3e wants all 29 cases and a pass rate. Extend the
+   probe to run the set and report the number. **At two and a half minutes a
+   query this is a 70-minute run**, so make it resumable and make it report
+   progress, or do item 4 first and re-measure.
+
+4. **The GPU build - the last lever on latency.** D82 has the measurements:
+   ~155 seconds of fixed cost per query, unmoved by cutting the output budget,
+   and no smaller model available (Qwen fails on the tokenizer, the small
+   Gemmas are login-gated). The repository has `gemma-4-E2B-it-gpu.litertlm`
+   and `gemma-4-E2B-it_qualcomm_sm8750.litertlm`, the second built for this
+   exact chip. `LiteRtEngine` asks for neither. Add `setPreferredBackend`, get
+   one of those files down, measure. **If a query does not get under about
+   five seconds, say so plainly and stop** - that is a real answer and it is
+   more useful than another attempt.
+
+5. **Only then, routing - and not for `extract_task`.** The parser scores
+   29/29 and answers in under a millisecond; no local model is going to beat
+   that on either axis. `compose_nudge` and `negotiate` are computed while
+   arming a ladder rather than while anyone waits, so seconds there are
+   invisible. Route those two, at the 80% gate, or route nothing.
+
+**If an item turns out to be bigger than it looked, finish the piece you are
+on and leave the next one clean.** Item 1 done well beats items 1 to 5 done at
+speed, and `STATUS.md` is where you say which it was.
 
 ---
 
-Written 6 Sep 2026, after a session with the owner present. Everything in the
-previous queue is done: the fatigue ratchet, issue 19, and `WP_CALENDAR.md`,
-which shipped along with a four-view calendar screen the owner asked for. The
-calendar permission has been granted and `CalendarPlugin.kt` has run against
-the real provider.
+## 3c-1. Things I got wrong yesterday. Do not repeat them.
 
-**Read the work-package document before starting each item.** The decisions in
-them are the point; the plumbing is the easy half.
-
-1. **Month cells should name what is on them** (small, do it first — it is the
-   one thing the owner asked for that is unfinished). The month grid counts in
-   dots and lists only the selected day. The owner's reference is Google's own
-   month widget: a chip per event in the cell, carrying the name, coloured per
-   calendar, with a `+2` overflow when they do not fit. Van has the colour
-   already — `CalendarSource.colour` is read and thrown away. Keep the day list
-   underneath; the chips are for scanning, the list is for reading. Watch the
-   cell height: six rows of chips on a phone is how this becomes unreadable
-   again, so cap it and count the rest.
-
-2. **`docs/WP_JUDGEMENT.md` 13a — Van asks when it does not know.** The
-   sharpest defect in the product and it needs no model:
-   `session_planner.dart:116` silently substitutes a default duration for a
-   task nobody gave one for. Read section 2 of that document; the four rules
-   about *how* to ask matter more than the asking.
-
-3. **`docs/WP_JUDGEMENT.md` 13b — depth, and what the planner does with it.**
-   Depth that does not change behaviour is decoration. The behaviour is: a deep
-   task with no first step gets a short opening block, not a three-hour slab.
-
-4. **`docs/WP_VOICE.md` — speaking to Van.** Capture by voice first, answering
-   a nudge by voice second. Section 2.2 is a hard rule, not a preference: audio
-   never leaves the device and never touches disk, and if on-device recognition
-   is unavailable the button says so rather than falling back to a network
-   recogniser. If `van_core` changed, the microphone has leaked into the domain
-   and the work is wrong.
-
-5. **`docs/WP_JUDGEMENT.md` 13c — reschedule judgement on evidence.** Feed
-   `Negotiate` the move count, the start history and the calendar density that
-   the log already holds and the prompt never sees.
-
-6. **`docs/WP_JUDGEMENT.md` 13d — the engine.** On-device first, by the
-   owner's decision. **The weights are licence-gated and you cannot accept a
-   licence.** If the model file is not on the device, build the engine and the
-   download surface, leave the routing at `"none"`, record it in
-   `DECISIONS_PENDING.md`, and move on. Do not stall on it, and do not spend
-   the night hunting for a way around a licence.
-
-**If an item turns out to be bigger than it looked, finish the piece you are
-on and leave the next one clean.** Half of item 2 done well beats all of items
-2 to 6 done at speed, and `STATUS.md` is where you say which it was.
+- **Never `rm -rf build/native_assets` and then build an APK.** It ships a
+  binary with no `libsqlite3.so`, which installs, launches, and throws out of
+  `main` before the first frame. The phone shows a black screen and logcat
+  shows nothing unless you read it unfiltered. It cost the owner a working app.
+- **Never chain `adb shell input tap` calls without a screenshot between
+  them.** Three chained taps landed on the Tasks list and wrote a duration
+  onto one of the owner's real tasks that they never entered.
+- **Check `mCurrentFocus` before every tap, not just at the start.** The owner
+  picks the phone up. If it does not name `dev.van.app`, stop driving the UI
+  and do code-only work - there is always plenty.
+- **State claims about the outside world as unverified until checked.** I said
+  the model weights were licence-gated in three places. They are Apache 2.0
+  and ungated, and the wall I built stood in front of an open door.
 
 ---
 
