@@ -261,6 +261,12 @@ speed, and `STATUS.md` is where you say which it was.
   (`AGENTS.md`). Formatting at 79 reflowed nine files nobody had touched and
   buried the real change. Restoring them needed `git show HEAD:path > path`,
   because `git checkout --` is blocked here.
+- **Backwards-compatible getters over plural data are where the UI goes wrong
+  silently.** `CaptureResult` kept `task` and `sessions` so old callers would
+  compile after splitting shipped. Three separate screens then read the first
+  element of a list and looked entirely correct - one of them overwrote a
+  duration the owner had typed. When a type goes plural, grep every use of the
+  singular getter in the same change. D88, D89.
 - **A flag with no reader is a feature that was designed and not shipped.**
   `CaptureResult.isMany` was added when splitting landed, asserted in the
   service tests, and read by no UI file - so a sentence that became two tasks

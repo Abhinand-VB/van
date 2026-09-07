@@ -43,6 +43,15 @@ and nothing on screen admitting it existed. The undo button removed both and
 said "Undo". Fixed: the card is plural, the count is stated, and the button
 says "Undo both". Section 3af, D88.
 
+**The third is the one that destroyed something you typed.** Van asks one
+question per sentence, about the first clause that needs it — which is not
+always the first clause. Type *"email the landlord 15 minutes and pay the
+rent"* and the question is about the rent. Answer it with "90 minutes" and Van
+replanned **the landlord** to ninety, overwriting the fifteen you gave, and
+left the rent on its guess. The event log had recorded the right task all
+along; the result never carried it. Fixed, with the old behaviour kept as a
+test that asserts the damage. Section 3ag, D89.
+
 **This run did the whole of the `OVERNIGHT.md` 3c queue** — month cells that
 name what is on them, `WP_JUDGEMENT` 13a (Van asks how long), 13b (depth and
 the short opening block), `WP_VOICE.md` in full, 13c (reschedule judgement on
@@ -247,7 +256,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **962 tests passing** — 381 in `packages/van_core` (pure Dart), 581 in the app.
+- **969 tests passing** — 381 in `packages/van_core` (pure Dart), 588 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -265,12 +274,13 @@ working configuration, not a degraded one.
 | App: repositories | 39 |
 | App: inference | 27 |
 | App: end-to-end loop | 17 |
+| App: one sentence, several tasks | 21 |
 | App: nudge record and fatigue | 9 |
 | App: first run and permissions | 9 |
 | App: settings store | 8 |
 | App: Now screen | 4 |
 | App: negotiate capability | 22 |
-| App: chat and task list | 18 |
+| App: chat and task list | 19 |
 | App: notification ids | 6 |
 | App: negotiation, service and chat | 19 |
 | App: schema migration | 9 |
@@ -2188,6 +2198,63 @@ before and after.
 **Not observed on the phone.** Off adb all night. This is tested, analysed and
 built, and by this project's own definition (`OVERNIGHT.md` section 3) that is
 not done.
+
+---
+
+## 3ag. One question, and the wrong task on the end of it
+
+Third defect in the same family as 3af, found by following the same thread: a
+plural result read through a singular getter. This is the one that overwrites
+something the owner typed.
+
+`capture` deliberately asks **one** question for the whole sentence — five
+clauses with no durations must not produce five questions. The question belongs
+to the first clause that needed one, and **that is not always the first
+clause**:
+
+> "email the landlord 15 minutes and pay the rent"
+
+The landlord states a duration, so nothing is asked about it. The rent does
+not, so the question is about the rent — and `clarificationAsked` recorded the
+rent's task id correctly from the first commit.
+
+**`CaptureResult` never carried that id.** The screen used `result.task.id`,
+the first task. Answering "90 minutes" therefore replanned the landlord to
+ninety minutes, silently replacing the fifteen the owner had typed, and left
+the rent on its default guess. The log said one thing and the behaviour did
+another.
+
+**Fixed in `4bd104c`:**
+
+- `CaptureResult.clarificationTaskId`, set beside the event that already
+  recorded it, with a test asserting log and result name the same task so they
+  cannot drift apart again.
+- The old behaviour kept as a test rather than a paragraph: one case calls
+  `answerDuration(result.task.id, …)` — exactly what the screen did — and
+  asserts the stated fifteen becoming ninety. A bug that exists only in prose
+  is one nobody can check was fixed.
+- **The question now names its task**, when the sentence made several.
+  `wording.dart` has carried an `about` field since the estimate sheet was
+  written, documented in its own comment as *"named so the question cannot be
+  about the wrong task"*, and the chat bubble ignored it. Under a card listing
+  two tasks a bare "Roughly how long?" is a question about neither. It reads
+  "Pay the rent — Roughly how long?" now, and stays bare for a single task
+  where the title is one line above.
+
+### The pattern, named so it stops recurring
+
+`CaptureResult` was given plural data and kept singular getters — `task`,
+`sessions` — so that every caller written before splitting would compile
+unchanged. That was the right call for shipping WP-14 in one night, and it is
+precisely why three separate places went on reading the first element of a list
+and **looking correct**.
+
+Every one of those getters is a place the UI can be wrong without anything
+failing. Three have been found and fixed tonight. The ones that remain are
+`result.task` in the undo path and `result.sessions` in the nudge count, and
+they are the first place to look if capture misbehaves again.
+
+**Not observed on the phone.** Off adb all night.
 
 ---
 
