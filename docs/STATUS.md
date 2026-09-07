@@ -1,7 +1,7 @@
 # Van — Project Status
 
-**Last updated:** 6 September 2026, 14:25 PDT, after the overnight run and two
-rounds of direct feedback from the owner. This file is the handover
+**Last updated:** 7 September 2026, unattended run in progress. The previous
+day's work is in sections 3w to 3ab; tonight's is 3ac. This file is the handover
 between sessions and between agents; it says what is true now. The narrative
 of how it got that way is in `docs/NIGHT_LOG.md`.
 
@@ -55,7 +55,7 @@ own database with every row intact.
 
 | | |
 |---|---|
-| **Commit the phone is running** | `8b077fa` — "Make Tasks a screen you can finish things on, and the model one you can follow". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
+| **Commit the phone is running** | `82271f6` — "One sentence, several tasks". The newest commit that changes code; anything after it is documentation only and does not alter the APK. |
 | **APK installed at** | **6 Sep 2026, 14:17** (device local, PDT), debug build, phone `<device-serial>` |
 | **Last launched** | **6 Sep 2026, 14:17** — `am start` delivered, process alive, **with the inference engine compiled in and no model file present**: no crash, nothing from MediaPipe in logcat, every deterministic path intact. |
 | **Last seen rendering** | **6 Sep 2026, 11:49, this build.** The microphone button on the Now capture field and on the Chat composer, next to a live stall prompt. At 11:43 the Now card showing `1h (assumed)` against a task you captured without a duration — which is WP-13a's assumption surfacing on real data rather than on a fixture. At 11:29 the estimate sheet open over a raised keyboard with every preset reachable. At 02:18 the month grid drawing real calendar names and colours. |
@@ -66,7 +66,7 @@ own database with every row intact.
 | **Microphone** | **Not granted, deliberately.** `RECORD_AUDIO` is in the manifest and the button is on both composers, but pressing it raises the permission dialog and answering that is your decision, not an agent's — the same call that was made about the calendar. Read-only check: this phone *does* have an on-device recogniser (`com.google.android.tts` registers the `RecognitionService`), so the button should be live rather than disabled once you allow it. |
 | **Schema v4, on the phone** | **Verified, read-only, 10:54.** Pulled the real database: `user_version = 4`, `tasks.depth` and `work_sessions.is_opener` both present, 8 tasks / 25 sessions / 341 events all intact, every pre-existing row reading back as `unknown` and not-an-opener exactly as designed. This is the check section 5d wishes it had had. |
 | **Calendar permission** | **Granted, 6 Sep 2026.** `CalendarPlugin.kt` has run against the real provider. |
-| **Tests** | **856 green (543 app, 313 core)**, `dart analyze --fatal-infos` and `check_layers` clean. `extract_task` still scores **29/29** on the golden set. |
+| **Tests** | **884 green (555 app, 329 core)**, `dart analyze --fatal-infos` and `check_layers` clean. `extract_task` still scores **29/29** on the golden set. |
 
 **Two things still unverified on hardware**, both needing you: a nudge firing
 with START coming back (issue 3), and the two features built this morning
@@ -80,7 +80,7 @@ Android's inexact window. Detail in section 0 below.
 
 ## 0. If you are the owner reading this over coffee
 
-**856 tests, all green, on a phone that runs.** Eight things need you and all
+**884 tests, all green, on a phone that runs.** Eight things need you and all
 of them are small. **Items 6 and 7 are new this morning and take ten seconds
 each** — they are the only way the work done overnight gets seen on the
 device, so do those two even if you skip the rest:
@@ -209,7 +209,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **856 tests passing** — 313 in `packages/van_core` (pure Dart), 543 in the app.
+- **884 tests passing** — 329 in `packages/van_core` (pure Dart), 555 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -272,6 +272,8 @@ working configuration, not a degraded one.
 | App: gathering the evidence from the log | 8 |
 | App: the on-device model page | 15 |
 | App: deleting, timing and the finished list | 11 |
+| Core: splitting one sentence into several | 16 |
+| App: capturing several tasks at once | 10 |
 
 ---
 
@@ -292,7 +294,7 @@ working configuration, not a degraded one.
 | WP-10 | Usage-stats distraction detection | Not started (phase 4) |
 | WP-11 | Device calendar as a commitment source | **Done, granted and proved on the phone** (see 3v) |
 | WP-12 | Speaking to Van — voice capture, spoken nudge answers | **Done, installed, microphone not yet granted** (see 3y) |
-| WP-14 | One sentence, several tasks | Not started (`docs/WP_CAPTURE.md`). **The highest-value item open**: the only known case where Van visibly loses something the user told it, and it needs no model. |
+| WP-14 | One sentence, several tasks | **Done and installed** (section 3ac). Three tasks out of the owner's real sentence where there was one. |
 | WP-13 | Making the model earn its place — asking, depth, evidence, engine | **All four done and installed** (sections 3w, 3z, 3aa). 13d is built as far as a licence allows: engine wired, routing at `none`, no weights. `docs/WP_JUDGEMENT.md` |
 
 ### Commits
@@ -1861,6 +1863,71 @@ nothing.
 Each row has an overflow: time taken, estimate, delete. **A finished task
 cannot be re-estimated**, because replanning something that has stopped would
 put blocks on the calendar for work nobody is going to do.
+
+---
+
+## 3ac. One sentence, several tasks (WP-14)
+
+Built 7 September. The owner typed:
+
+> Go to the shop take a stroll cook lunch and do my remaining works also I
+> need to do taxes
+
+and got **one task with a 25-word title**. The on-device model, asked the same
+sentence, kept four words and threw the rest away. **Neither could do better**:
+`ExtractTask` returns a `TaskDraft` and a `TaskDraft` is one task. The contract
+was the whole bug, and no model was ever going to fix it.
+
+### Where it sits
+
+`SentenceSplitter` is pure, lives in `van_core`, and runs **in front of** the
+parser. Each clause then goes through the same capability, parser and planner
+it always did; nothing downstream knows it exists. **All 545 existing tests
+passed unchanged and the golden set still scores 29/29** — which is the
+evidence that the seam is in the right place.
+
+`CaptureResult` is plural now, with `task` and `sessions` kept as getters over
+the first task and all the blocks. That is why nothing else had to move.
+
+### The rule, and the asymmetry it is built on
+
+**Over-splitting is far worse than under-splitting.** Under-splitting leaves
+today's behaviour, which is visible and known. Over-splitting invents work
+nobody asked for, silently, in a log that never deletes. So a cut needs an
+explicit separator **and** a following clause that stands alone as an
+instruction.
+
+Two rules came out of the tests rather than out of design:
+
+- **"ask" is not a starter.** With it in the list, "call the bank and ask about
+  the mortgage" split in two — the canonical counter-example, broken by my own
+  word list on the first run.
+- **A pronoun near the start points backwards.** "Write the report and send
+  *it* to Priya" is one job; so is "book the flight and pay for *it* later".
+  Only pronouns that are never determiners, because "pay *that* bill" is a new
+  job and "that" was blocking it.
+
+### Three, not five
+
+`WP_CAPTURE.md` asked for five and gets three. "Go to the shop take a stroll
+cook lunch" has no separator in it at all, and finding the boundaries inside it
+means cutting on bare verbs — exactly what broke the mortgage sentence. The
+criterion was written before the rule existed and was wrong. D83 says so
+rather than moving the goalposts.
+
+### The rest of the behaviour
+
+**One sentence, one undo** — `undoCaptureAll` takes the whole capture back,
+because the user made one decision, not five. **One clarifying question**
+however many tasks were made, or the five-clause sentence would ask five times
+— the form `CaptureQuestions` exists to prevent, arriving by another route.
+**Each task records the sentence it came from** when there was a split, so a
+bad one can be found later; absent when nothing was split, because then it is
+only the title again.
+
+**Not yet driven on the device.** The standing brief says never to write to the
+owner's real tasks, and confirming this needs a capture. It is covered by 26
+tests, ten of them at the service level against the real sentence.
 
 ---
 

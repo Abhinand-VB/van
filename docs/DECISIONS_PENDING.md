@@ -672,6 +672,49 @@ not.
 
 ---
 
+### D83 — Splitting a sentence: three tasks, not five, and why that is the answer
+
+Your sentence made **three** tasks, not the five `WP_CAPTURE.md` set as its
+acceptance criterion. I wrote that criterion before the rule existed and it was
+wrong; saying so is better than moving the goalposts quietly.
+
+**"Go to the shop take a stroll cook lunch" contains no separator at all.**
+Getting five would mean cutting on bare verbs with nothing marking a boundary,
+and the moment you do that, "call the bank **and ask** about the mortgage"
+becomes two tasks. That is not a hypothetical - it happened, in the first run
+of the tests, because I had put "ask" in the starter list myself. Three beats
+one; five is not worth inventing work you never asked for, silently, in a log
+that never deletes.
+
+**The asymmetry is the whole design.** Under-splitting leaves today's
+behaviour, which is visible and known. Over-splitting is invisible and
+permanent. So a cut needs both an explicit separator *and* a following clause
+that stands alone as an instruction.
+
+**Two rules that came out of the tests rather than out of my head:**
+
+- **"ask" is not a starter.** It reads as an instruction in isolation and is
+  almost always a continuation in practice.
+- **A pronoun near the start points backwards.** "Write the report and send
+  **it** to Priya" is one job. "Book the flight and pay for **it** later" is
+  one job. Only pronouns that are never determiners are used - "that" and
+  "this" were in the list and had to come out, because "pay **that** bill" is
+  a new job and they were blocking it.
+
+**What it does not handle, deliberately.** A deadline in the last clause
+belongs to the last task only: "email the landlord and pay the rent by friday"
+gives one task with no deadline and one due Friday. That is what the parser
+does reading each clause on its own, it is probably what you meant, and there
+is a test asserting it so that changing it is a decision rather than a
+surprise.
+
+**Item 2 of tonight's queue was skipped on its own instructions.** Making
+`actualMinutes` change behaviour needs samples, and the phone has **one**
+recorded actual across four tasks. Tuning against that would be inventing a
+pattern. Ask again after a week of use.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner
