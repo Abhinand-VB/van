@@ -28,6 +28,14 @@ written would have timed out every case at 20 seconds against a model that
 takes 165, and reported a confident **0%** after ten minutes of your evening.
 Found and fixed before it ever ran — section 3ad, D86.
 
+**3. A real defect in the splitting you are using right now, found and half
+fixed.** "Go to the shop and get bread" was becoming two tasks. So were "ring
+the surgery and get an appointment" and two more like them. I claimed in D83
+that the rule was conservative; fifty test sentences say it was not, because
+almost every English second clause opens with a verb and therefore passed the
+"stands alone" test. Four cases fixed, **eight still wrong and written down by
+name** in `splitter_survey_test.dart`. Section 3ae, D87.
+
 **This run did the whole of the `OVERNIGHT.md` 3c queue** — month cells that
 name what is on them, `WP_JUDGEMENT` 13a (Van asks how long), 13b (depth and
 the short opening block), `WP_VOICE.md` in full, 13c (reschedule judgement on
@@ -232,7 +240,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **906 tests passing** — 329 in `packages/van_core` (pure Dart), 577 in the app.
+- **958 tests passing** — 381 in `packages/van_core` (pure Dart), 577 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -246,6 +254,7 @@ working configuration, not a degraded one.
 | Core: nudge engine, policy, scoring, suppression | 47 |
 | Core: simulation scenarios | 20 |
 | Core: temporal parser | 40 (approx, in `temporal_parser_test.dart`) |
+| Core: splitter survey (50 real sentences, 8 known failures) | 52 |
 | App: repositories | 39 |
 | App: inference | 27 |
 | App: end-to-end loop | 17 |
@@ -2075,6 +2084,62 @@ so it names the case in flight and counts the seconds. The count comes from
 the timer'''s own beats rather than a `Stopwatch`: a stopwatch reads real time,
 which no widget test advances, so the display it produced could never be
 tested.
+
+---
+
+## 3ae. Fifty sentences, and the claim they broke
+
+**D83 said the splitter avoids over-splitting because it cuts only where there
+is a separator *and* what follows can stand on its own as an instruction.** That
+sounds like a strong test. It is not: nearly every English second clause opens
+with a verb, so it stands alone grammatically whether or not it is a separate
+job. The rule was cutting sentences a person would read as one errand — and
+over-splitting is the exact failure D83 named as the one worth avoiding.
+
+Fifty plausible sentences were run through the shipped splitter. Eight came
+back wrong, all the same shape: a second clause that is a *step* of the first.
+
+**Fixed (`get` and `go` removed from the starter list):**
+
+- `go to the shop and get bread`
+- `ring the surgery and get an appointment`
+- `wake up early and get the train`
+- `get the tickets and go to the show`
+
+Verbs of obtaining and travelling name a step of an errand already given, and
+**nothing in the survey needed either word to split correctly** — so this costs
+nothing that was measured.
+
+**Still wrong, and not fixable with a word list:**
+
+- `call the plumber and fix the date`
+- `open the laptop and start the report`
+- `log in and do the survey`
+- `drive to the tip and drop off the old chairs`
+- `sort the photos and make an album`
+- `take the bins out and put the recycling in the blue bin`
+- `unpack the boxes and put the books away`
+- `find a recipe and cook something new`
+
+`make an album` is wrong where `make dinner` is right. `do the survey` is wrong
+where `do the dishes` is right. `start the report` is wrong where `start the
+report by friday` is right. The verb is identical and the difference is what
+the person meant — a semantic judgement, which is what a model would be for,
+and the model takes two and three quarter minutes (3ad).
+
+**The eight are asserted backwards in `splitter_survey_test.dart`**: each is
+pinned as *being* cut. If a future change makes one right, that test fails and
+somebody moves it into the correct list. A list of known failures nobody can
+see is a list nobody fixes.
+
+The founding sentence still produces three tasks; every correct split in the
+survey survived. D87 has the argument, including why narrowing the list further
+would put the owner's own sentence back to one task.
+
+**Not done: the product answer.** When a split does go wrong the right fix is a
+one-tap "that was one task, not two" — `undoCaptureAll` already exists
+underneath it. That is a UI change, and done here means observed on the phone,
+which was off adb all night.
 
 ---
 

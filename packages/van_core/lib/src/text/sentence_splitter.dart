@@ -45,6 +45,16 @@ class SentenceSplitter {
   /// what makes them safe. On their own they are far too common to cut on -
   /// "take" appears in the middle of half of all sentences - but "… and take
   /// the bins out" is a second job by any reading.
+  ///
+  /// **"get" and "go" were here and had to come out**, on the evidence in
+  /// `splitter_survey_test.dart`. They are verbs of *obtaining* and *travelling*
+  /// rather than of doing, and in a second clause they almost always name a
+  /// step of the errand already given: "go to the shop and get bread", "ring
+  /// the surgery and get an appointment", "wake up early and get the train",
+  /// "get the tickets and go to the show". Every one of those was cut in two
+  /// and none of them is two jobs. Nothing in the survey needed either word to
+  /// split correctly, so this costs nothing that was measured and fixes four
+  /// things that were. See `DECISIONS_PENDING.md` D87.
   static const _commonStarters = <String>{
     'archive',
     'bring',
@@ -54,8 +64,6 @@ class SentenceSplitter {
     'drop',
     'finish',
     'fix',
-    'get',
-    'go',
     'hand',
     'make',
     'pack',

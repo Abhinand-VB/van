@@ -904,6 +904,75 @@ timeout, so the contradiction cannot come back silently.
 
 ---
 
+
+### D87 — D83 was too confident, and fifty sentences say so
+
+**Correcting my own claim from two nights ago.** D83 said the splitter avoids
+over-splitting because it cuts only where there is a separator *and* what
+follows "can stand on its own as an instruction". That reads like a strong
+test. It is not. **Nearly every English second clause opens with a verb**, so
+it stands alone grammatically whether or not it is a separate job — and the
+rule was cutting sentences that any person would read as one errand.
+
+**Measured rather than argued.** Fifty sentences a person would plausibly type
+were run through the shipped splitter. Before this change:
+
+| Sentence | Split into | Right? |
+|---|---|---|
+| `go to the shop and get bread` | 2 | **no** |
+| `ring the surgery and get an appointment` | 2 | **no** |
+| `wake up early and get the train` | 2 | **no** |
+| `get the tickets and go to the show` | 2 | **no** |
+| `call the plumber and fix the date` | 2 | **no** |
+| `open the laptop and start the report` | 2 | **no** |
+| `log in and do the survey` | 2 | **no** |
+| `drive to the tip and drop off the old chairs` | 2 | **no** |
+| `cook dinner and do the dishes` | 2 | yes |
+| `pay the rent and cancel the gym` | 2 | yes |
+| `write up the notes and send them round` | 1 | yes |
+| `call the school tomorrow and ask about the trip` | 1 | yes |
+
+That is a real defect in code the owner is using on the phone right now, and
+it is the exact failure D83 named as the one worth avoiding.
+
+**The decision: remove `get` and `go` from the starter list, and nothing
+else.**
+
+The eight wrong cases split into two families. The first is verbs of
+*obtaining* and *travelling* — in a second clause they almost always name a
+step of the errand already given, and **nothing in the survey needed either
+word to split correctly**. Removing them fixes four cases and costs nothing
+that was measured.
+
+The second family cannot be fixed with a word list, and pretending otherwise
+would be worse than leaving it. `make an album` is wrong where `make dinner`
+is right; `do the survey` is wrong where `do the dishes` is right; `start the
+report` is wrong where `start the report by friday` is right. The verb is
+identical. The difference is what the person meant, which is a semantic
+judgement — the kind of thing a model would be for, and the model takes two
+and three quarter minutes (D84).
+
+**Why not narrow further and accept the under-splits.** Because under-splitting
+is not free either: it is the bug WP-14 existed to fix, and stripping the list
+back far enough to catch `fix the date` would put the owner's own sentence back
+to one task. `finish the slides and practise the talk` already comes back whole
+because "practise" is in no list, and that is the accepted direction to fail
+in — but it is a cost, not a win.
+
+**The eight remaining failures are written down as tests, asserted backwards.**
+`splitter_survey_test.dart` names each one and asserts it *is* cut. If a future
+change makes one right, that test fails, and somebody moves the line into the
+correct list. A list of known failures that nobody can see is a list nobody
+fixes; this one cannot be ignored without the suite going red.
+
+**What I did not do.** The product answer to a split that goes wrong is a
+one-tap way to say "that was one task, not two" — `undoCaptureAll` already
+exists underneath it. That is a UI change, and "done" on this project means
+observed working on the phone, which has been off adb all night. Left for the
+next session with the phone in hand.
+
+---
+
 ---
 
 ---

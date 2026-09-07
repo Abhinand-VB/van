@@ -261,6 +261,13 @@ speed, and `STATUS.md` is where you say which it was.
   (`AGENTS.md`). Formatting at 79 reflowed nine files nobody had touched and
   buried the real change. Restoring them needed `git show HEAD:path > path`,
   because `git checkout --` is blocked here.
+- **Do not claim a heuristic is conservative without running sentences
+  through it.** D83 said the splitter cut only where the second clause could
+  stand alone, and called that conservative. Fifty sentences later: nearly
+  every English second clause opens with a verb, so the test barely filtered
+  anything, and "go to the shop and get bread" was two tasks on the owner'''s
+  phone. The survey took ten minutes and should have been part of the original
+  work package. See D87.
 - **Do not do real file I/O inside `pumpAndSettle`.** It deadlocks the test
   binding and burns the full ten-minute timeout looking like an infinite
   animation. If a screen needs storage, put an interface in front of it - see
