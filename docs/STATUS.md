@@ -2056,7 +2056,7 @@ produced by a harness that never let the model speak. `ModelProbe` missed it
 because it calls the channel directly and never touches the backend, which is
 why 165 s was measurable at all.
 
-Fixed in `4a7f0e1`. `GemmaBackend` takes an optional `timeout`; null —
+Fixed in `59fdb7c`. `GemmaBackend` takes an optional `timeout`; null —
 production — respects the request, because 20 seconds is *right* for a capture
 and is a fact about the person waiting rather than about the model.
 `onDeviceRunner` passes `measurementTimeout`, five minutes, chosen against the
