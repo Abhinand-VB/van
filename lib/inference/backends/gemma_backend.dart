@@ -11,16 +11,22 @@ import 'package:van/platform/local_llm.dart';
 /// `assets/inference_config.json`, which `tool/check_layers.dart` enforces by
 /// failing the build if a provider name appears in `core/` or `ui/`.
 ///
-/// **Nothing has been measured.** No model has been downloaded and no
-/// benchmark has been run, so [capabilities] carries the vendor's shape of the
-/// model rather than observed numbers, and `typicalLatencyMs` in particular is
-/// a placeholder. Replace it with something measured before trusting any
-/// decision that reads it, and see the WP-6 gate in STATUS section 6: run the
-/// golden set, record the real pass rate, and do not route a capability here
-/// below 80%.
+/// **Latency is measured; accuracy is not.** One capture takes about two and
+/// three quarter minutes on the owner's phone, which [capabilities] now says
+/// rather than guesses. That is more than eight times the 20 s an `LlmRequest`
+/// waits by default, so every interactive capability routed here would time
+/// out and fall back - see `STATUS.md` 3ad and D86. How *good* the answers are
+/// is what `GoldenRunScreen` exists to find out; the WP-6 gate in STATUS
+/// section 6 still stands, and nothing may be routed here below 80%.
 class GemmaBackend implements LlmBackend {
   /// Creates a backend over [_llm].
-  GemmaBackend(this._llm, {BackendCapabilities? capabilities})
+  ///
+  /// [timeout] overrides how long each request may take. Null - the
+  /// production value - respects whatever the capability asked for, which is
+  /// right: how long to wait is a fact about the person waiting, not about the
+  /// model. Only the measurement harness sets it, and `DECISIONS_PENDING.md`
+  /// D86 says why that is not the same as being impatient in production.
+  GemmaBackend(this._llm, {BackendCapabilities? capabilities, this.timeout})
     : _declared = capabilities ?? _defaults;
 
   static const _defaults = BackendCapabilities(
@@ -35,14 +41,29 @@ class GemmaBackend implements LlmBackend {
     supportsStreaming: false,
     contextWindowTokens: 4096,
     isLocal: true,
-    // A guess, and labelled as one. E2B int4 on a flagship is plausibly a few
-    // hundred milliseconds to first token plus generation; that is reading,
-    // not measuring.
-    typicalLatencyMs: 1200,
+    // **Measured, 6-7 Sep 2026, on a Snapdragon 8 Elite.** One `extract_task`
+    // capture took 164,990 ms cold and 183,643 ms warm; cutting the output
+    // budget by a third moved it by nine seconds, so roughly 155 s of it is
+    // fixed cost before a token is decoded. The GPU and NPU builds of these
+    // weights cannot be loaded by this runtime at all - `STATUS.md` 3ad.
+    //
+    // It is recorded here because the number has to live where a decision
+    // would read it: this is more than eight times the 20 s a request asks
+    // for by default, which means routing an interactive capability here
+    // times out every single time. D84 and D86.
+    typicalLatencyMs: 165000,
   );
 
   final LocalLlm _llm;
   final BackendCapabilities _declared;
+
+  /// How long a request may take, when the caller's own limit is not wanted.
+  ///
+  /// Null means the request decides.
+  final Duration? timeout;
+
+  /// The limit actually applied to [request].
+  Duration _patienceFor(LlmRequest request) => timeout ?? request.timeout;
 
   @override
   String get id => 'gemma_e2b';
@@ -63,7 +84,7 @@ class GemmaBackend implements LlmBackend {
             maxOutputTokens: request.maxOutputTokens,
             temperature: request.temperature,
           )
-          .timeout(request.timeout);
+          .timeout(_patienceFor(request));
 
       // An empty answer is a failure, not an empty success. Returning LlmOk('')
       // here would send the capability's parser something it must reject, and
@@ -83,7 +104,7 @@ class GemmaBackend implements LlmBackend {
       unawaited(_llm.cancel().catchError((Object _, StackTrace _) {}));
       return LlmFailure(
         LlmFailureKind.timeout,
-        'no answer within ${request.timeout.inMilliseconds}ms',
+        'no answer within ${_patienceFor(request).inMilliseconds}ms',
       );
     } on LocalLlmException catch (e) {
       return LlmFailure(_kindFrom(e), e.message);

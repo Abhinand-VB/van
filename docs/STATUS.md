@@ -23,6 +23,11 @@ running the set is the first job next session, and it takes about eighty
 minutes of the phone sitting still. Nothing is routed to the model and nothing
 may be until that number exists.
 
+As it turns out the phone leaving did me a favour. The harness as first
+written would have timed out every case at 20 seconds against a model that
+takes 165, and reported a confident **0%** after ten minutes of your evening.
+Found and fixed before it ever ran — section 3ad, D86.
+
 **This run did the whole of the `OVERNIGHT.md` 3c queue** — month cells that
 name what is on them, `WP_JUDGEMENT` 13a (Van asks how long), 13b (depth and
 the short opening block), `WP_VOICE.md` in full, 13c (reschedule judgement on
@@ -227,7 +232,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **898 tests passing** — 329 in `packages/van_core` (pure Dart), 569 in the app.
+- **904 tests passing** — 329 in `packages/van_core` (pure Dart), 575 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -259,6 +264,7 @@ working configuration, not a degraded one.
 | App: golden set and runner | 9 |
 | App: golden run on the phone (store, honest scoring) | 8 |
 | App: golden run screen | 6 |
+| App: measurement timeout and declared latency | 6 |
 | App: inference config | 13 |
 | App: prompt assets | 9 |
 | App: negotiation guards (review) | 5 |
@@ -2036,6 +2042,33 @@ phone was disconnected before the APK could be installed. That is the first
 thing to do next session, and nothing may be routed until the number exists.
 D85 has the reasoning.
 
+### The run would have reported nothing, and the phone being gone is why it did not
+
+Found on the next iteration, by re-reading the change against a number already
+in this file. Every request carries `LlmRequest.timeout`, which defaults to
+**20 seconds**; no capability overrides it, and `GemmaBackend` applied it. The
+model takes **164,990 ms**.
+
+So the run would have timed out all 29 cases, fallen back to the parser on
+every one, finished in ten minutes rather than eighty, and reported **0%,
+below the gate** — a number indistinguishable from a genuinely useless model,
+produced by a harness that never let the model speak. `ModelProbe` missed it
+because it calls the channel directly and never touches the backend, which is
+why 165 s was measurable at all.
+
+Fixed in `4a7f0e1`. `GemmaBackend` takes an optional `timeout`; null —
+production — respects the request, because 20 seconds is *right* for a capture
+and is a fact about the person waiting rather than about the model.
+`onDeviceRunner` passes `measurementTimeout`, five minutes, chosen against the
+two latencies actually observed. The screen says so above the button. **D86**
+has the argument for why widening it during an accuracy measurement is not the
+same as being patient in production.
+
+**And `typicalLatencyMs` was 1200** — a guess, labelled as one since August,
+sitting in the field any routing decision reads and telling it the model
+answers in about a second. It is now `165000`, and a test asserts it exceeds
+the default request timeout so the contradiction cannot return quietly.
+
 ---
 
 ## 4. Open issues
@@ -2386,9 +2419,15 @@ What is left needs you, or needs evidence from real use.
    there is no rotation to spot and no immediate repeat. If it still feels
    samey after a week, that is about the *writing* rather than the variety,
    and a model is a plausible answer; if it does not, this argument is spent.
-   Note issue 14: the golden harness cannot reach
-   `GemmaBackend`, so the gate cannot be evaluated until there is a way to run
-   the set on the phone.
+
+   **Two things have changed since this was written, and both point the same
+   way.** The model is measured: about two and three quarter minutes a query,
+   with the GPU and NPU builds unloadable by this runtime (section 3ad). And
+   issue 14's harness exists — `GoldenRunScreen` — so the gate is finally
+   readable, though the number has not been taken. If nudge wording does go
+   stale, the honest options are a cloud backend or better templates, because
+   a local model that takes minutes can only serve capabilities nobody is
+   waiting on.
 
 ---
 

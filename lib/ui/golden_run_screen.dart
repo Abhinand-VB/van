@@ -185,7 +185,13 @@ class _GoldenRunScreenState extends State<GoldenRunScreen> {
             'minutes a case, so roughly '
             '${(total * 2.75).round()} minutes for the set. It saves after '
             'every case, so closing Van loses nothing. Nothing is captured '
-            'and no routing changes.',
+            'and no routing changes.\n\n'
+            'Each case is allowed '
+            '${measurementTimeout.inMinutes} minutes rather than the 20 '
+            'seconds a capture waits, because at 20 seconds every case would '
+            'time out and the answer would be an unearned zero. This measures '
+            'whether the model is right, not whether it is quick — it is not '
+            'quick, and the times below say by how much.',
             style: theme.textTheme.bodySmall?.copyWith(
               color: theme.colorScheme.onSurfaceVariant,
             ),

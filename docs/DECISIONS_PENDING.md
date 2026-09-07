@@ -852,6 +852,58 @@ has not happened. Nothing is routed and nothing may be until it has.
 
 ---
 
+
+### D86 — The harness I built last iteration would have measured nothing, and the number that says so was already in the file
+
+**Found by re-reading my own change against a number I had already
+recorded.** `GoldenRunScreen` (D85) routes each golden case through
+`InferenceRouter` → `GemmaBackend` → the channel. `LlmRequest.timeout` defaults
+to **20 seconds**, no capability overrides it, and `GemmaBackend` applied it.
+The model takes **164,990 ms**.
+
+So the eighty-minute run I described as the answer to `STATUS.md` 3e would
+have: timed out all 29 cases at 20 seconds, fallen back to the parser on every
+one, finished in about ten minutes rather than eighty, and reported **0% —
+below the gate**. That number is not wrong in a way anyone would have caught
+from the screen: it is exactly what a genuinely useless model looks like. The
+owner would have spent the phone's evening producing it.
+
+`ModelProbe` did not catch this because it calls `LocalLlm.generate` directly
+and never touches the backend, which is why 165 s was measurable at all.
+
+**The decision: the timeout is the backend's to override, and only the
+measurement harness overrides it.**
+
+- `GemmaBackend` takes an optional `timeout`. Null — production — respects
+  whatever the request asked for.
+- `onDeviceRunner` passes `measurementTimeout`, **five minutes**, chosen
+  against the two numbers actually observed (164,990 ms cold, 183,643 ms warm)
+  with headroom rather than against a round figure.
+- The screen says so, in the text above the button, in the same breath as the
+  time estimate.
+
+**Why not simply raise the default.** Twenty seconds is *correct* for
+`extract_task`. It is how long a person will wait after typing a sentence,
+which is a fact about the person and not about the model; a capture that hangs
+for three minutes is broken however good the answer. Raising it would make
+every capability quietly patient to keep one measurement honest.
+
+**Why widening it here is not cheating.** The run asks whether the answers are
+any good. Speed is a separate question, already answered, recorded per case in
+the same report, and the reason `extract_task` is not routed to the model at
+all (D82, D84). A timeout in the middle of a measurement of accuracy does not
+measure speed; it just destroys the accuracy number. Both facts end up in front
+of the owner either way.
+
+**One thing corrected while here.** `GemmaBackend.capabilities.typicalLatencyMs`
+was **1200** — a guess, labelled as one since August. It is now **165000**,
+measured. That matters beyond tidiness: it is the field any future routing
+decision reads, and it was telling that decision the model answers in about a
+second. The test asserts the declared latency exceeds the default request
+timeout, so the contradiction cannot come back silently.
+
+---
+
 ---
 
 ---
