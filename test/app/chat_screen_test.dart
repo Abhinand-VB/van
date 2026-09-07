@@ -153,6 +153,56 @@ void main() {
     await tester.pumpAndSettle();
   }
 
+  group('a sentence that made several tasks', () {
+    /// Two jobs, and the second one must not vanish.
+    const two = 'pay the electricity bill and book the dentist';
+
+    testWidgets('the card names every task it made, not just the first', (
+      tester,
+    ) async {
+      await showChat(tester);
+      await send(tester, two);
+
+      // The bug this was written for: the card rendered `result.task`, which
+      // is the *first* task, above `result.sessions`, which is every block
+      // across all of them. The second task was created, planned and given a
+      // nudge ladder, and the screen never mentioned it.
+      expect(find.text('Pay the electricity bill'), findsOneWidget);
+      expect(find.text('Book the dentist'), findsOneWidget);
+    });
+
+    testWidgets('it says how many, so the split is visible', (tester) async {
+      await showChat(tester);
+      await send(tester, two);
+
+      expect(find.textContaining('2 tasks'), findsOneWidget);
+    });
+
+    testWidgets('undo offers to take back all of them', (tester) async {
+      await showChat(tester);
+      await send(tester, two);
+
+      // `undoCaptureAll` already removed every task; the label said "Undo",
+      // which reads as undoing the one task on show.
+      expect(find.text('Undo both'), findsOneWidget);
+
+      await tester.tap(find.text('Undo both'));
+      await tester.pumpAndSettle();
+
+      expect(await service.openTasks(), isEmpty);
+    });
+
+    testWidgets('one job still reads exactly as it did', (tester) async {
+      await showChat(tester);
+      await send(tester, 'write the report 45 minutes');
+
+      expect(find.text('Write the report'), findsOneWidget);
+      expect(find.text('Undo'), findsOneWidget);
+      // No count, because there is nothing to count.
+      expect(find.textContaining('tasks'), findsNothing);
+    });
+  });
+
   group('the chat screen', () {
     testWidgets('starts empty and says what it is for', (tester) async {
       await showChat(tester);

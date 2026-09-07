@@ -973,6 +973,59 @@ next session with the phone in hand.
 
 ---
 
+
+### D88 — The split was invisible, which is worse than the split being wrong
+
+**Found by asking whether the owner can even see what D87 was about.** Having
+spent an iteration measuring how often the splitter cuts a sentence in the
+wrong place, the obvious next question was what the screen does when it cuts
+one at all. The answer: nothing.
+
+`_PlanBubble` rendered `result.task` — a getter that returns the **first**
+captured task — as the card's title, and beneath it `result.sessions`, which
+is every block **across all** the tasks. So "pay the electricity bill and book
+the dentist" produced a card reading *"Pay the electricity bill"* with both
+tasks' blocks listed under it. The dentist task existed in the database, was
+planned, and had a nudge ladder armed. The screen never mentioned it.
+
+That is worse than an over-split. An over-split makes a task the owner can see
+and delete; this made one they could not see at all, and the first they would
+know of it is a notification, or the Tasks tab, wondering where the extra work
+came from.
+
+**`CaptureResult.isMany` was written for exactly this and nothing ever read
+it.** It was added when splitting shipped (D83), asserted in the service tests,
+and used in no UI file. A flag with no reader is a decision that was designed
+and then not made.
+
+**The decision: the card is plural.**
+
+- A count at the top — "2 tasks" — before any of them, said while the undo is
+  still on screen rather than discovered later.
+- One title, deadline, block list and shortfall **per task**. Blocks are no
+  longer pooled: five blocks belonging to two tasks were being listed as five
+  blocks belonging to the first.
+- The undo button says what it does. `undoCaptureAll` always removed every
+  task the sentence made, while the label said "Undo" — which reads as undoing
+  the one task on show. It now says "Undo both", "Undo all three", and so on.
+  The button was doing more than it admitted to.
+
+**The single-task card is unchanged**, deliberately and with a test that says
+so: one title, one block list, "Undo", and no count. That is the common case
+and it was not broken.
+
+**Reproduced before fixing.** Three of the four new tests fail against the
+previous code — the second title is absent, the count is absent, the label is
+wrong. The fourth, asserting the single-task card, passed before and after.
+
+**This also answers what D87 left open.** The product answer to a split that
+goes wrong is a way to take it back, and the honest version of that turned out
+not to be a merge gesture but simply *showing what happened* — the undo that
+takes back the whole sentence already existed. Not verified on the phone,
+which has been off adb all night.
+
+---
+
 ---
 
 ---

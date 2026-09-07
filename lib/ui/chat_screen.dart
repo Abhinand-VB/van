@@ -653,6 +653,14 @@ class _UserBubble extends StatelessWidget {
 }
 
 /// The approval card: what Van heard, and what it has scheduled.
+///
+/// **Plural, because a sentence can be.** This rendered `result.task` — the
+/// *first* task — above `result.sessions`, which is every block across all of
+/// them. So a sentence that produced two tasks showed one title with both
+/// sets of blocks under it: the second task was created, planned and given a
+/// nudge ladder, and the screen never mentioned it existed. `CaptureResult`
+/// grew `isMany` when splitting shipped and nothing ever read it. See
+/// `DECISIONS_PENDING.md` D88.
 class _PlanBubble extends StatelessWidget {
   const _PlanBubble({
     required this.result,
@@ -669,7 +677,6 @@ class _PlanBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final task = result.task;
 
     return Align(
       alignment: Alignment.centerLeft,
@@ -684,69 +691,39 @@ class _PlanBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              task.title,
-              style: theme.textTheme.titleMedium?.copyWith(
-                decoration: undone ? TextDecoration.lineThrough : null,
-              ),
-            ),
-            if (task.deadline != null) ...[
-              const SizedBox(height: 4),
+            // Said once, at the top, before any of them. Somebody who typed
+            // one sentence and got three tasks needs to know that happened
+            // while the undo is still in front of them - not later, from the
+            // Tasks tab, wondering where the extra work came from.
+            if (result.isMany) ...[
               Text(
-                'due ${_when(task.deadline!.toLocal())}',
-                style: theme.textTheme.bodySmall,
+                '${result.captured.length} tasks',
+                style: theme.textTheme.labelMedium?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
               ),
+              const SizedBox(height: 10),
             ],
-            const SizedBox(height: 12),
+
+            for (final (index, one) in result.captured.indexed) ...[
+              if (index > 0) const SizedBox(height: 16),
+              ..._linesFor(theme, one),
+            ],
 
             if (undone)
               Text('Removed.', style: theme.textTheme.bodySmall)
-            else if (result.sessions.isEmpty)
-              Text(
-                'Nowhere to put this in the next week.',
-                style: theme.textTheme.bodySmall,
-              )
             else ...[
-              for (final session in result.sessions.take(5))
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.schedule, size: 14),
-                      const SizedBox(width: 8),
-                      Text(
-                        '${_when(session.plannedStart.toLocal())} · '
-                        '${session.plannedMinutes} min',
-                        style: theme.textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-              if (result.sessions.length > 5)
-                Text(
-                  '+${result.sessions.length - 5} more',
-                  style: theme.textTheme.bodySmall,
-                ),
-              if (result.isPartial) ...[
-                const SizedBox(height: 6),
-                Text(
-                  '${result.shortfallMinutes} min would not fit before the '
-                  'deadline.',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: theme.colorScheme.error,
-                  ),
-                ),
-              ],
-            ],
-
-            if (!undone) ...[
               const SizedBox(height: 8),
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton.icon(
                   onPressed: onUndo,
                   icon: const Icon(Icons.undo, size: 16),
-                  label: const Text('Undo'),
+                  // `undoCaptureAll` always took back every task the sentence
+                  // made. The label said "Undo", which reads as undoing the
+                  // one task on show, so the button was doing more than it
+                  // admitted to.
+                  label: Text(_undoLabel(result.captured.length)),
                 ),
               ),
             ],
@@ -755,6 +732,80 @@ class _PlanBubble extends StatelessWidget {
       ),
     );
   }
+
+  /// What one captured task contributes to the card.
+  List<Widget> _linesFor(ThemeData theme, CapturedTask one) {
+    final task = one.task;
+    return [
+      Text(
+        task.title,
+        style: theme.textTheme.titleMedium?.copyWith(
+          decoration: undone ? TextDecoration.lineThrough : null,
+        ),
+      ),
+      if (task.deadline != null) ...[
+        const SizedBox(height: 4),
+        Text(
+          'due ${_when(task.deadline!.toLocal())}',
+          style: theme.textTheme.bodySmall,
+        ),
+      ],
+      if (!undone) ...[
+        const SizedBox(height: 12),
+        if (one.sessions.isEmpty)
+          Text(
+            'Nowhere to put this in the next week.',
+            style: theme.textTheme.bodySmall,
+          )
+        else ...[
+          // Per task, not pooled. Five blocks belonging to two tasks used to
+          // be listed as five blocks belonging to the first one.
+          for (final session in one.sessions.take(5))
+            Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: Row(
+                children: [
+                  const Icon(Icons.schedule, size: 14),
+                  const SizedBox(width: 8),
+                  Text(
+                    '${_when(session.plannedStart.toLocal())} · '
+                    '${session.plannedMinutes} min',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+          if (one.sessions.length > 5)
+            Text(
+              '+${one.sessions.length - 5} more',
+              style: theme.textTheme.bodySmall,
+            ),
+          if (one.shortfallMinutes > 0) ...[
+            const SizedBox(height: 6),
+            Text(
+              '${one.shortfallMinutes} min would not fit before the deadline.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
+          ],
+        ],
+      ],
+    ];
+  }
+
+  /// "Undo", "Undo both", or "Undo all four".
+  ///
+  /// Spelt rather than numbered because it is a button, and "Undo all 4" reads
+  /// like a form field.
+  static String _undoLabel(int count) => switch (count) {
+    <= 1 => 'Undo',
+    2 => 'Undo both',
+    3 => 'Undo all three',
+    4 => 'Undo all four',
+    5 => 'Undo all five',
+    _ => 'Undo all $count',
+  };
 
   /// Day and time, or just time when it is today.
   String _when(DateTime local) {
