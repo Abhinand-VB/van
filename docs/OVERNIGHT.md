@@ -156,12 +156,26 @@ Latent bugs are worth fixing. They are worth fixing *fourth*.
 
 ## 3c. Tonight's queue
 
+**Amended 7 Sep 2026, 06:00, at the end of the run that used it.** Items 1, 2
+and 4 are closed; item 3 is built but unrun; item 5 is still gated. Read the
+status line under each before starting anything.
+
 Written 7 Sep 2026, after a day of the owner using the app and reporting what
 was wrong with it. The previous queue is done and is described in `STATUS.md`
 sections 3w to 3ab. **Read the work-package document before starting each
 item** - the decisions in them are the point, the plumbing is the easy half.
 
-1. **`docs/WP_CAPTURE.md` - one sentence, several tasks.** Do this first and
+**Start here.** The one job carried over is small and blocking: the phone came
+off adb before `4d207a4` could be installed, so **the phone is on the previous
+build**. Install it, then run the golden set (item 3) - Settings, On-device
+model, Try the model, Run the golden set. It takes about eighty minutes with
+the phone still, it saves after every case, and it can be continued if the
+screen locks. Item 5 cannot be touched before that number exists.
+
+1. **[DONE - `82271f6`, `8e972f3`]** **`docs/WP_CAPTURE.md` - one sentence,
+   several tasks.** Three tasks out of the owner's sentence where there was
+   one; `SentenceSplitter` cuts only where there is a separator *and* what
+   follows stands alone. D83 says why three and not five. Do this first and
    do it properly; it is the only known case where Van visibly loses something
    the user told it. The owner typed a sentence containing five jobs and got
    one task with a 25-word title. **Needs no model** - `ExtractTask` returns a
@@ -169,7 +183,10 @@ item** - the decisions in them are the point, the plumbing is the easy half.
    problem. Section 2.2 is the one to get right: over-splitting invents work
    nobody asked for, which is worse than today's behaviour.
 
-2. **Make `actualMinutes` do something.** Section 3ab shipped the field, the
+2. **[SKIPPED, on this item's own instruction]** **Make `actualMinutes` do
+   something.** The phone had **one** recorded actual across four tasks, and
+   the rule below says to skip below five rather than tune against noise. Ask
+   again after a week of use. Section 3ab shipped the field, the
    editor and the Finished list; **nothing reads it.** A person who
    consistently takes twice their estimate should stop being offered their own
    estimate. Deterministic, needs a handful of samples to be worth trusting,
@@ -177,13 +194,28 @@ item** - the decisions in them are the point, the plumbing is the easy half.
    does. Check the phone's log first - if there are fewer than five recorded
    actuals, say so in STATUS and skip it rather than tuning against noise.
 
-3. **The golden set on the phone (issue 14).** `ModelProbe` runs one sentence;
+3. **[BUILT, NOT RUN - `4d207a4`. This is the job.]** **The golden set on the
+   phone (issue 14).** `GoldenRunScreen` exists: all 29 cases, resumable,
+   saving after each one, and it counts only what the *model* answered rather
+   than what the parser rescued - D85 has that trap and the test for it. It
+   was never installed, because the phone left adb. **Install and run it.**
+   Note the estimate below is unchanged: item 4 found no speed-up, so it is
+   still about eighty minutes. `ModelProbe` runs one sentence;
    the gate in `STATUS.md` 3e wants all 29 cases and a pass rate. Extend the
    probe to run the set and report the number. **At two and a half minutes a
    query this is a 70-minute run**, so make it resumable and make it report
    progress, or do item 4 first and re-measure.
 
-4. **The GPU build - the last lever on latency.** D82 has the measurements:
+4. **[DONE, and the answer is no - D84]** **The GPU build - the last lever on
+   latency.** All three published builds were run on the phone. The CPU one
+   answers in ~165 s. `gemma-4-E2B-it-gpu.litertlm` declares a
+   `tf_lite_artisan_text_decoder` section this runtime does not read and fails
+   in **217 ms**; `gemma-4-E2B-it_qualcomm_sm8750.litertlm` has the right
+   section with a QNN signature and fails in **295 ms**. `setPreferredBackend`
+   was added, measured and removed - it cost ~7 s of doomed OpenCL setup per
+   cold start and could never have helped. Reaching the GPU means swapping
+   `tasks-genai` for the LiteRT-LM runtime: a work package, not a lever. **Do
+   not re-attempt this without reading D84 first.** D82 has the measurements:
    ~155 seconds of fixed cost per query, unmoved by cutting the output budget,
    and no smaller model available (Qwen fails on the tokenizer, the small
    Gemmas are login-gated). The repository has `gemma-4-E2B-it-gpu.litertlm`
@@ -193,7 +225,12 @@ item** - the decisions in them are the point, the plumbing is the easy half.
    five seconds, say so plainly and stop** - that is a real answer and it is
    more useful than another attempt.
 
-5. **Only then, routing - and not for `extract_task`.** The parser scores
+5. **[STILL GATED - blocked on item 3]** **Only then, routing - and not for
+   `extract_task`.** Nothing has been routed and nothing may be until the
+   golden run produces a number. Note what item 4 established: any capability
+   routed to this model waits about two and three quarter minutes, so the
+   latency argument below is now measured rather than assumed. The parser
+   scores
    29/29 and answers in under a millisecond; no local model is going to beat
    that on either axis. `compose_nudge` and `negotiate` are computed while
    arming a ladder rather than while anyone waits, so seconds there are
@@ -220,6 +257,14 @@ speed, and `STATUS.md` is where you say which it was.
 - **State claims about the outside world as unverified until checked.** I said
   the model weights were licence-gated in three places. They are Apache 2.0
   and ungated, and the wall I built stood in front of an open door.
+- **Run `dart format .`, never `dart format -l 79`.** The repo is 80 columns
+  (`AGENTS.md`). Formatting at 79 reflowed nine files nobody had touched and
+  buried the real change. Restoring them needed `git show HEAD:path > path`,
+  because `git checkout --` is blocked here.
+- **Do not do real file I/O inside `pumpAndSettle`.** It deadlocks the test
+  binding and burns the full ten-minute timeout looking like an infinite
+  animation. If a screen needs storage, put an interface in front of it - see
+  `GoldenRunStore` and D85.
 
 ---
 

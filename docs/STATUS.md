@@ -1,9 +1,27 @@
 # Van — Project Status
 
-**Last updated:** 7 September 2026, unattended run in progress. The previous
-day's work is in sections 3w to 3ab; tonight's is 3ac. This file is the handover
-between sessions and between agents; it says what is true now. The narrative
-of how it got that way is in `docs/NIGHT_LOG.md`.
+**Last updated:** 7 September 2026, after an unattended run. The previous
+day's work is in sections 3w to 3ab; this run's is 3ac and 3ad. This file is
+the handover between sessions and between agents; it says what is true now. The
+narrative of how it got that way is in `docs/NIGHT_LOG.md`.
+
+**Two things to know before anything else.**
+
+**1. The on-device model is measured, and the answer is no.** It works: about
+**two and three quarter minutes** for one capture on your phone, against under
+a millisecond for the parser that gets the same sentence right. The GPU build
+and the Qualcomm build for your exact chip were both downloaded and both
+**cannot be loaded by this runtime at all** — 217 ms and 295 ms, and the reason
+is in the files themselves, not in how they were asked for. Five seconds was
+the bar the queue set and this is nowhere near it. Section 3ad, D84.
+
+**2. Your phone came off adb part-way through, so one thing is unfinished.**
+`GoldenRunScreen` — the harness that finally makes the routing gate readable,
+issue 14, open since August — is written, tested and built, but the APK was
+never installed. **The phone is on the previous build.** Reinstalling and
+running the set is the first job next session, and it takes about eighty
+minutes of the phone sitting still. Nothing is routed to the model and nothing
+may be until that number exists.
 
 **This run did the whole of the `OVERNIGHT.md` 3c queue** — month cells that
 name what is on them, `WP_JUDGEMENT` 13a (Van asks how long), 13b (depth and
@@ -209,7 +227,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **884 tests passing** — 329 in `packages/van_core` (pure Dart), 555 in the app.
+- **898 tests passing** — 329 in `packages/van_core` (pure Dart), 569 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -239,6 +257,8 @@ working configuration, not a degraded one.
 | App: local model channel | 13 |
 | App: Gemma backend | 15 |
 | App: golden set and runner | 9 |
+| App: golden run on the phone (store, honest scoring) | 8 |
+| App: golden run screen | 6 |
 | App: inference config | 13 |
 | App: prompt assets | 9 |
 | App: negotiation guards (review) | 5 |
@@ -562,9 +582,18 @@ there is a test pinning that so it does not erode back into "OK".
 
 ## 3e. WP-6 groundwork: what exists and what does not
 
-**Nothing has been measured.** No model has been downloaded, no benchmark run.
-Every number below about the model is a guess and is labelled as one in the
-code. The one measured number is the parser's.
+**Measured, 6-7 Sep 2026, and the answer is not encouraging.** The weights are
+on the phone and the engine answers: about **165,000 ms** for one `extract_task`
+capture on a Snapdragon 8 Elite, against **under a millisecond** for the parser
+that gets the same case right. Cutting the output budget by a third moved it by
+nine seconds, so roughly 155 s is fixed cost before any token is decoded. The
+GPU and NPU builds of the same weights cannot be loaded by this runtime at all
+— section 3ad. `DECISIONS_PENDING.md` D81, D82 and D84 have the numbers.
+
+**What is still unmeasured is accuracy**, and that is now takeable rather than
+impossible: `GoldenRunScreen` runs the whole set on the device. See 3ad. Until
+that number exists, every claim about how *good* the model is remains a guess,
+and `GemmaBackend.capabilities.typicalLatencyMs` is still a placeholder.
 
 **Exists and is tested:**
 
@@ -583,13 +612,15 @@ code. The one measured number is the parser's.
 - `GemmaBackend` — the only file in the app that knows the model's name.
 - The golden set, runner and `tool/run_goldens.dart`.
 
-**Does not exist:** the LiteRT-LM dependency and the engine behind it. Adding
-it is confined to two edits, and if a third is needed the abstraction has
-failed and that is worth stopping over:
+**Exists as of 6 Sep 2026:** `com.google.mediapipe:tasks-genai` 0.10.35 in
+`android/app/build.gradle.kts`, and `LiteRtEngine` behind `LlmEngine`. It took
+exactly the two edits this section predicted, which is the abstraction paying
+for itself. 0.10.24 could not read a `.litertlm` at all — it failed in 133 ms at
+`model_data.cc:424` — so the version is not incidental.
 
-1. a LiteRT-LM dependency in `android/app/build.gradle.kts`, and
-2. one `LlmEngine` implementation, returned from
-   `LocalLlmPlugin.defaultEngine`.
+**Does not exist:** the LiteRT-LM runtime, which is a different dependency from
+the MediaPipe one and the only way to reach the GPU-built weights. Section 3ad
+says why that is a work package rather than a lever.
 
 **One thing to change in the same commit, not before:**
 `GemmaBackend.capabilities.supportsNativeStructuredOutput` is `false`. Gemma 4
@@ -1933,6 +1964,80 @@ tests, ten of them at the service level against the real sentence.
 
 ---
 
+## 3ad. The GPU that is not there, and a gate that can finally be read
+
+Two things happened tonight, and the first is a closed door rather than a
+feature.
+
+### The GPU build cannot be loaded, and neither can the NPU one
+
+The queue's item 4 said: the repository has `gemma-4-E2B-it-gpu.litertlm` and
+`gemma-4-E2B-it_qualcomm_sm8750.litertlm`, the second built for this exact
+chip; `LiteRtEngine` asks for neither; add `setPreferredBackend`, get one down,
+measure — **and if a query does not get under about five seconds, say so
+plainly and stop.**
+
+It does not, and not for a reason that tuning can reach.
+
+| File | Size | On the phone |
+|---|---|---|
+| `gemma-4-E2B-it.litertlm` (CPU) | 2.41 GB | **Answers.** 164,990–183,643 ms |
+| `gemma-4-E2B-it-gpu.litertlm` | 1.87 GB | **Failed after 217 ms** |
+| `gemma-4-E2B-it_qualcomm_sm8750.litertlm` | 2.81 GB | **Failed after 295 ms** |
+
+The section tables say why. Reading the first 32 KB of each file: the CPU build
+declares `tf_lite_prefill_decode`, which is what `tasks-genai` looks for. The
+GPU build declares `tf_lite_artisan_text_decoder` with
+`section_backend_constraint: gpu_artisan` — the loader logs *"TFLite model for
+type: TF_LITE_PREFILL_DECODE not found. Skipping"* and hands a null model to the
+XNNPACK executor. The Qualcomm build has the right section with a QNN
+signature and dies at *"Unsupported model signature"*, because the QNN delegate
+is not in this app.
+
+`setPreferredBackend(GPU)` was added, measured and **removed**. It cannot help:
+whether the GPU can be used is a property of the weights, not of the request.
+Against the CPU build it failed at `ModifyGraphWithDelegate` after 6,900 ms, and
+keeping it would have added seven seconds of doomed OpenCL setup to every cold
+start. `engine()` now opens the model with no backend preference, and the
+comment there carries these numbers.
+
+**Reaching the GPU means replacing `com.google.mediapipe:tasks-genai` with the
+LiteRT-LM runtime**, which does read the `gpu_artisan` section. That is a
+different dependency and a different API — a work package, not a lever, and not
+worth opening while the deterministic parser answers the same question in under
+a millisecond at 29/29. `DECISIONS_PENDING.md` D84 has every number.
+
+The phone was left as it was found: the CPU weights were restored from
+`files/gemma-backup.litertlm` after the last measurement.
+
+### Issue 14 is answerable now (`GoldenRunScreen`)
+
+The gate in 3e has never been *unmet*; it has been **unevaluable**, which is
+worse. `tool/run_goldens.dart` runs off a phone, where there is no channel and
+no weights, so it has only ever measured the parser.
+
+`GoldenRunScreen` runs all 29 `extract_task` cases on the device, reachable
+from Settings → On-device model → Try the model → Run the golden set. Three
+things make it worth trusting:
+
+- **It reports what the model did, not what Van did.** `InferenceRouter` always
+  returns an answer, so a set pointed at a failing model scores 29/29 on the
+  parser's work — a report saying the gate is cleared by a model that produced
+  nothing. `LastInference` separates them, and the headline counts only cases a
+  model both answered and got right, **over the whole set**. There is a test
+  for exactly that trap.
+- **It is resumable.** Eighty minutes is longer than the phone stays awake.
+  Every outcome is written before the screen is told; a changed prompt throws
+  the run away rather than resuming half of it against different instructions.
+- **It changes no routing.** It measures.
+
+**The run has not happened.** The screen is written, tested and built; the
+phone was disconnected before the APK could be installed. That is the first
+thing to do next session, and nothing may be routed until the number exists.
+D85 has the reasoning.
+
+---
+
 ## 4. Open issues
 
 Carried forward from the working board. **These are not in any tracker other
@@ -1954,7 +2059,7 @@ than this file.**
 | 12 | **`dumpsys alarm` cannot tell you what is pending** | Recorded because it cost me an hour tonight. The `type=RTC_WAKEUP tag=*walarm*:dev.van.app` lines live in a *cancellation history* section — each entry carries `Reason=alarm_cancelled` or `Reason=pi_cancelled`. Cancelling an alarm **adds** a line there, so the count only ever grows and looks like a leak. The truth is in `shared_prefs/scheduled_notifications.xml`, which lists exactly what will fire. The command is in `docs/NIGHT_LOG.md`, under the fifth device run. |
 | 11 | ~~`ExtractTask` and `ComposeNudge` still hold their prompts inline~~ | **Done, 21 Aug 2026** (`86ce1ec`). All three prompts are assets, loaded through `Prompts`. See section 3f. |
 | 13 | ~~Two parser gaps the golden set found~~ | **Done, 21 Aug 2026** (`61e3e72`), and the two halves needed opposite treatment. *"next week"* was simply unparsed and is now handled, along with `this week` and `in N weeks`. The **all-caps case is closed as deliberate**: Van cannot tell shouting from acronyms, so any rule turning `TIDY THE DESK` into `Tidy the desk` also turns `FIX API DOCS` into `Fix api docs` — loud versus lossy. The golden now specifies preservation. `extract_task` scores 29/29. |
-| 14 | **`GemmaBackend` cannot be measured off-device** | It needs the platform channel and a model file, so `tool/run_goldens.dart` deliberately has no flag for it. Measuring a candidate model means running the golden set on the phone, which needs a small debug screen or an integration test. Nothing built yet; the WP-6 gate cannot be evaluated until it is. |
+| 14 | **`GemmaBackend` cannot be measured off-device** | **Harness built 7 Sep 2026** (`4d207a4`) — `GoldenRunScreen`, reachable from Settings → On-device model → Try the model. All 29 cases on the device, resumable, and it separates what the model answered from what the parser rescued, which is the difference between a real number and a flattering one. See section 3ad and D85. **Still open because the number has not been taken:** the phone was disconnected before the build could be installed. `tool/run_goldens.dart` still deliberately has no flag for the on-device backend. |
 | 15 | **Snooze and Not today need the app to open** | Fixed the cheap way on 21 Aug (`59e063d`): all three actions are now `showsUserInterface`, so Android launches Van and the response arrives through `consumeLaunchAction`. That works, and it is intrusive — pressing "Not today" opens the app to dismiss something. The real fix is handling actions in the background isolate, which needs its own database connection; until then this is honest rather than silent. **Notifications armed before the fix keep the old flags**, so the six pending for this morning still lose Snooze and Not today. |
 | 18 | ~~Deadlines were parsed in UTC, not the user's timezone~~ | **Done, 21 Aug 2026** (`6b1f4b3`). `TemporalParser` takes a `utcOffset`, `ExtractTask` defaults it to zero, and `VanService` never passed one — so on a UTC-7 phone every typed deadline was seven hours early. The planner had the right offset the whole time, so the two disagreed about what day it was. **Existing rows keep their wrong deadlines**; nothing back-fills them. |
 | 19 | ~~The timezone offset is read once, at startup~~ | **Done, 22 Aug 2026** (`1c54b0e`). `VanService.refreshTimezone(Duration)` rebuilds the three things that derive from the offset — the waking window, the suppression gate and the temporal parser — and `TimezoneWatcher` calls it on every resume from the composition root. All three move together on purpose: a mutation that rebuilt only the parser put a block at 02:00 local, and the planner test catches exactly that. The suppression policy is *copied* (`withWaking`) so composition-root tuning survives; waking **hours** do not move with the user, only the offset they resolve against. A move is recorded as the new `EventType.timezoneChanged`, because a day of blocks an hour out is otherwise indistinguishable from a scheduling bug. **Installed but not observed on the phone** — the offset has not moved, so the correct on-device signal is the *absence* of a `timezoneChanged` row, which is what the database shows. Next US transition is 1 Nov 2026. |

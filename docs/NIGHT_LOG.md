@@ -1877,3 +1877,75 @@ rather than claiming a fix for a bug I never demonstrated. The code change
 stayed, because the enum-valued `onSelected` is better on its own merits, but
 "better anyway" and "fixes the bug" are different claims and only one of them
 was earned.
+
+---
+
+## 7 September 2026, 04:30–06:00 — three files, three failures, and a number nobody could read
+
+**The GPU was the last item on the queue's list of levers, and it turned out
+not to be a lever.** Item 4 was written as a fair test with a stopping rule
+attached: get one of the two accelerated builds down, measure, and *"if a
+query does not get under about five seconds, say so plainly and stop - that is
+a real answer and it is more useful than another attempt."* Queues that say
+that are rarer than they should be, and this one meant it.
+
+The first build failed in 217 ms, which is far too fast to be inference and
+far too slow to be a missing file. The temptation at that point is to
+re-attempt: different backend flag, different max tokens, a rebuild. What
+settled it instead was the loader's own logging, which had been in logcat the
+whole time and which I had been grepping past because my filter matched
+`BackendUnifiedServiceManager` in a thousand unrelated binder warnings. Read
+unfiltered, it says: `section_backend_constraint: gpu_artisan`, then `TFLite
+model for type: TF_LITE_PREFILL_DECODE not found. Skipping`, then a null model
+handed to the XNNPACK executor. The file is not a GPU version of the weights I
+had; it is a different artefact for a different runtime.
+
+That reframed the second file from "try it and see" to a question I could
+answer for **32 KB instead of 2.81 GB**: a ranged GET of each file's header
+and a scan for the section names. The CPU build says `tf_lite_prefill_decode`.
+The GPU build says `tf_lite_artisan_text_decoder`. The Qualcomm build says
+`tf_lite_prefill_decode` — which is why it was worth downloading, and it still
+failed, at `Unsupported model signature`, because the signature is QNN's and
+the delegate is not in the app. Three files, three distinct failures, one
+conclusion.
+
+**`setPreferredBackend(GPU)` went in and came back out.** It had already cost
+6,900 ms of failed OpenCL setup against the CPU weights the night before, and
+keeping it as a try-and-fall-back would have put seven seconds on every cold
+start of a feature nobody uses, in exchange for an outcome that is impossible.
+Removing code I had just written and defended is the correct end of that
+experiment, and the comment left behind carries the numbers rather than the
+conclusion, so the next person can disagree with me cheaply.
+
+**The second half of the night was a trap I nearly built for myself.** Item 3
+wanted the golden set run on the phone. The obvious implementation is a screen
+that hands `GoldenRunner` a router pointed at the on-device backend and prints
+the pass rate. That implementation reports **29/29, clears the 80% gate** for a
+model that produces nothing at all — because `InferenceRouter` is *designed* to
+fall back silently, the parser is *designed* to be very good, and the two
+together mean the report describes the parser while appearing to describe the
+model. It would have been the strongest possible argument for routing a
+capability to a model that cannot serve it, and it would have been entirely
+wrong.
+
+The fix is small — `LastInference` on the observer hook that already existed —
+but the part worth recording is that the design pressure ran the other way.
+Every instinct says a measurement harness should produce one headline number.
+This one produces two, and the smaller one is the honest one. The test that
+pins it constructs the exact failure: no backend at all, twenty-plus cases
+passing, model pass rate zero.
+
+**And then the phone left.** Written, tested, formatted, analysed, layer-checked
+and built — and `adb devices` came back empty before `install`. Which means the
+number this whole second half exists to produce still does not exist, the
+phone is running last night's build, and the only correct thing to write in
+STATUS is that it is unfinished. An eighty-minute run that never started is
+not a result, and the temptation to describe the harness as if it had produced
+one is exactly what the harness was built to resist.
+
+**Two smaller lessons, both self-inflicted.** I formatted at `-l 79` when the
+repo is 80 and reflowed nine untouched files, which buried the real diff until
+I noticed the count. And I put real file I/O inside `pumpAndSettle`, which does
+not fail — it hangs for the full ten-minute default timeout and looks exactly
+like an animation that never settles. The fix, an interface in front of the
+store, is better design than what I had, which is the usual shape of these.

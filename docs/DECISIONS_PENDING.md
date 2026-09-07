@@ -776,6 +776,82 @@ Installed · 2.6 GB and `Try the model` answers.
 
 ---
 
+
+### D85 — A golden run that cannot tell the model from the parser measures nothing
+
+**The question.** Item 3 of the queue: extend `ModelProbe` to run all 29
+`extract_task` cases on the phone and report the pass rate, because the gate in
+`STATUS.md` 3e has never been evaluable — `tool/run_goldens.dart` runs off a
+phone, where there is no platform channel and no weights, so it has only ever
+measured the deterministic parser.
+
+**The trap, which is easy to walk into and produces a number that looks
+excellent.** `InferenceRouter` guarantees an answer. When the backend is
+missing, slow, or answers with something unparseable, the capability's
+deterministic fallback runs and the caller cannot tell the difference — that is
+the whole point of the router and it is correct behaviour. Point `GoldenRunner`
+at the on-device model with no observer and the report reads **29/29, clears
+the 80% gate** for a model that produced nothing at all, because the parser
+scores 29/29 and the parser answered every case. That report would be the
+justification for routing a capability to a model that cannot serve it.
+
+**The decision: report what the model did, separately, and make that the
+headline.** `LastInference` implements the existing `InferenceObserver` and
+records, per case, whether the answer came from the backend or the fallback.
+Each `GoldenOutcome` carries `viaModel` and the latency, and `GoldenReport`
+gains `passedViaModel` and `modelPassRate` beside the old `passed` and
+`passRate`.
+
+Two numbers, and both are true:
+
+- `passRate` — how often *Van* is right. Unchanged, still what CI watches, and
+  the fallback rescuing a case is a real thing Van does.
+- `modelPassRate` — how often *the model* was right, **over the whole set**.
+  This is the one 3e asks about.
+
+The denominator is deliberate. A model that answers four sentences perfectly
+and falls back on the other twenty-five has not scored 100%; it contributed to
+four cases out of twenty-nine and the parser did the rest. Scoring it over
+"cases it managed to answer" would let a model that answers almost nothing
+report a perfect record.
+
+`test/inference/golden_run_test.dart` asserts the trap directly: a run with no
+backend at all passes more than twenty cases and reports `modelPassRate` of
+zero.
+
+**Three-state display, not two.** A case the parser rescued is drawn as neither
+a pass nor a failure — a dash, not a green tick. Colouring it green would be
+the same lie in a different place.
+
+**Resumable, because eighty minutes is longer than the phone stays awake.** One
+case costs about two and three quarter minutes and there are twenty-nine, so
+the run outlives the fifteen-minute lock several times over. Each outcome is
+written to disk the moment it finishes and before the screen is told, so a
+crash between the two loses nothing. The prompt's fingerprint is stored beside
+the outcomes and checked on resume: half a run measured against one prompt and
+half against another describes neither, so a changed prompt throws the run away
+rather than continuing it. That costs an hour, and it is the right hour to
+lose.
+
+**Two smaller decisions taken along the way.**
+
+`GoldenRunStore` became an interface with `FileGoldenRunStore` behind it. Real
+file I/O inside `pumpAndSettle` deadlocks the test binding — it hung a widget
+test for the full ten-minute timeout — and a screen that cannot be tested
+without a disk is a screen whose logic goes untested. The file implementation
+still has its own tests.
+
+`onDeviceRunner` was extracted to `lib/inference/` because `check_layers` rule C
+forbids a provider name in `ui/`, and it is right to: which weights are on the
+device is a routing question, and a screen that names them has to be edited
+when they change.
+
+**What is not decided.** The number itself. The screen was written, tested and
+built, and the phone was disconnected before it could be installed, so the run
+has not happened. Nothing is routed and nothing may be until it has.
+
+---
+
 ---
 
 ---
