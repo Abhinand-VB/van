@@ -28,13 +28,20 @@ written would have timed out every case at 20 seconds against a model that
 takes 165, and reported a confident **0%** after ten minutes of your evening.
 Found and fixed before it ever ran — section 3ad, D86.
 
-**3. A real defect in the splitting you are using right now, found and half
-fixed.** "Go to the shop and get bread" was becoming two tasks. So were "ring
-the surgery and get an appointment" and two more like them. I claimed in D83
-that the rule was conservative; fifty test sentences say it was not, because
-almost every English second clause opens with a verb and therefore passed the
-"stands alone" test. Four cases fixed, **eight still wrong and written down by
+**3. Two real defects in the splitting you are using right now.** The first:
+"go to the shop and get bread" was becoming two tasks, along with three more
+like it. I claimed in D83 that the rule was conservative; fifty test sentences
+say it was not. Four cases fixed, **eight still wrong and written down by
 name** in `splitter_survey_test.dart`. Section 3ae, D87.
+
+The second is worse and I found it by asking whether you could even see the
+first. **When a sentence became two tasks, the card showed one of them.** It
+printed the first task's title above every block from both, so "pay the
+electricity bill and book the dentist" read as one task with extra blocks —
+while the dentist task sat in the database, planned, with a nudge ladder armed
+and nothing on screen admitting it existed. The undo button removed both and
+said "Undo". Fixed: the card is plural, the count is stated, and the button
+says "Undo both". Section 3af, D88.
 
 **This run did the whole of the `OVERNIGHT.md` 3c queue** — month cells that
 name what is on them, `WP_JUDGEMENT` 13a (Van asks how long), 13b (depth and
@@ -240,7 +247,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **958 tests passing** — 381 in `packages/van_core` (pure Dart), 577 in the app.
+- **962 tests passing** — 381 in `packages/van_core` (pure Dart), 581 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -263,7 +270,7 @@ working configuration, not a degraded one.
 | App: settings store | 8 |
 | App: Now screen | 4 |
 | App: negotiate capability | 22 |
-| App: chat and task list | 14 |
+| App: chat and task list | 18 |
 | App: notification ids | 6 |
 | App: negotiation, service and chat | 19 |
 | App: schema migration | 9 |
@@ -2140,6 +2147,47 @@ would put the owner's own sentence back to one task.
 one-tap "that was one task, not two" — `undoCaptureAll` already exists
 underneath it. That is a UI change, and done here means observed on the phone,
 which was off adb all night.
+
+---
+
+## 3af. A task nobody could see
+
+Having spent an iteration measuring *how often* the splitter cuts in the wrong
+place (3ae), the next question was what the screen does when it cuts at all.
+The answer was nothing.
+
+`_PlanBubble` rendered `result.task` — a getter returning the **first**
+captured task — as the card's title, and under it `result.sessions`, which is
+every block **across all** of them. A sentence producing two tasks therefore
+showed one title with both sets of blocks beneath it. The second task existed,
+was planned, and had a nudge ladder armed. The card never mentioned it.
+
+**That is worse than an over-split.** An over-split creates a task you can see
+and delete. This created one you could not see at all, and the first you would
+know of it is a notification at 09:30 for work you never knowingly captured.
+
+`CaptureResult.isMany` was added when splitting shipped, asserted in the
+service tests, and **read by no UI file**. A flag with no reader is a decision
+that was designed and then not made.
+
+**Fixed in `cdff242`:**
+
+- A count at the top — "2 tasks" — said while the undo is still in front of
+  you rather than discovered later from the Tasks tab.
+- Title, deadline, blocks and shortfall **per task**. Blocks are no longer
+  pooled under the first one.
+- The undo button says what it does. `undoCaptureAll` always removed every
+  task the sentence made while the label said "Undo", which reads as undoing
+  the one task on show. It now says "Undo both", "Undo all three", and so on.
+
+The single-task card is byte-for-byte the same experience, with a test
+asserting it: one title, one block list, "Undo", no count. Three of the four
+new tests fail against the previous code; the fourth is that one, and it passed
+before and after.
+
+**Not observed on the phone.** Off adb all night. This is tested, analysed and
+built, and by this project's own definition (`OVERNIGHT.md` section 3) that is
+not done.
 
 ---
 
