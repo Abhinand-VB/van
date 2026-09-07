@@ -627,6 +627,51 @@ routed anywhere.
 
 ---
 
+### D82 — Time per query, measured three ways. It is not the token budget.
+
+The owner: *"I want to know the time per query and I need it to be very low."*
+Here is every number I have, all from this phone.
+
+| What was run | Time |
+|---|---|
+| Gemma 4 E2B, 200 output tokens | **173,968 ms** (2 min 54 s) |
+| Gemma 4 E2B, second run, engine already loaded | **183,643 ms** (3 min 4 s) |
+| Gemma 4 E2B, one query chunk, 128 output tokens | **164,990 ms** (2 min 45 s) |
+| Qwen3-0.6B int4 | **failed in 63 ms** |
+| The deterministic parser | **under 1 ms** |
+
+**Cutting the token budget by a third saved nine seconds.** 200 tokens took
+174 s and 128 tokens took 165 s, so the marginal cost of a token is about
+0.12 s and there is roughly **155 seconds of fixed cost** before generation
+matters at all. That is prefill and session setup, not decoding - which means
+shorter answers will never fix this and neither will a shorter prompt by much.
+
+**A smaller model is not available.** Qwen3-0.6B is ungated and 475 MB, and it
+fails immediately: *"SentencePiece tokenizer is not found in the model"* -
+Qwen uses BPE and this runtime wants SentencePiece. The small Gemma models
+that would work (`gemma-3-270m-it`, `Gemma3-1B-IT`) are **gated behind a
+Hugging Face login**, so they cannot be a one-tap download. Among ungated
+weights this runtime can load, the E2B family is effectively the only option.
+
+**The one lever left is the GPU build.** The same repository has
+`gemma-4-E2B-it-gpu.litertlm` and `gemma-4-E2B-it_qualcomm_sm8750.litertlm` -
+the second is built for exactly this phone's chip. `LiteRtEngine` asks for
+neither and takes the default backend, which the numbers say is CPU. That is
+another 2.6-3.0 GB download and a `setPreferredBackend` call, and it is the
+only remaining thing likely to change the order of magnitude.
+
+**But the strategic answer is more useful than the tuning one.** Capture has
+to feel instant, the parser answers in under a millisecond and scores 29/29 on
+the golden set, and no on-device model on this stack is going to beat that on
+either axis. **`extract_task` is the wrong place for a model.** The two places
+a model would actually earn its keep - `compose_nudge` and `negotiate` - are
+computed while *arming a ladder*, not while the user waits, so even ten
+seconds there is invisible. If the GPU build gets a query under about five
+seconds, routing those two is worth doing and routing `extract_task` still is
+not.
+
+---
+
 ---
 
 ## Blocked — cannot proceed without the owner
