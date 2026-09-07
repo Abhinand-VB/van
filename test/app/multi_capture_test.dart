@@ -132,6 +132,81 @@ void main() {
     });
   });
 
+  group('the question, and which task it is about', () {
+    /// The first job states a duration. The second does not.
+    const mixed = 'email the landlord 15 minutes and pay the rent';
+
+    test('it is about the task that needs it, not the first one', () async {
+      final result = await service.capture(mixed);
+
+      expect(result.captured, hasLength(2));
+      expect(result.clarification, isNotNull);
+      // The event log always recorded the right task. The result did not
+      // carry it, so the screen had nothing to go on and used the first -
+      // and answering would have overwritten the 15 minutes the user gave.
+      expect(result.clarificationTaskId, result.captured.last.task.id);
+      expect(result.clarificationTaskId, isNot(result.task.id));
+    });
+
+    test('the log and the result name the same task', () async {
+      final result = await service.capture(mixed);
+
+      final asked = (await events.all()).firstWhere(
+        (e) => e.type == EventType.clarificationAsked,
+      );
+      expect(asked.payload['taskId'], result.clarificationTaskId);
+    });
+
+    test('answering it moves that task and leaves the other alone', () async {
+      final result = await service.capture(mixed);
+
+      await service.answerDuration(result.clarificationTaskId!, '90 minutes');
+
+      final open = await service.openTasks();
+      final landlord = open.firstWhere((t) => t.title.startsWith('Email'));
+      final rent = open.firstWhere((t) => t.title.startsWith('Pay'));
+      // The stated duration survives; the guessed one is replaced.
+      expect(landlord.estimatedMinutes, 15);
+      expect(rent.estimatedMinutes, 90);
+    });
+
+    test('what the old behaviour actually did, kept as evidence', () async {
+      // The screen used `result.task.id` - the first task. This is that call,
+      // made directly, so the damage is on record rather than described: the
+      // landlord's stated 15 minutes is overwritten with the length meant for
+      // the rent, and the rent keeps its guess.
+      final result = await service.capture(mixed);
+
+      await service.answerDuration(result.task.id, '90 minutes');
+
+      final open = await service.openTasks();
+      expect(
+        open.firstWhere((t) => t.title.startsWith('Email')).estimatedMinutes,
+        90,
+        reason: 'a duration the user stated, silently replaced',
+      );
+      expect(
+        open.firstWhere((t) => t.title.startsWith('Pay')).estimatedMinutes,
+        isNot(90),
+        reason: 'and the task actually asked about never got the answer',
+      );
+    });
+
+    test('with one task it is still that task', () async {
+      final result = await service.capture('pay the rent');
+
+      expect(result.clarification, isNotNull);
+      expect(result.clarificationTaskId, result.task.id);
+    });
+
+    test('no question means no task to point at', () async {
+      final result = await service.capture('pay the rent 30 minutes');
+
+      expect(result.clarification, isNull);
+      expect(result.clarificationTaskId, isNull);
+    });
+  });
+
   group('a sentence that is one job', () {
     test('is still one task, and records no origin sentence', () async {
       final result = await service.capture('call the bank and ask about it');

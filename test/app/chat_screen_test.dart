@@ -203,6 +203,36 @@ void main() {
     });
   });
 
+  group('the question a split capture asks', () {
+    testWidgets('is answered against the task it is about', (tester) async {
+      // The first job states a duration, the second does not, so the question
+      // belongs to the second. The card used to carry the first task's id.
+      await showChat(tester);
+      await send(tester, 'email the landlord 15 minutes and pay the rent');
+
+      // And it names the task, because a bare "roughly how long?" under a
+      // card listing two of them is a question about neither.
+      expect(
+        find.textContaining('Pay the rent — Roughly how long'),
+        findsOneWidget,
+      );
+      await tester.enterText(find.byType(TextField), '90 minutes');
+      await tester.testTextInput.receiveAction(TextInputAction.send);
+      await tester.pumpAndSettle();
+
+      final open = await service.openTasks();
+      expect(
+        open.firstWhere((t) => t.title.startsWith('Email')).estimatedMinutes,
+        15,
+        reason: 'the duration the user stated must survive',
+      );
+      expect(
+        open.firstWhere((t) => t.title.startsWith('Pay')).estimatedMinutes,
+        90,
+      );
+    });
+  });
+
   group('the chat screen', () {
     testWidgets('starts empty and says what it is for', (tester) async {
       await showChat(tester);

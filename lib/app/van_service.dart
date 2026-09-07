@@ -46,6 +46,7 @@ class CaptureResult {
   const CaptureResult({
     required this.captured,
     this.clarification,
+    this.clarificationTaskId,
     this.assumedMinutes,
   });
 
@@ -59,6 +60,18 @@ class CaptureResult {
   /// the form `CaptureQuestions` exists to avoid, arriving by a different
   /// route.
   final Clarification? clarification;
+
+  /// Which task [clarification] is about. Null when there is no question.
+  ///
+  /// **Not necessarily the first one, which is why this has to be carried.**
+  /// "email the landlord 15 minutes and pay the rent" states a duration for
+  /// the first job and not the second, so the question belongs to the second.
+  /// The event log recorded that correctly from the start; the result did
+  /// not, so the screen had nothing to go on and used [task] - and answering
+  /// would have replanned the landlord to the length meant for the rent,
+  /// overwriting a duration the user had actually given. See
+  /// `DECISIONS_PENDING.md` D89.
+  final String? clarificationTaskId;
 
   /// The duration Van invented because nobody stated one, in minutes.
   ///
@@ -561,6 +574,7 @@ class VanService {
 
     final captured = <CapturedTask>[];
     Clarification? question;
+    String? questionAbout;
     int? assumed;
 
     for (final clause in clauses) {
@@ -611,6 +625,7 @@ class VanService {
       // `CaptureQuestions` exists to prevent, arriving by another route.
       if (asked != null && question == null) {
         question = asked;
+        questionAbout = task.id;
         assumed = task.estimatedMinutes == null
             ? _constraints.defaultEstimateMinutes
             : null;
@@ -633,6 +648,7 @@ class VanService {
     return CaptureResult(
       captured: captured,
       clarification: question,
+      clarificationTaskId: questionAbout,
       assumedMinutes: assumed,
     );
   }

@@ -63,6 +63,7 @@ class QuestionCard extends ChatEntry {
   const QuestionCard({
     required this.taskId,
     required this.clarification,
+    this.about,
     this.assumed,
     this.settled,
     this.note,
@@ -70,6 +71,17 @@ class QuestionCard extends ChatEntry {
 
   /// The task the answer would revise.
   final String taskId;
+
+  /// The task's title, shown when the sentence made more than one.
+  ///
+  /// **A bare "Roughly how long?" under a card listing three tasks is a
+  /// question about none of them.** `wording.dart` has carried an `about`
+  /// field since the estimate sheet was written, documented as "named so the
+  /// question cannot be about the wrong task", and this bubble ignored it -
+  /// which was survivable while a sentence made one task and stopped being so
+  /// when it made several. Null for a single task, where the title is
+  /// directly above and naming it is noise. See `DECISIONS_PENDING.md` D89.
+  final String? about;
 
   /// What Van wants to know.
   final Clarification clarification;
@@ -88,6 +100,7 @@ class QuestionCard extends ChatEntry {
   QuestionCard closed(String outcome) => QuestionCard(
     taskId: taskId,
     clarification: clarification,
+    about: about,
     assumed: assumed,
     settled: outcome,
   );
@@ -96,6 +109,7 @@ class QuestionCard extends ChatEntry {
   QuestionCard saying(String complaint) => QuestionCard(
     taskId: taskId,
     clarification: clarification,
+    about: about,
     assumed: assumed,
     note: complaint,
   );
@@ -391,8 +405,11 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
         if (result.clarification case final asked?) {
           _entries.add(
             QuestionCard(
-              taskId: result.task.id,
+              // The task the question is *about*, which is not always the
+              // first one the sentence made. See D89.
+              taskId: result.clarificationTaskId ?? result.task.id,
               clarification: asked,
+              about: result.isMany ? _titleOf(result) : null,
               assumed: result.assumedMinutes,
             ),
           );
@@ -401,6 +418,14 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     });
     _toBottom();
+  }
+
+  /// The title of the task [result]'s question is about.
+  static String? _titleOf(CaptureResult result) {
+    for (final one in result.captured) {
+      if (one.task.id == result.clarificationTaskId) return one.task.title;
+    }
+    return null;
   }
 
   /// Takes [text] as the answer to the question at [index].
@@ -969,7 +994,9 @@ class _QuestionBubble extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              questionFor(card.clarification),
+              card.about == null
+                  ? questionFor(card.clarification)
+                  : '${card.about} — ${questionFor(card.clarification)}',
               style: theme.textTheme.bodyMedium?.copyWith(
                 color: colours.onSecondaryContainer,
               ),

@@ -1026,6 +1026,63 @@ which has been off adb all night.
 
 ---
 
+
+### D89 — The question was asked about one task and answered against another
+
+**Third defect in the same family, found by following the same thread.** D88
+was a plural result read through a singular getter. So is this, and it is the
+one that destroys data the owner typed.
+
+`capture` asks **one** question for the whole sentence — five clauses with no
+durations must not produce five questions. The question belongs to the first
+clause that needed one, which **is not always the first clause**:
+
+> "email the landlord 15 minutes and pay the rent"
+
+The landlord states a duration, so nothing is asked about it. The rent does
+not, so the question is about the rent, and `clarificationAsked` recorded the
+rent's task id correctly from the very first commit.
+
+**`CaptureResult` never carried that id.** The screen had nothing to go on and
+used `result.task.id` — the first task. So answering "90 minutes" replanned
+**the landlord** to ninety minutes, silently overwriting the fifteen the owner
+had typed, and left the rent on its guess. The event log said one thing and the
+behaviour did another.
+
+**Fixed by carrying it**: `CaptureResult.clarificationTaskId`, set beside the
+event that already recorded it, and read by the card. A test asserts the log
+and the result name the same task, so they cannot drift apart again.
+
+**The old behaviour is kept as a test rather than described.** One case calls
+`answerDuration(result.task.id, ...)` — exactly what the screen used to do —
+and asserts the damage: the stated fifteen becomes ninety, and the task
+actually asked about never receives the answer. A bug that only exists in prose
+is a bug nobody can check I fixed.
+
+**And the question never said which task it was about.** `wording.dart` has
+carried an `about` field since the estimate sheet was written, documented in
+its own doc comment as *"named so the question cannot be about the wrong
+task"* — and the chat bubble ignored it. That was survivable while a sentence
+made one task, because the title was directly above. Under a card listing two
+or three, a bare "Roughly how long?" is a question about none of them, and
+whichever task the owner assumed would have been a guess.
+
+It now reads "Pay the rent — Roughly how long?" **when the sentence made
+several**, and stays bare for a single task, where naming it is noise and the
+title is one line up.
+
+**The pattern across D88 and D89 is worth naming.** `CaptureResult` was given
+plural data and a set of singular getters — `task`, `sessions` — kept so
+existing callers would compile unchanged. That was the right call for shipping
+the split; it is also exactly why three screens kept reading the first element
+of a list and looking correct. **Every one of those getters is a place the UI
+can be wrong without failing**, and the two that remain (`task` in the undo
+path, `sessions` in the nudge count) are now the only ones left to check.
+
+Not observed on the phone, which has been off adb all night.
+
+---
+
 ---
 
 ---
