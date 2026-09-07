@@ -12,12 +12,12 @@ import com.google.mediapipe.tasks.genai.llminference.LlmInferenceSession
  * set — was finished and testable long before this existed, against
  * [MissingEngine].
  *
- * **Nothing here has produced a token.** The weights are licence-gated, no
- * agent may accept a licence on the owner's behalf, and so this has been
- * compiled and installed but never run. Treat every claim about its behaviour
- * as unproven until the golden set has been run on the phone with a real file
- * in place — see `STATUS.md` 3e for the gate that decides whether anything is
- * routed here at all, and `DECISIONS_PENDING.md` D77.
+ * **It works, and it is far too slow to use.** Measured on a Snapdragon 8
+ * Elite with Gemma 4 E2B: about two and three quarter minutes for one capture,
+ * against under a millisecond for the deterministic parser that answers the
+ * same question correctly. Nothing is routed here and the gate in `STATUS.md`
+ * 3e is what would change that. `DECISIONS_PENDING.md` D82 and D84 have every
+ * number.
  *
  * One session per generation rather than one held open. A session carries the
  * conversation, and Van's capabilities are all one-shot: `extract_task` asking
@@ -48,6 +48,29 @@ class LiteRtEngine(
         if (!ModelStorage.isPresent(context.filesDir)) {
             throw LlmUnavailable("no model file at $file")
         }
+        // **No backend is asked for, and that is a measurement, not an
+        // omission.** All three published builds of these weights were put on
+        // the owner's phone and run through `ModelProbe`:
+        //
+        //  - the CPU build answers, in about two and three quarter minutes;
+        //  - `gemma-4-E2B-it-gpu.litertlm` carries a
+        //    `tf_lite_artisan_text_decoder` section constrained to
+        //    `gpu_artisan`, which this runtime does not read at all - it looks
+        //    for `TF_LITE_PREFILL_DECODE`, finds nothing, and fails in 217 ms
+        //    with "model is null";
+        //  - `gemma-4-E2B-it_qualcomm_sm8750.litertlm`, built for this exact
+        //    chip, does have a prefill/decode section but a QNN signature, and
+        //    fails in 295 ms with "Unsupported model signature".
+        //
+        // `setPreferredBackend(GPU)` was tried and removed. It cannot help:
+        // whether the GPU can be used is a property of the weights, and no
+        // obtainable file has weights this runtime can put on a GPU. Asking
+        // anyway cost about seven seconds of failed OpenCL setup on every cold
+        // start, for nothing. Getting to the GPU means replacing
+        // `com.google.mediapipe:tasks-genai` with the LiteRT-LM runtime, which
+        // is a different dependency and a different bet.
+        //
+        // See `DECISIONS_PENDING.md` D84.
         return LlmInference.createFromOptions(
             context,
             LlmInference.LlmInferenceOptions.builder()

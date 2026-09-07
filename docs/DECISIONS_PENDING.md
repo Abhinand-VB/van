@@ -713,6 +713,69 @@ surprise.
 recorded actual across four tasks. Tuning against that would be inventing a
 pattern. Ask again after a week of use.
 
+
+### D84 — The GPU is not reachable from here, and the phone says so three times
+
+**The question.** Tonight's queue said the repository has
+`gemma-4-E2B-it-gpu.litertlm` and `gemma-4-E2B-it_qualcomm_sm8750.litertlm`,
+the second built for this exact chip, and that `LiteRtEngine` asks for
+neither. Add `setPreferredBackend`, get one of those files down, measure — and
+if a query does not get under about five seconds, say so plainly and stop.
+
+**Saying so plainly: it does not, and the reason is not tuning.** All three
+published builds were put on the owner's phone and run through the same
+sentence in `ModelProbe`:
+
+| File | Size | Result on the phone |
+|---|---|---|
+| `gemma-4-E2B-it.litertlm` (CPU) | 2.41 GB | **Answers.** 164,990–183,643 ms |
+| `gemma-4-E2B-it-gpu.litertlm` | 1.87 GB | **Failed after 217 ms** |
+| `gemma-4-E2B-it_qualcomm_sm8750.litertlm` | 2.81 GB | **Failed after 295 ms** |
+
+Neither failure is a configuration mistake, and the section tables say why.
+Reading the first 32 KB of each file:
+
+- CPU build: `model_type: tf_lite_prefill_decode`.
+- GPU build: `model_type: tf_lite_artisan_text_decoder`, with
+  `section_backend_constraint: gpu_artisan`. The loader on the phone finds it,
+  logs `TFLite model for type: TF_LITE_PREFILL_DECODE not found. Skipping.`,
+  and hands a null model to the XNNPACK executor —
+  `llm_litert_xnnpack_executor.cc:114`, "model is null".
+- Qualcomm build: `tf_lite_prefill_decode` *and* `decode_embedder` /
+  `prefill_embedder_128`, so it gets further — and then dies at
+  `llm_litert_xnnpack_executor.cc:182` with "Unsupported model signature",
+  because the signature is QNN's and the QNN delegate is not in this app.
+
+**`setPreferredBackend(GPU)` was added, measured, and removed.** It cannot
+help. Whether the GPU can be used is a property of the *weights*, not of the
+request: asking for GPU against the CPU build failed at
+`ModifyGraphWithDelegate` after 6,900 ms, and asking for it against the GPU
+build changed nothing because the runtime never reached a backend at all.
+Keeping the call would have added about seven seconds of doomed OpenCL setup
+to every cold start in exchange for nothing, so `engine()` opens the model with
+no backend preference and the comment there carries these numbers.
+
+**What the answer actually is.** The GPU is not reachable through
+`com.google.mediapipe:tasks-genai` with any file that exists today. Reaching it
+means replacing that dependency with the LiteRT-LM runtime, which reads the
+`gpu_artisan` section — a different dependency, a different API, and a bet with
+no measurement behind it. That is a work package, not a lever, and it is not
+worth opening while the deterministic parser answers the same question in under
+a millisecond and scores 29/29.
+
+**So item 4 of the queue is closed, with the answer it asked for.** Five
+seconds was the bar. The best obtainable number is 165,000, and the two files
+that might have beaten it cannot be loaded. `extract_task` stays where it is.
+The routing question that remains is `compose_nudge` and `negotiate`, where
+seconds are computed while arming a ladder and are invisible — and that is
+still gated on the golden set clearing 80% on the phone, per STATUS 3e.
+
+**The phone was left as it was found.** The CPU weights were restored from
+`files/gemma-backup.litertlm` after the last measurement; Settings shows
+Installed · 2.6 GB and `Try the model` answers.
+
+---
+
 ---
 
 ---

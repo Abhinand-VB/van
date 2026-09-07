@@ -66,11 +66,59 @@ class GoldenSet {
   final List<GoldenCase> cases;
 }
 
+/// Remembers how the last routed call was actually served.
+///
+/// **Without this a phone run measures the wrong thing.** `InferenceRouter`
+/// guarantees an answer: when the model is missing, slow or malformed, the
+/// capability's deterministic fallback runs and the caller cannot tell. Point
+/// the golden set at a real model with no observer and every case the model
+/// failed is scored as a pass, because the parser answered it - a report
+/// saying 29/29 about a model that produced nothing. See
+/// `DECISIONS_PENDING.md` D85.
+class LastInference implements InferenceObserver {
+  /// Whether a backend, rather than the fallback, produced the last answer.
+  bool viaModel = false;
+
+  /// How long the last attempt took, including a failed one.
+  int? latencyMs;
+
+  /// Why the last attempt fell back, when it did.
+  String? failureReason;
+
+  @override
+  void onInference({
+    required String capabilityId,
+    required String backendId,
+    required InferenceOutcome outcome,
+    String? failureReason,
+    int? latencyMs,
+  }) {
+    viaModel = outcome == InferenceOutcome.model;
+    this.latencyMs = latencyMs;
+    this.failureReason = failureReason;
+  }
+}
+
 /// What happened to one case.
 @immutable
 class GoldenOutcome {
   /// Creates an outcome.
-  const GoldenOutcome({required this.name, required this.failures});
+  const GoldenOutcome({
+    required this.name,
+    required this.failures,
+    this.viaModel = false,
+    this.latencyMs,
+    this.failureReason,
+  });
+
+  /// Reads one back from [toJson].
+  factory GoldenOutcome.fromJson(Map<String, dynamic> json) => GoldenOutcome(
+    name: json['name'] as String,
+    failures: [for (final f in json['failures'] as List<dynamic>) f as String],
+    viaModel: json['viaModel'] as bool? ?? false,
+    latencyMs: json['latencyMs'] as int?,
+    failureReason: json['failureReason'] as String?,
+  );
 
   /// The case's name.
   final String name;
@@ -78,8 +126,29 @@ class GoldenOutcome {
   /// One line per expectation that did not hold. Empty means it passed.
   final List<String> failures;
 
+  /// Whether a backend answered this case, or the fallback did.
+  ///
+  /// False for every case in CI, which runs with no backend at all, and that
+  /// is correct: nothing there is measuring a model.
+  final bool viaModel;
+
+  /// How long the attempt took, when a runner was watching.
+  final int? latencyMs;
+
+  /// Why it fell back, when it did.
+  final String? failureReason;
+
   /// Whether every expectation held.
   bool get passed => failures.isEmpty;
+
+  /// A form that survives the app being killed part-way through a run.
+  Map<String, Object?> toJson() => {
+    'name': name,
+    'failures': failures,
+    'viaModel': viaModel,
+    'latencyMs': latencyMs,
+    'failureReason': failureReason,
+  };
 }
 
 /// The result of running a whole set.
@@ -110,6 +179,29 @@ class GoldenReport {
   /// switching would be a downgrade dressed as progress.
   bool get clearsGate => passRate >= 0.8;
 
+  /// How many cases a backend actually answered.
+  int get answeredByModel => outcomes.where((o) => o.viaModel).length;
+
+  /// How many cases a backend answered **and** got right.
+  int get passedViaModel =>
+      outcomes.where((o) => o.viaModel && o.passed).length;
+
+  /// The model's share of the whole set, 0..1.
+  ///
+  /// **Over the whole set, not over the cases it managed to answer.** A model
+  /// that answers four sentences perfectly and falls back on the other
+  /// twenty-five has not scored 100%: it contributed to four cases out of
+  /// twenty-nine and the parser did the rest.
+  double get modelPassRate => total == 0 ? 0 : passedViaModel / total;
+
+  /// Whether a *model* clears the gate, which is the question 3e asks.
+  ///
+  /// [clearsGate] answers a different one, and is the number CI watches: it
+  /// counts every case the fallback rescued, which is the right measure of
+  /// "does Van answer correctly" and the wrong measure of "is this model
+  /// worth routing to".
+  bool get modelClearsGate => modelPassRate >= 0.8;
+
   /// A readable summary, for CI output and for `tool/run_goldens.dart`.
   String describe({bool verbose = false}) {
     final buffer = StringBuffer()
@@ -137,7 +229,13 @@ class GoldenReport {
 /// the change is not a measurement of the change.
 class GoldenRunner {
   /// Creates a runner over [router].
-  const GoldenRunner(this.router, {required this.prompts});
+  ///
+  /// Pass [watching] the same [LastInference] the router was given and every
+  /// outcome records whether a model or the fallback produced it.
+  const GoldenRunner(this.router, {required this.prompts, this.watching});
+
+  /// The observer the router reports to, when the caller installed one.
+  final LastInference? watching;
 
   /// The prompts a real backend would be sent. Irrelevant to the fallback,
   /// which is why CI passes them and never notices - but a measurement of a
@@ -147,8 +245,17 @@ class GoldenRunner {
   /// Routes each case to the configured backend, falling back as normal.
   final InferenceRouter router;
 
-  /// Runs every case in [set].
-  Future<GoldenReport> run(GoldenSet set) async {
+  /// Runs every case in [set] that is not already in [done].
+  ///
+  /// [done], [onOutcome] and [stop] exist for the phone, where one case costs
+  /// minutes rather than microseconds and the app can be killed part-way
+  /// through. CI passes none of them and behaves exactly as it did.
+  Future<GoldenReport> run(
+    GoldenSet set, {
+    List<GoldenOutcome> done = const [],
+    Future<void> Function(GoldenOutcome outcome)? onOutcome,
+    bool Function()? stop,
+  }) async {
     if (set.capability != 'extract_task') {
       throw UnsupportedError(
         'no runner for "${set.capability}". Add one here rather than in the '
@@ -156,20 +263,40 @@ class GoldenRunner {
       );
     }
 
-    final outcomes = <GoldenOutcome>[];
+    final outcomes = [...done];
+    final finished = {for (final outcome in done) outcome.name};
     for (final testCase in set.cases) {
+      if (finished.contains(testCase.name)) continue;
+      if (stop?.call() ?? false) break;
+
+      watching
+        ?..viaModel = false
+        ..latencyMs = null
+        ..failureReason = null;
       final draft = await router.run(
         ExtractTask(prompt: prompts.extractTask),
         ExtractTaskInput(testCase.input, now: set.now),
       );
-      outcomes.add(
-        GoldenOutcome(
-          name: testCase.name,
-          failures: _checkDraft(draft, testCase.expect),
-        ),
+      final outcome = GoldenOutcome(
+        name: testCase.name,
+        failures: _checkDraft(draft, testCase.expect),
+        viaModel: watching?.viaModel ?? false,
+        latencyMs: watching?.latencyMs,
+        failureReason: watching?.failureReason,
       );
+      outcomes.add(outcome);
+      await onOutcome?.call(outcome);
     }
-    return GoldenReport(capability: set.capability, outcomes: outcomes);
+
+    // File order, not finish order: a run that was resumed must read exactly
+    // like one that was never interrupted.
+    final byName = {for (final outcome in outcomes) outcome.name: outcome};
+    return GoldenReport(
+      capability: set.capability,
+      outcomes: [
+        for (final testCase in set.cases) ?byName[testCase.name],
+      ],
+    );
   }
 
   /// Checks only the fields the case actually names.

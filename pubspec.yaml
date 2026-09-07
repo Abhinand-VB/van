@@ -47,3 +47,13 @@ flutter:
     - assets/nudge_templates/
     - assets/inference_config.json
     - assets/policy.json
+    # The golden set, shipped so `GoldenRunScreen` can measure the on-device
+    # model against exactly the cases CI measures the parser against. Reading
+    # the same file rather than a copy is the whole point: a gate evaluated
+    # against a second, drifting copy of the cases gates nothing.
+    - test/golden/extract_task.json
+    # The golden set, shipped so `GoldenRunScreen` can measure the on-device
+    # model against exactly the cases CI measures the parser against. Reading
+    # the same file rather than a copy is the whole point: a gate evaluated
+    # against a second, drifting copy of the cases gates nothing.
+    - test/golden/extract_task.json

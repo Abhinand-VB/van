@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:van/inference/backend.dart';
 import 'package:van/inference/capabilities/extract_task.dart';
+import 'package:van/inference/golden_run_store.dart';
 import 'package:van/inference/prompts.dart';
 import 'package:van/platform/local_llm.dart';
 import 'package:van/ui/background.dart';
+import 'package:van/ui/golden_run_screen.dart';
 import 'package:van_core/van_core.dart';
 
 /// What one run of the model produced.
@@ -90,7 +93,10 @@ class _ModelProbeState extends State<ModelProbe> {
     });
 
     final capability = ExtractTask(prompt: widget.prompts.extractTask);
-    final input = ExtractTaskInput(_input.text.trim(), now: widget.clock.now());
+    final input = ExtractTaskInput(
+      _input.text.trim(),
+      now: widget.clock.now(),
+    );
     // The same request Van would build, so what is measured here is what
     // would actually happen if this capability were routed to the model -
     // not a hand-written prompt that flatters it.
@@ -136,6 +142,22 @@ class _ModelProbeState extends State<ModelProbe> {
       _running = false;
       _result = outcome;
     });
+  }
+
+  /// Opens the whole-set run, which needs somewhere to save its progress.
+  Future<void> _openSet() async {
+    final directory = await getApplicationDocumentsDirectory();
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => GoldenRunScreen(
+          llm: widget.llm,
+          prompts: widget.prompts,
+          store: FileGoldenRunStore(directory.path),
+          clock: widget.clock,
+        ),
+      ),
+    );
   }
 
   /// What Van made of the reply, in one line.
@@ -190,6 +212,25 @@ class _ModelProbeState extends State<ModelProbe> {
                   )
                 : const Icon(Icons.play_arrow),
             label: Text(_running ? 'Thinking…' : 'Run it'),
+          ),
+          const SizedBox(height: 24),
+          const Divider(),
+          const SizedBox(height: 12),
+          Text('All 29 cases', style: theme.textTheme.labelMedium),
+          const SizedBox(height: 4),
+          Text(
+            'One sentence tells you the model works. The golden set tells you '
+            'whether it is worth using, which is the question STATUS 3e '
+            'actually asks.',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _running ? null : () => inBackground(_openSet()),
+            icon: const Icon(Icons.fact_check_outlined),
+            label: const Text('Run the golden set'),
           ),
           if (result != null) ...[
             const SizedBox(height: 24),

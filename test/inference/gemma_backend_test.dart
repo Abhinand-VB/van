@@ -3,58 +3,7 @@ import 'package:van/inference/backend.dart';
 import 'package:van/inference/backends/gemma_backend.dart';
 import 'package:van/platform/local_llm.dart';
 
-/// A local model that does whatever the test needs.
-class FakeLocalLlm implements LocalLlm {
-  bool available = true;
-  bool warmedUp = false;
-  bool cancelled = false;
-  bool disposed = false;
-  int calls = 0;
-
-  /// What `generate` should do. Set one of these.
-  String? reply;
-  LocalLlmException? failure;
-  Duration? hang;
-
-  LlmRequest? lastRequest;
-  String? lastSystem;
-  String? lastPrompt;
-  int? lastMaxTokens;
-  double? lastTemperature;
-
-  @override
-  Future<bool> isAvailable() async => available;
-
-  @override
-  Future<bool> warmUp() async {
-    warmedUp = true;
-    return available;
-  }
-
-  @override
-  Future<String> generate({
-    required String prompt,
-    String system = '',
-    int maxOutputTokens = 256,
-    double temperature = 0.7,
-  }) async {
-    calls++;
-    lastSystem = system;
-    lastPrompt = prompt;
-    lastMaxTokens = maxOutputTokens;
-    lastTemperature = temperature;
-
-    if (hang != null) await Future<void>.delayed(hang!);
-    if (failure != null) throw failure!;
-    return reply ?? '';
-  }
-
-  @override
-  Future<void> cancel() async => cancelled = true;
-
-  @override
-  Future<void> dispose() async => disposed = true;
-}
+import '../support/fake_local_llm.dart';
 
 void main() {
   late FakeLocalLlm llm;
