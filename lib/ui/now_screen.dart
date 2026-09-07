@@ -215,16 +215,29 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
               clarification: result.clarification!,
               assumed: result.assumedMinutes,
             );
-      _message = result.sessions.isEmpty
-          ? 'Captured "${result.task.title}", but there was no room to '
-                'schedule it.'
-          : result.isPartial
-          ? 'Scheduled ${result.sessions.length} blocks. '
-                '${result.shortfallMinutes} minutes would not fit before the '
-                'deadline.'
-          : 'Scheduled ${result.sessions.length} '
-                '${result.sessions.length == 1 ? "block" : "blocks"}.';
+      _message = _captureMessage(result);
     });
+  }
+
+  /// What Van says about a capture that has just happened.
+  ///
+  /// Names the number of *tasks* first when a sentence made more than one,
+  /// because that is the surprising part and the thing the user needs to
+  /// check. Blocks are the detail underneath it.
+  static String _captureMessage(CaptureResult result) {
+    final tasks = result.captured.length;
+    final blocks = result.sessions.length;
+    final made = tasks == 1
+        ? 'Captured "${result.task.title}"'
+        : 'Captured $tasks separate things';
+
+    if (blocks == 0) return '$made, but there was no room to schedule it.';
+    final scheduled = '$blocks ${blocks == 1 ? "block" : "blocks"}';
+    if (result.isPartial) {
+      return '$made in $scheduled. ${result.shortfallMinutes} minutes would '
+          'not fit before the deadline.';
+    }
+    return tasks == 1 ? 'Scheduled $scheduled.' : '$made, in $scheduled.';
   }
 
   Future<void> _answer(String taskId) async {

@@ -511,7 +511,9 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       '${local.minute.toString().padLeft(2, '0')}';
 
   Future<void> _undo(int index, CaptureResult result) async {
-    await widget.service.undoCapture(result.task.id);
+    // Every task the sentence made, not just the first. One sentence is one
+    // decision and takes one undo.
+    await widget.service.undoCaptureAll(result.taskIds);
     if (!mounted) return;
     setState(() => _entries[index] = PlanCard.undone(result));
   }

@@ -138,6 +138,18 @@ class DepthReader {
     'thesis',
   };
 
+  /// Whether [word] is a verb this reader recognises, either kind.
+  ///
+  /// Exposed for `SentenceSplitter`, which needs to know whether the text
+  /// after an "and" could stand alone as an instruction. Sharing the
+  /// vocabulary rather than copying it: two lists of verbs in one codebase
+  /// would drift, and the splitter and the depth reader disagreeing about
+  /// what a verb is would be a bug nobody could see.
+  static bool isKnownVerb(String word) {
+    final lower = word.toLowerCase();
+    return _deep.contains(lower) || _shallow.contains(lower);
+  }
+
   /// Reads [title], with [statedMinutes] as a second opinion.
   ///
   /// The verb decides and the duration only nudges, in that order. Someone who

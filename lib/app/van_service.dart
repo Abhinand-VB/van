@@ -15,29 +15,49 @@ import 'package:van/platform/notifications.dart';
 import 'package:van_core/van_core.dart';
 
 /// What happened when a sentence was captured.
-class CaptureResult {
-  /// Creates a result.
-  const CaptureResult({
+/// One task that came out of a capture, and the blocks planned for it.
+class CapturedTask {
+  /// Creates a captured task.
+  const CapturedTask({
     required this.task,
     required this.sessions,
     this.shortfallMinutes = 0,
-    this.clarification,
-    this.assumedMinutes,
   });
 
   /// The task that was stored.
   final Task task;
 
-  /// The blocks that were scheduled.
+  /// The blocks that were scheduled for it.
   final List<WorkSession> sessions;
 
-  /// Minutes that would not fit before the deadline. Zero when it all fit.
+  /// Minutes of this task that would not fit before its deadline.
   final int shortfallMinutes;
+}
+
+/// What happened when a sentence was captured.
+///
+/// **Plural, because a sentence is.** The owner typed "go to the shop take a
+/// stroll cook lunch and do my remaining works also I need to do taxes" and
+/// got one task with a 25-word title; the model, asked the same thing, kept
+/// four words and threw the rest away. Neither could do better while this
+/// type held one task. See `docs/WP_CAPTURE.md`.
+class CaptureResult {
+  /// Creates a result.
+  const CaptureResult({
+    required this.captured,
+    this.clarification,
+    this.assumedMinutes,
+  });
+
+  /// Every task the sentence produced, in the order it was written.
+  final List<CapturedTask> captured;
 
   /// The one thing Van wants to be told about this, if anything.
   ///
-  /// The task is already captured and already planned when this is set. It is
-  /// a question, not a condition - see [VanService.capture].
+  /// **One question for the whole capture, however many tasks it made.** Five
+  /// tasks with no stated durations must not produce five questions; that is
+  /// the form `CaptureQuestions` exists to avoid, arriving by a different
+  /// route.
   final Clarification? clarification;
 
   /// The duration Van invented because nobody stated one, in minutes.
@@ -47,6 +67,28 @@ class CaptureResult {
   /// plan built on a statement look identical, and the difference is the
   /// whole reason to ask.
   final int? assumedMinutes;
+
+  /// The first task, which is the only one when a sentence held one job.
+  ///
+  /// Kept so every caller that predates splitting still reads correctly: a
+  /// screen that says "Captured X" wants the first thing typed, and the
+  /// common case is still exactly one.
+  Task get task => captured.first.task;
+
+  /// Every block planned, across every task the sentence produced.
+  List<WorkSession> get sessions => [
+    for (final one in captured) ...one.sessions,
+  ];
+
+  /// Every task id, for an undo that takes back the whole sentence.
+  List<String> get taskIds => [for (final one in captured) one.task.id];
+
+  /// Minutes that would not fit, added up across the capture.
+  int get shortfallMinutes =>
+      captured.fold(0, (sum, one) => sum + one.shortfallMinutes);
+
+  /// Whether the sentence produced more than one task.
+  bool get isMany => captured.length > 1;
 
   /// Whether some of the work could not be placed.
   bool get isPartial => shortfallMinutes > 0;
@@ -508,58 +550,90 @@ class VanService {
   Future<CaptureResult> _capture(String text) async {
     final now = _clock.now();
 
-    final draft = await _router.run(
-      _extractTask,
-      ExtractTaskInput(text, now: now),
-    );
-    // A model that asked for something specific wins over the standing rule;
-    // otherwise the rule decides. Either way the question is about the draft,
-    // not about the sentence, so a duration the parser found in the text
-    // silences it exactly as one the model found does.
-    final clarification = draft.clarification ?? _questions.about(draft);
-
-    final task = Task(
-      id: _ids.next(),
-      title: draft.title,
-      createdAt: now,
-      deadline: draft.deadline,
-      estimatedMinutes: draft.estimatedMinutes,
-      priority: draft.priority,
-      status: TaskStatus.active,
-      source: TaskSource.quickAdd,
-      depth: draft.depth.depth,
-    );
-    await _tasks.save(task);
-    await _events.append(EventType.taskCreated, {
-      'taskId': task.id,
-      'title': task.title,
-      'deadline': task.deadline?.toIso8601String(),
-      'estimatedMinutes': task.estimatedMinutes,
-      'depth': task.depth.name,
-      // How sure the reading was, recorded here rather than stored on the
-      // task. Nothing acts on it - the planner reads depth alone - and this
-      // is a fact about a moment's reading of a sentence, which is exactly
-      // what the log is for. It is also how anyone finds out later whether a
-      // verb list was worth trusting. See DECISIONS_PENDING D73.
-      'depthConfidence': draft.depth.confidence,
-    });
-
-    if (clarification != null) {
-      await _events.append(EventType.clarificationAsked, {
-        'taskId': task.id,
-        'field': clarification.field.name,
-      });
+    // One sentence can be several jobs, and until this line it could only
+    // ever be one. Each clause then goes through exactly the same parser,
+    // capability and planner it always did - the splitter sits in front of
+    // them and nothing downstream knows it exists. See `WP_CAPTURE.md` 2.1.
+    final clauses = const SentenceSplitter().split(text);
+    if (clauses.isEmpty) {
+      return const CaptureResult(captured: []);
     }
 
-    final planned = await _planFor(task, now);
+    final captured = <CapturedTask>[];
+    Clarification? question;
+    int? assumed;
+
+    for (final clause in clauses) {
+      final draft = await _router.run(
+        _extractTask,
+        ExtractTaskInput(clause, now: now),
+      );
+      // A model that asked for something specific wins over the standing
+      // rule; otherwise the rule decides. Either way the question is about
+      // the draft, not about the sentence, so a duration the parser found in
+      // the text silences it exactly as one the model found does.
+      final asked = draft.clarification ?? _questions.about(draft);
+
+      final task = Task(
+        id: _ids.next(),
+        title: draft.title,
+        createdAt: now,
+        deadline: draft.deadline,
+        estimatedMinutes: draft.estimatedMinutes,
+        priority: draft.priority,
+        status: TaskStatus.active,
+        source: TaskSource.quickAdd,
+        depth: draft.depth.depth,
+      );
+      await _tasks.save(task);
+      await _events.append(EventType.taskCreated, {
+        'taskId': task.id,
+        'title': task.title,
+        'deadline': task.deadline?.toIso8601String(),
+        'estimatedMinutes': task.estimatedMinutes,
+        'depth': task.depth.name,
+        // How sure the reading was, recorded here rather than stored on the
+        // task. Nothing acts on it - the planner reads depth alone - and this
+        // is a fact about a moment's reading of a sentence, which is exactly
+        // what the log is for. It is also how anyone finds out later whether
+        // a verb list was worth trusting. See DECISIONS_PENDING D73.
+        'depthConfidence': draft.depth.confidence,
+        // The words this task came out of, when it was one of several. A
+        // split that went wrong is otherwise impossible to find later, and
+        // this is a fact about how the task came to exist rather than content
+        // about it. Absent when the sentence was not split at all, because
+        // then it is just the title again.
+        if (clauses.length > 1) 'from': text,
+      });
+
+      // **One question for the whole capture.** Five clauses with no stated
+      // durations would otherwise ask five times, which is the form
+      // `CaptureQuestions` exists to prevent, arriving by another route.
+      if (asked != null && question == null) {
+        question = asked;
+        assumed = task.estimatedMinutes == null
+            ? _constraints.defaultEstimateMinutes
+            : null;
+        await _events.append(EventType.clarificationAsked, {
+          'taskId': task.id,
+          'field': asked.field.name,
+        });
+      }
+
+      final planned = await _planFor(task, now);
+      captured.add(
+        CapturedTask(
+          task: planned.task,
+          sessions: planned.sessions,
+          shortfallMinutes: planned.shortfallMinutes,
+        ),
+      );
+    }
+
     return CaptureResult(
-      task: planned.task,
-      sessions: planned.sessions,
-      shortfallMinutes: planned.shortfallMinutes,
-      clarification: clarification,
-      assumedMinutes: task.estimatedMinutes == null
-          ? _constraints.defaultEstimateMinutes
-          : null,
+      captured: captured,
+      clarification: question,
+      assumedMinutes: assumed,
     );
   }
 
@@ -613,7 +687,7 @@ class VanService {
     );
   }
 
-  Future<CaptureResult> _planFor(Task task, DateTime now) async {
+  Future<CapturedTask> _planFor(Task task, DateTime now) async {
     final existing = await _sessions.unresolved();
     final slots = await _freeSlots(around: existing, from: now);
 
@@ -639,7 +713,7 @@ class VanService {
       }
     }
 
-    return CaptureResult(
+    return CapturedTask(
       task: task,
       sessions: sessions,
       shortfallMinutes: shortfall,
@@ -1613,6 +1687,18 @@ class VanService {
   /// in the append-only log, joined now by the undo itself.
   Future<bool> undoCapture(String taskId) =>
       deleteTask(taskId, reason: 'undone');
+
+  /// Takes back a whole capture, however many tasks the sentence made.
+  ///
+  /// One sentence, one undo. A five-tap undo for one mis-typed line would be
+  /// its own bug, and the user did not make five decisions - they made one.
+  Future<int> undoCaptureAll(Iterable<String> taskIds) async {
+    var removed = 0;
+    for (final id in taskIds) {
+      if (await undoCapture(id)) removed++;
+    }
+    return removed;
+  }
 
   /// Asks what to do about a stalled block, optionally given [reason].
   ///
