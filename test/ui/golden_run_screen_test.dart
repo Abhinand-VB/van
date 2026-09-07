@@ -122,6 +122,49 @@ void main() {
     });
   });
 
+  group('while a case is in flight', () {
+    testWidgets('it names the case and counts the seconds', (tester) async {
+      // Three minutes of a still screen reads as a hang, and the reasonable
+      // response to a hung screen is to close it - which throws the run away.
+      llm
+        ..hang = const Duration(seconds: 90)
+        ..reply = '{"title": "Write the report"}';
+
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Run the set'));
+      await tester.pump();
+
+      expect(find.textContaining('Running "plain"'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 5));
+      expect(find.textContaining('5s'), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 70));
+      expect(find.textContaining('1m 15s'), findsOneWidget);
+
+      // The first case ends at 90s and the second takes another 90, so the
+      // counter must restart rather than keep climbing.
+      await tester.pump(const Duration(seconds: 20));
+      expect(find.textContaining('Running "second"'), findsOneWidget);
+
+      // Let both finish, so the ticker is cancelled rather than leaked.
+      await tester.pump(const Duration(seconds: 95));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Running'), findsNothing);
+      expect(find.text('2 of 2 measured'), findsOneWidget);
+    });
+
+    testWidgets('nothing is running before the button is pressed', (
+      tester,
+    ) async {
+      await tester.pumpWidget(screen());
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Running'), findsNothing);
+    });
+  });
+
   group('surviving the phone', () {
     testWidgets('every case is saved before the next one starts', (
       tester,

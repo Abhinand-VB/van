@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:van/inference/golden_run_store.dart';
@@ -72,10 +74,34 @@ class _GoldenRunScreenState extends State<GoldenRunScreen> {
   bool _running = false;
   bool _cancelled = false;
 
+  /// Redraws the elapsed time while a case is in flight.
+  ///
+  /// **A screen with no pulse gets killed.** One case takes about two and
+  /// three quarter minutes, during which a progress bar that does not move
+  /// and a count that does not change are indistinguishable from a hang - and
+  /// the reasonable thing to do with a hung screen is close it, which throws
+  /// away the run. A second hand costs one timer and buys eighty minutes of
+  /// somebody's patience.
+  Timer? _tick;
+
+  /// Seconds the case in flight has been running, counted in ticks.
+  ///
+  /// A `Stopwatch` would be the obvious choice and is the wrong one: it reads
+  /// real time, which no widget test advances, so the display it produced
+  /// could never be tested. Counting the timer's own beats is exact in both
+  /// worlds and drifts by less than the second it is displaying.
+  int _caseSeconds = 0;
+
   @override
   void initState() {
     super.initState();
     inBackground(_load());
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -114,6 +140,10 @@ class _GoldenRunScreenState extends State<GoldenRunScreen> {
       _cancelled = false;
       _running = true;
       _run = run;
+      _caseSeconds = 0;
+    });
+    _tick = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _caseSeconds++);
     });
 
     // Built here rather than taken from the app, deliberately: this must
@@ -138,15 +168,24 @@ class _GoldenRunScreenState extends State<GoldenRunScreen> {
           // loses nothing.
           await widget.store.write(run);
           if (!mounted) return;
-          setState(() => _run = run);
+          setState(() {
+            _run = run;
+            // The next case starts now, so its count does too.
+            _caseSeconds = 0;
+          });
         },
       );
     } on Object catch (error) {
       if (mounted) setState(() => _error = '$error');
     }
 
+    _tick?.cancel();
+    _tick = null;
     if (!mounted) return;
-    setState(() => _running = false);
+    setState(() {
+      _running = false;
+      _caseSeconds = 0;
+    });
   }
 
   /// Both halves of the prompt these cases are asked with.
@@ -157,6 +196,27 @@ class _GoldenRunScreenState extends State<GoldenRunScreen> {
   String get _promptText {
     final template = widget.prompts.extractTask;
     return '${template.system}\n${template.prompt}';
+  }
+
+  /// The case being measured right now, if one is.
+  ///
+  /// Derived rather than tracked: the runner walks the set in file order and
+  /// skips what is already done, so the case in flight is the first one with
+  /// no outcome. That stays true across a resume, which a separate index
+  /// would not.
+  GoldenCase? get _inFlight {
+    if (!_running) return null;
+    final measured = {for (final o in _report.outcomes) o.name};
+    for (final testCase in _set?.cases ?? const <GoldenCase>[]) {
+      if (!measured.contains(testCase.name)) return testCase;
+    }
+    return null;
+  }
+
+  /// `2m 14s`, or `41s`.
+  static String _spell(int seconds) {
+    if (seconds < 60) return '${seconds}s';
+    return '${seconds ~/ 60}m ${(seconds % 60).toString().padLeft(2, '0')}s';
   }
 
   /// The report over whatever has been measured so far.
@@ -211,10 +271,18 @@ class _GoldenRunScreenState extends State<GoldenRunScreen> {
             ),
             const SizedBox(height: 12),
             Text(
-              '$finished of $total measured'
-              '${_running ? ' · running' : ''}',
+              '$finished of $total measured',
               style: theme.textTheme.titleSmall,
             ),
+            if (_inFlight case final running?) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Running "${running.name}" — ${_spell(_caseSeconds)}',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: theme.colorScheme.primary,
+                ),
+              ),
+            ],
             const SizedBox(height: 4),
             Text(
               // The headline, and the only number that answers 3e. Cases the
