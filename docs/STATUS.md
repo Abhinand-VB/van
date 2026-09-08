@@ -52,6 +52,15 @@ left the rent on its guess. The event log had recorded the right task all
 along; the result never carried it. Fixed, with the old behaviour kept as a
 test that asserts the damage. Section 3ag, D89.
 
+**And the same bug again on the Now screen**, where it was worse: that screen
+built its own question bar, so it asked about the rent while **displaying
+"Email the landlord"** — telling you the wrong task to your face and then
+replanning it. The lookup now lives on `CaptureResult` where both screens read
+the same one. Section 3ah, D90.
+
+Four defects, one root cause, all in the sentence-splitting shipped two nights
+ago. Every one of them compiled, passed the suite, and looked right.
+
 **This run did the whole of the `OVERNIGHT.md` 3c queue** — month cells that
 name what is on them, `WP_JUDGEMENT` 13a (Van asks how long), 13b (depth and
 the short opening block), `WP_VOICE.md` in full, 13c (reschedule judgement on
@@ -256,7 +265,7 @@ It runs **with no language model at all**. Every AI capability has a
 deterministic fallback, and `NullBackend` is the configured backend. That is a
 working configuration, not a degraded one.
 
-- **969 tests passing** — 381 in `packages/van_core` (pure Dart), 588 in the app.
+- **972 tests passing** — 381 in `packages/van_core` (pure Dart), 591 in the app.
 - `dart analyze --fatal-infos` clean, `tool/check_layers.dart` clean.
 - Whole core suite runs in under a second.
 
@@ -278,7 +287,7 @@ working configuration, not a degraded one.
 | App: nudge record and fatigue | 9 |
 | App: first run and permissions | 9 |
 | App: settings store | 8 |
-| App: Now screen | 4 |
+| App: Now screen | 7 |
 | App: negotiate capability | 22 |
 | App: chat and task list | 19 |
 | App: notification ids | 6 |
@@ -2253,6 +2262,35 @@ Every one of those getters is a place the UI can be wrong without anything
 failing. Three have been found and fixed tonight. The ones that remain are
 `result.task` in the undo path and `result.sessions` in the nudge count, and
 they are the first place to look if capture misbehaves again.
+
+**Not observed on the phone.** Off adb all night.
+
+---
+
+## 3ah. Two capture screens, one of them fixed
+
+3ag ended by naming the two remaining singular getters as the first place to
+look if capture misbehaved again. Both turned out to be fine —
+`AnswerResult.task` and `.sessions` describe one replanned task and are
+correct. The search found something better: **Van has two capture surfaces and
+only one had been fixed.**
+
+`NowScreen._capture` builds its own question bar, and it carried the 3ag bug in
+a worse form — `taskId: result.task.id` *and* `about: result.task.title`. So
+"email the landlord 15 minutes and pay the rent" asked about the rent,
+**displayed "Email the landlord"**, and replanned the landlord with the answer.
+The chat version at least stayed silent about which task it meant; this one
+named the wrong one on screen and then acted on it.
+
+**Fixed in `c5632ba`** by moving the lookup to `CaptureResult.clarified`, read
+by both screens. The reason is the defect itself: the same lookup written twice
+is a lookup that drifts, and it had drifted before either copy was right.
+
+**Worth recording what was already correct.** `NowScreen._captureMessage`
+handled plurality properly from the start — "Captured 2 separate things", blocks
+counted across all of them, with a comment explaining that the count leads
+because it is the surprising part. One surface of that file had been thought
+about and the other had not, in the same commit.
 
 **Not observed on the phone.** Off adb all night.
 
