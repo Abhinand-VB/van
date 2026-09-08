@@ -1,74 +1,95 @@
 # Van — Project Status
 
-**Last updated:** 7 September 2026, after an unattended run. The previous
-day's work is in sections 3w to 3ab; this run's is 3ac and 3ad. This file is
-the handover between sessions and between agents; it says what is true now. The
+**Last updated:** 7 September 2026, after an unattended run. That run's work
+is sections 3ac to 3ah; the previous day's is 3w to 3ab. This file is the
+handover between sessions and between agents and says what is true now; the
 narrative of how it got that way is in `docs/NIGHT_LOG.md`.
 
-**Two things to know before anything else.**
+---
 
-**1. The on-device model is measured, and the answer is no.** It works: about
-**two and three quarter minutes** for one capture on your phone, against under
-a millisecond for the parser that gets the same sentence right. The GPU build
-and the Qualcomm build for your exact chip were both downloaded and both
-**cannot be loaded by this runtime at all** — 217 ms and 295 ms, and the reason
-is in the files themselves, not in how they were asked for. Five seconds was
-the bar the queue set and this is nowhere near it. Section 3ad, D84.
+### Do this first: plug the phone in
 
-**2. Your phone came off adb part-way through, so one thing is unfinished.**
-`GoldenRunScreen` — the harness that finally makes the routing gate readable,
-issue 14, open since August — is written, tested and built, but the APK was
-never installed. **The phone is on the previous build.** Reinstalling and
-running the set is the first job next session, and it takes about eighty
-minutes of the phone sitting still. Nothing is routed to the model and nothing
-may be until that number exists.
+**Your phone came off adb about fifty minutes into the run and never came
+back**, so everything below was written, tested and built but **none of it is
+installed**. The phone is running `82271f6` from two nights ago, which still
+has all four capture defects in it. `flutter install` and the tip is on the
+device.
 
-As it turns out the phone leaving did me a favour. The harness as first
-written would have timed out every case at 20 seconds against a model that
-takes 165, and reported a confident **0%** after ten minutes of your evening.
-Found and fixed before it ever ran — section 3ad, D86.
+Then, when you can leave the phone alone for eighty minutes: Settings →
+On-device model → Try the model → **Run the golden set**. That is the number
+that decides whether anything is ever routed to the model, it has never been
+takeable before tonight, and nothing may be routed until it exists. It saves
+after every case, so an interruption costs nothing.
 
-**3. Two real defects in the splitting you are using right now.** The first:
-"go to the shop and get bread" was becoming two tasks, along with three more
-like it. I claimed in D83 that the rule was conservative; fifty test sentences
-say it was not. Four cases fixed, **eight still wrong and written down by
-name** in `splitter_survey_test.dart`. Section 3ae, D87.
+---
 
-The second is worse and I found it by asking whether you could even see the
-first. **When a sentence became two tasks, the card showed one of them.** It
-printed the first task's title above every block from both, so "pay the
-electricity bill and book the dentist" read as one task with extra blocks —
-while the dentist task sat in the database, planned, with a nudge ladder armed
-and nothing on screen admitting it existed. The undo button removed both and
-said "Undo". Fixed: the card is plural, the count is stated, and the button
-says "Undo both". Section 3af, D88.
+### 1. The on-device model is measured, and the answer is no
 
-**The third is the one that destroyed something you typed.** Van asks one
-question per sentence, about the first clause that needs it — which is not
-always the first clause. Type *"email the landlord 15 minutes and pay the
-rent"* and the question is about the rent. Answer it with "90 minutes" and Van
-replanned **the landlord** to ninety, overwriting the fifteen you gave, and
-left the rent on its guess. The event log had recorded the right task all
-along; the result never carried it. Fixed, with the old behaviour kept as a
-test that asserts the damage. Section 3ag, D89.
+It works, and it is far too slow: about **two and three quarter minutes** for
+one capture on your phone, against **under a millisecond** for the parser that
+gets the same sentence right and scores 29/29. Cutting the output budget by a
+third moved it by nine seconds, so most of that is fixed cost before a single
+token is decoded.
 
-**And the same bug again on the Now screen**, where it was worse: that screen
-built its own question bar, so it asked about the rent while **displaying
-"Email the landlord"** — telling you the wrong task to your face and then
-replanning it. The lookup now lives on `CaptureResult` where both screens read
-the same one. Section 3ah, D90.
+The GPU build and the Qualcomm build for your exact chip were both downloaded
+and **neither can be loaded by this runtime at all** — they failed in 217 ms
+and 295 ms, and the reason is inside the files rather than in how they were
+asked for. Five seconds was the bar the queue set. Section 3ad, D84.
 
-Four defects, one root cause, all in the sentence-splitting shipped two nights
-ago. Every one of them compiled, passed the suite, and looked right.
+What remains open is accuracy, not speed, and that is the golden run above.
 
-**This run did the whole of the `OVERNIGHT.md` 3c queue** — month cells that
+### 2. Four defects in the capture you are using right now
+
+All four are in the sentence-splitting that shipped two nights ago, all four
+share one root cause, and **every one of them compiled, passed the suite and
+looked right**. Worst first:
+
+- **Van overwrote a duration you typed.** "email the landlord 15 minutes and
+  pay the rent" asks its one question about the *rent* — but answering it
+  replanned the *landlord* to that length, discarding the fifteen minutes you
+  gave, and left the rent on its guess. On the Now screen it also **displayed
+  the wrong task's name** while doing it. Sections 3ag and 3ah, D89 and D90.
+- **A task you could not see.** When a sentence made two tasks the card showed
+  one title with both tasks' blocks under it. The second task was created,
+  planned and given a nudge ladder with nothing on screen admitting it
+  existed — so the first you would know of it is a notification. The card is
+  plural now and the undo says "Undo both". Section 3af, D88.
+- **Sentences cut where they should not be.** "go to the shop and get bread"
+  became two tasks, and three more like it. I claimed in D83 that the rule was
+  conservative; fifty test sentences say it was not. Four fixed; **eight are
+  still wrong and are written down by name** in `splitter_survey_test.dart`,
+  asserted backwards so that fixing one turns the suite red. Section 3ae, D87.
+
+The root cause is worth knowing because it will recur: `CaptureResult` was
+given plural data and kept singular getters — `task`, `sessions` — so that
+callers written before splitting would compile unchanged. Three separate
+screens then read the first element of a list and looked entirely correct.
+
+### 3. The harness that would have lied, caught before it ran
+
+The golden-set screen as first written would have timed out every case at the
+20-second request limit against a model that takes 165 seconds, fallen back to
+the parser on all 29, and reported a confident **0%** after ten minutes of
+your evening — a number indistinguishable from a genuinely useless model.
+Found and fixed before it ever ran. It also now separates what the *model*
+answered from what the parser rescued, because the router always answers and a
+naive reading would have reported 29/29 for a model that produced nothing.
+Section 3ad, D85 and D86.
+
+---
+
+### Everything below here is from earlier runs, and still true
+
+**The 6 September run did the whole of the `OVERNIGHT.md` 3c queue** — month cells that
 name what is on them, `WP_JUDGEMENT` 13a (Van asks how long), 13b (depth and
 the short opening block), `WP_VOICE.md` in full, 13c (reschedule judgement on
 evidence) and 13d (the engine and the weights surface). All are installed.
 Sections 3w to 3aa have them; 3v is the previous session's calendar work.
 
-**The queue is empty. Section 7 is where to look next**, and the honest answer
-there is that what remains needs you or needs a week of real use.
+**That queue was emptied; the 7 September one is in `OVERNIGHT.md` 3c with
+each item marked done, skipped or blocked.** Section 7 is where to look beyond
+it, and the honest answer there is that what remains needs you or needs a week
+of real use.
 
 **Since then, two rounds of your feedback**: the Tasks tab (delete, time taken,
 and it being underdeveloped) and the model download being unusable without a
