@@ -12,8 +12,21 @@ narrative of how it got that way is in `docs/NIGHT_LOG.md`.
 **Your phone came off adb about fifty minutes into the run and never came
 back**, so everything below was written, tested and built but **none of it is
 installed**. The phone is running `82271f6` from two nights ago, which still
-has all four capture defects in it. `flutter install` and the tip is on the
-device.
+has all four capture defects in it.
+
+**The APK is already built** and carries every code change from tonight
+(`e7f1181`; the two commits after it are documentation). So the quickest path
+is the direct install, which takes seconds rather than rebuilding:
+
+```
+adb install -r build/app/outputs/flutter-apk/app-debug.apk
+```
+
+`flutter install` works too and rebuilds first. Either way, **check the APK
+still contains `sqlite3` before trusting it** — a build missing
+`libsqlite3.so` installs, launches, and throws out of `main` before the first
+frame, which looks like a black screen and cost you a working app once
+already (section 5).
 
 Then, when you can leave the phone alone for eighty minutes: Settings →
 On-device model → Try the model → **Run the golden set**. That is the number
