@@ -294,6 +294,55 @@ void main() {
     });
   });
 
+  group('a sentence that made several tasks', () {
+    /// The first job states a duration; the second does not.
+    const mixed = 'email the landlord 15 minutes and pay the rent';
+
+    testWidgets('the question names the task it is really about', (
+      tester,
+    ) async {
+      await show(tester);
+      await type(tester, mixed);
+
+      // It used to say "Email the landlord", which is the one job in the
+      // sentence Van was not asking about.
+      expect(
+        find.textContaining('Pay the rent — Roughly how long'),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('Email the landlord — Roughly how long'),
+        findsNothing,
+      );
+    });
+
+    testWidgets('answering it does not overwrite a stated duration', (
+      tester,
+    ) async {
+      await show(tester);
+      await type(tester, mixed);
+      await type(tester, '90 minutes');
+
+      final open = await service.openTasks();
+      expect(
+        open.firstWhere((t) => t.title.startsWith('Email')).estimatedMinutes,
+        15,
+        reason: 'the duration the user typed must survive',
+      );
+      expect(
+        open.firstWhere((t) => t.title.startsWith('Pay')).estimatedMinutes,
+        90,
+      );
+    });
+
+    testWidgets('it says how many things it captured', (tester) async {
+      await show(tester);
+      await type(tester, mixed);
+
+      expect(find.textContaining('2 separate things'), findsOneWidget);
+    });
+  });
+
   group('Van asking how long', () {
     testWidgets('capturing without a duration asks, and still captures', (
       tester,

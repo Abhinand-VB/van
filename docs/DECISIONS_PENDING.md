@@ -1083,6 +1083,57 @@ Not observed on the phone, which has been off adb all night.
 
 ---
 
+
+### D90 — The same bug, on the other capture screen, because the lookup was written twice
+
+**Found by doing what D89 said to do next.** That entry named the two remaining
+singular getters as "the first place to look if capture misbehaves again". Both
+turned out to be fine — `AnswerResult.task` and `.sessions` describe one
+replanned task and are correct — but the search turned up something better:
+**Van has two capture surfaces, and I had only fixed one.**
+
+`NowScreen._capture` builds its own question bar, and it had the D89 bug in a
+worse form:
+
+```dart
+_Asking(
+  taskId: result.task.id,     // the first task
+  about: result.task.title,   // and it says so on screen
+  ...
+)
+```
+
+So "email the landlord 15 minutes and pay the rent" asked about the rent,
+**displayed "Email the landlord"**, and then replanned the landlord with the
+answer. The chat version at least stayed silent about which task it meant; this
+one told the owner the wrong one to their face, and then acted on it.
+
+Reproduced before fixing: the test found "Email the landlord" on screen and the
+landlord's stated 15 minutes replaced by 90.
+
+**The decision: the lookup lives on `CaptureResult`, not on either screen.**
+`CaptureResult.clarified` returns the `CapturedTask` the question is about.
+Both screens read it. The reason is the defect itself — the same lookup written
+twice is a lookup that drifts, and it had already drifted before either copy
+was correct.
+
+**What was right and worth saying so.** `NowScreen._captureMessage` already
+handled plurality properly: "Captured 2 separate things", blocks counted across
+all of them, with a comment explaining that the count leads because it is the
+surprising part. One surface of that screen had been thought about and the
+other had not, in the same file, in the same commit.
+
+**The tally for tonight's capture work: four defects, one root cause.** A type
+that went plural while keeping singular getters for compatibility (D88), the
+card that showed one task of several (D88), the question answered against the
+wrong task in chat (D89), and the same question naming *and* answering the
+wrong task on the Now screen (D90). Every one of them compiled, passed the
+suite, and looked right.
+
+Not observed on the phone, which has been off adb all night.
+
+---
+
 ---
 
 ---

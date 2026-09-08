@@ -409,7 +409,7 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
               // first one the sentence made. See D89.
               taskId: result.clarificationTaskId ?? result.task.id,
               clarification: asked,
-              about: result.isMany ? _titleOf(result) : null,
+              about: result.isMany ? result.clarified?.task.title : null,
               assumed: result.assumedMinutes,
             ),
           );
@@ -418,14 +418,6 @@ class _ChatScreenState extends State<ChatScreen> with WidgetsBindingObserver {
       }
     });
     _toBottom();
-  }
-
-  /// The title of the task [result]'s question is about.
-  static String? _titleOf(CaptureResult result) {
-    for (final one in result.captured) {
-      if (one.task.id == result.clarificationTaskId) return one.task.title;
-    }
-    return null;
   }
 
   /// Takes [text] as the answer to the question at [index].

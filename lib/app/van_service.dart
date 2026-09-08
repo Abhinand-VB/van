@@ -81,6 +81,22 @@ class CaptureResult {
   /// whole reason to ask.
   final int? assumedMinutes;
 
+  /// The task [clarification] is about, when there is one.
+  ///
+  /// **Both capture screens needed this and both got it wrong separately.**
+  /// A lookup written twice is a lookup that drifts, and the version on each
+  /// screen reached for `task` — the first one — which is how the landlord in
+  /// "email the landlord 15 minutes and pay the rent" ended up being asked
+  /// about, renamed and replanned. See D89.
+  CapturedTask? get clarified {
+    final id = clarificationTaskId;
+    if (id == null) return null;
+    for (final one in captured) {
+      if (one.task.id == id) return one;
+    }
+    return null;
+  }
+
   /// The first task, which is the only one when a sentence held one job.
   ///
   /// Kept so every caller that predates splitting still reads correctly: a

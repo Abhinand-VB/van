@@ -207,11 +207,17 @@ class _NowScreenState extends State<NowScreen> with WidgetsBindingObserver {
       // A new capture replaces any question still standing about the last
       // one. Two questions queued behind a composer is the form this was
       // written to avoid.
-      _asking = result.clarification == null
+      // **The task the question is about, which is not always the first.**
+      // This reached for `result.task`, so a sentence stating a duration for
+      // its first job and not its second asked about the second, named the
+      // first, and then replanned the first with the answer - overwriting a
+      // duration the user had typed. See D89.
+      final asked = result.clarified?.task;
+      _asking = result.clarification == null || asked == null
           ? null
           : _Asking(
-              taskId: result.task.id,
-              about: result.task.title,
+              taskId: asked.id,
+              about: asked.title,
               clarification: result.clarification!,
               assumed: result.assumedMinutes,
             );
