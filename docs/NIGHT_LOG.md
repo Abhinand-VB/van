@@ -1949,3 +1949,66 @@ I noticed the count. And I put real file I/O inside `pumpAndSettle`, which does
 not fail — it hangs for the full ten-minute default timeout and looks exactly
 like an animation that never settles. The fix, an interface in front of the
 store, is better design than what I had, which is the usual shape of these.
+
+---
+
+## 7 September 2026, 06:00–17:30 — the phone left, and the audit that filled the gap
+
+**The phone came off adb fifty minutes in and never came back.** Eight
+iterations, all of them code-only, and the standing brief is unambiguous about
+what that means: *"an item is done when it is installed on the phone and
+observed working. Not when the tests are green."* So none of what follows is
+done. It is written, tested, analysed, layer-checked and built, and it is
+sitting in an APK nobody has installed.
+
+**What the gap turned into.** After the second iteration of polishing a
+measurement harness I could not run, the marginal value of more harness work
+was obviously falling, so I went looking at shipped code instead — specifically
+the sentence splitting from two nights before, which was the newest thing the
+owner was actually using. That produced four defects in four iterations, and
+they came out in a revealing order.
+
+The first was found by *measurement*: fifty plausible sentences run through the
+splitter, eight of them cut wrongly. That one contradicted a claim I had
+written myself two nights earlier — D83 said the rule was conservative because
+it required the second clause to stand alone, and the survey showed that test
+barely filters anything, because nearly every English second clause opens with
+a verb.
+
+The second was found by asking the obvious follow-up question: *can the owner
+even see it when the splitter cuts?* No. The card rendered the first task's
+title above every block from all of them, so the second task existed with a
+nudge ladder armed and nothing on screen mentioned it. `isMany` had been added
+for exactly this and never read.
+
+The third and fourth were found by following the same shape deliberately — a
+plural type with singular getters kept for compatibility — and they were the
+worst: the one question a split capture asks was being answered against the
+*first* task rather than the one it was about, so a duration the owner had
+typed got silently replaced. Then the same bug again on the second capture
+screen, where it additionally displayed the wrong task's name while doing it.
+
+**The pattern is the finding, not the four bugs.** `CaptureResult` was given
+plural data and kept `task` and `sessions` so that every caller written before
+splitting would compile unchanged. That was the right call for shipping in one
+night. It is also precisely why three separate screens read the first element
+of a list and looked entirely correct — no failing test, no analyzer warning,
+no crash. A compatibility shim is a place the code can be wrong without saying
+so, and the number of such places is the number of callers.
+
+**One iteration found nothing, and that is worth recording too.** I generalised
+the "flag with no reader" lesson into a mechanical sweep — every public field
+and getter in `lib/`, cross-referenced against every read in the repo. Two
+turned up unread, both harmless redundant accessors whose distinctions are
+handled correctly inline. The sweep was cheap and the negative result is
+useful: `isMany` was a specific oversight, not a systemic habit. I would rather
+have that written down than quietly drop an iteration that produced no commit.
+
+**And a note on the handover.** By the eighth iteration `STATUS.md` opened by
+announcing "two things to know" and then listing five, with numbered items
+trailing into unnumbered continuations, pointing at two sections when the run
+had written six. Each iteration's append had been reasonable on its own. The
+brief calls this file the only handover between sessions, so the last job of
+the night was to rewrite the opening as something readable in one pass, led by
+the one thing the owner actually has to do: plug the phone in, because nothing
+here is installed.
