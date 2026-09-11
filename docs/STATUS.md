@@ -1,9 +1,10 @@
 # Van — Project Status
 
-**Last updated:** 7 September 2026, after an unattended run. That run's work
-is sections 3ac to 3ah; the previous day's is 3w to 3ab. This file is the
-handover between sessions and between agents and says what is true now; the
-narrative of how it got that way is in `docs/NIGHT_LOG.md`.
+**Last updated:** 7 September 2026, after an unattended run; the watch on it
+was held open until **11 September** without the phone ever reconnecting. That
+run's work is sections 3ac to 3ah; the previous day's is 3w to 3ab. This file
+is the handover between sessions and between agents and says what is true now;
+the narrative of how it got that way is in `docs/NIGHT_LOG.md`.
 
 ---
 
@@ -11,8 +12,13 @@ narrative of how it got that way is in `docs/NIGHT_LOG.md`.
 
 **Your phone came off adb about fifty minutes into the run and never came
 back**, so everything below was written, tested and built but **none of it is
-installed**. The phone is running `82271f6` from two nights ago, which still
-has all four capture defects in it.
+installed**. The phone is running `82271f6`, which still has all four capture
+defects in it.
+
+It was checked roughly every hour from 7 September through 11 September —
+thirty-odd times — and `adb devices` was empty on every one of them. Nothing in
+this file has been observed on hardware since, and by this project's own rule
+(`OVERNIGHT.md` section 3) none of it counts as done.
 
 **The APK is already built** and carries every code change from tonight
 (`e7f1181`; the two commits after it are documentation). So the quickest path
