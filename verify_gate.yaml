@@ -1,0 +1,34 @@
+# Van's definition of "done" as one pass/fail answer, for dart-verify-mcp's
+# run_gate tool and the /verify slash command. Same steps as CI
+# (.github/workflows/ci.yaml), so an agent and CI check the same thing.
+#
+# Not in here, and never will be: "installed on the phone and observed
+# working" (docs/OVERNIGHT.md section 3). A green gate is necessary, not
+# sufficient.
+
+gate:
+  steps:
+    - name: format
+      run: dart format --output=none --set-exit-if-changed .
+      timeout_seconds: 120
+    - name: analyze
+      run: dart analyze --fatal-infos
+      timeout_seconds: 300
+    # Van's own architecture guard (core purity, ambient time, provider names).
+    - name: layers
+      run: dart run tool/check_layers.dart
+      timeout_seconds: 300
+    - name: core tests
+      run: dart test
+      working_directory: packages/van_core
+      timeout_seconds: 600
+    - name: app tests
+      run: flutter test
+      timeout_seconds: 1800
+
+unused_dependencies:
+  allow:
+    - sqlite3_flutter_libs: >-
+        Not imported, and sqlite3 3.x bundles libsqlite3.so itself, but a missing
+        libsqlite3.so once shipped a black-screen APK. Remove only after the app
+        is installed and observed starting on the phone.
