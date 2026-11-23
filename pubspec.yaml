@@ -9,23 +9,20 @@ environment:
   sdk: ^3.11.5
 
 dependencies:
-  android_alarm_manager_plus: ^5.1.1
   cupertino_icons: ^1.0.8
   drift: ^2.34.3
   flutter:
     sdk: flutter
   flutter_local_notifications: ^22.3.0
-  flutter_riverpod: ^2.6.1
-  flutter_secure_storage: ^11.0.0
   flutter_timezone: ^5.1.0
   meta: ^1.17.0
   path: ^1.9.1
   path_provider: ^2.1.6
   sqlite3_flutter_libs: ^0.6.0+eol
+  timezone: ^0.11.1
   # The pure domain core. No Flutter, no I/O, no ambient time - see
   # docs/ARCHITECTURE.md P1. Kept a separate package so the boundary is
   # enforced by the dependency graph rather than by convention.
-  timezone: ^0.11.1
   van_core:
     path: packages/van_core
 
@@ -51,11 +48,6 @@ flutter:
     - assets/nudge_templates/
     - assets/inference_config.json
     - assets/policy.json
-    # The golden set, shipped so `GoldenRunScreen` can measure the on-device
-    # model against exactly the cases CI measures the parser against. Reading
-    # the same file rather than a copy is the whole point: a gate evaluated
-    # against a second, drifting copy of the cases gates nothing.
-    - test/golden/extract_task.json
     # The golden set, shipped so `GoldenRunScreen` can measure the on-device
     # model against exactly the cases CI measures the parser against. Reading
     # the same file rather than a copy is the whole point: a gate evaluated
